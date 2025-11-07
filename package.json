@@ -1,0 +1,41 @@
+{
+  "name": "calculator-agent",
+  "version": "1.0.0",
+  "description": "KĀDI calculator agent example for ProtogameJS3D - TypeScript implementation",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest"
+  },
+  "keywords": [
+    "kadi",
+    "agent",
+    "calculator",
+    "game-engine",
+    "multi-agent",
+    "prototypejs3d"
+  ],
+  "author": "ProtogameJS3D Team",
+  "license": "MIT",
+  "dependencies": {
+    "@kadi.build/core": "file:../kadi/kadi-core",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "eslint": "^8.56.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
