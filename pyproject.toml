@@ -1,0 +1,42 @@
+[project]
+name = "calculator-agent"
+version = "1.0.0"
+description = "KĀDI calculator agent example for ProtogameJS3D - Python implementation"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "ProtogameJS3D Team" }
+]
+keywords = ["kadi", "agent", "calculator", "game-engine", "multi-agent"]
+
+dependencies = [
+    "kadi @ file://C:/p4/Personal/SD/kadi/kadi-core-py",
+    "pydantic>=2.0.0",
+    "websockets>=12.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "mypy>=1.0.0"
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
