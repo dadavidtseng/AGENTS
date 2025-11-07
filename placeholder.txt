@@ -1,2 +1,28 @@
-This is a placeholder file for the AGENTS directory.
-Last updated: 2025-11-07 23:45 (Updated via Claude automation)
+KADI Multi-Agent System Placeholder
+==========================================
+
+This directory contains agent implementations for the KADI (Knowledge Agent Development Infrastructure) protocol.
+
+Update Information:
+- Date: 2025-11-07 (Latest Update)
+- Tool: Claude Code with kadi-local MCP integration
+- Purpose: Demonstration of complete git workflow automation
+
+Workflow Demonstration:
+1. ✓ Create/update placeholder text using filesystem tools
+2. → Commit changes using kadi-local git tools
+3. → Push to GitHub remote repository
+
+Current Status: Updated - ready for commit and push
+
+About KADI:
+- Cross-language agent communication framework
+- Event-driven architecture with WebSocket communication
+- Type-safe tool definitions using schema validation
+- Multi-agent coordination and orchestration
+
+Repository Structure:
+- Agent_TypeScript: TypeScript-based text processing agent
+- Additional agents: Coming soon...
+
+For more information: https://github.com/kadi-build
