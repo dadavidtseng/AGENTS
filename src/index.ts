@@ -1,21 +1,18 @@
 /**
- * Text Processing KĀDI Agent in TypeScript
- * =========================================
+ * Multi-Purpose KĀDI Agent with MCP Integration
+ * ============================================
  *
- * This agent provides text processing and validation tools
- * for ProtogameJS3D using the KĀDI protocol.
- *
- * Features:
- * - Ed25519 cryptographic authentication
- * - Zod schema validation with type inference
- * - Text formatting and transformation tools
- * - JSON validation capabilities
+ * This agent provides:
+ * - Text processing tools (built-in)
+ * - Git operations via MCP server (27 tools)
+ * - Worktree management
  * - Event pub/sub system
  * - WebSocket communication with KĀDI broker
  *
  * Dependencies:
  * - @kadi.build/core: KĀDI protocol client library
  * - zod: Schema validation and type inference
+ * - @cyanheads/git-mcp-server: Git operations via MCP
  *
  * Usage:
  *     npm start
@@ -24,10 +21,14 @@
  *
  * Environment Variables:
  *     KADI_BROKER_URL: WebSocket URL for KĀDI broker (default: ws://localhost:8080)
- *     KADI_NETWORK: Network to join (default: global,text)
+ *     KADI_NETWORK: Network to join (default: global,text,git)
+ *     GIT_BASE_DIR: Base directory for Git operations (default: current directory)
  */
 
+import 'dotenv/config';
 import { KadiClient, z } from '@kadi.build/core';
+import { ToolRegistry } from './core/tool-registry.js';
+import mcpServersConfig from './config/mcp-servers.json' with { type: 'json' };
 
 // ============================================================================
 // Tool Schemas (Zod Schemas)
@@ -101,16 +102,39 @@ type TrimTextOutput = z.infer<typeof trimTextOutputSchema>;
 
 const config = {
   brokerUrl: process.env.KADI_BROKER_URL || 'ws://localhost:8080',
-  networks: (process.env.KADI_NETWORK || 'global,text').split(',')
+  networks: (process.env.KADI_NETWORK || 'global,text,git').split(','),
+  gitBaseDir: process.env.GIT_BASE_DIR || process.cwd()
 };
+
+// Convert Windows path for MCP server compatibility
+// The MCP server requires Unix-style paths starting with "/"
+// On Windows, convert C:\path\to\dir to /path/to/dir (removing drive letter)
+let gitBaseDirNormalized = config.gitBaseDir.replace(/\\/g, '/');
+if (gitBaseDirNormalized.match(/^[A-Z]:/i)) {
+  // Remove Windows drive letter: C:/path -> /path
+  gitBaseDirNormalized = gitBaseDirNormalized.slice(2);
+}
+
+// Update MCP server config with GIT_BASE_DIR from environment
+// Using batch wrapper (launch-git-mcp.bat) to set PATH explicitly
+if (mcpServersConfig.servers && mcpServersConfig.servers[0]) {
+  mcpServersConfig.servers[0].env = {
+    ...mcpServersConfig.servers[0].env,
+    GIT_BASE_DIR: gitBaseDirNormalized
+  };
+
+  console.log(`✓ MCP Server Environment configured:`);
+  console.log(`  - GIT_BASE_DIR: ${gitBaseDirNormalized}`);
+  console.log(`  - Using batch wrapper: launch-git-mcp.bat (sets PATH internally)`);
+}
 
 // ============================================================================
 // KĀDI Client
 // ============================================================================
 
 const client = new KadiClient({
-  name: 'text-processor',
-  version: '1.0.0',
+  name: 'typescript-agent',
+  version: '2.0.0',
   role: 'agent',
   broker: config.brokerUrl,
   networks: config.networks
@@ -326,6 +350,138 @@ client.subscribeToEvent('agent.connected', (data: any) => {
 });
 
 // ============================================================================
+// MCP Tool Registry
+// ============================================================================
+
+const toolRegistry = new ToolRegistry();
+
+/**
+ * Initialize MCP servers and register their tools with KADI
+ */
+async function initializeMCPTools(): Promise<void> {
+  console.log('🔧 Initializing MCP tools...');
+
+  try {
+    // Initialize MCP servers (connects and discovers tools)
+    await toolRegistry.initialize(mcpServersConfig.servers);
+
+    // Get raw MCP tool definitions (with JSON Schemas)
+    // Access the private mcpClients map to get original MCP tool definitions
+    const mcpClients = (toolRegistry as any).mcpClients as Map<string, any>;
+    const rawMCPTools = Array.from(mcpClients.values())
+      .flatMap(client => client.getTools());
+
+    console.log(`📦 Discovered ${rawMCPTools.length} MCP tools with JSON Schemas`);
+
+    for (const mcpTool of rawMCPTools) {
+      try {
+        // Use JSON Schema approach to bypass Zod conversion
+        // This directly passes MCP's JSON Schemas to KADI without conversion
+        client.registerTool({
+          name: mcpTool.name,
+          description: mcpTool.description,
+          inputSchema: mcpTool.inputSchema as any,  // MCP JSON Schema (used as-is)
+          outputSchema: {
+            type: 'object',
+            properties: {
+              content: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    type: { type: 'string' },
+                    text: { type: 'string' }
+                  }
+                }
+              },
+              isError: { type: 'boolean' }
+            },
+            additionalProperties: true  // Allow extra fields
+          } as any,
+        }, async (params: any): Promise<any> => {
+          console.log(`🔨 Invoking MCP tool: ${mcpTool.name}`);
+
+          try {
+            const result = await toolRegistry.invokeTool(mcpTool.name, params);
+
+            // Publish success event
+            client.publishEvent('git.tool.success', {
+              tool: mcpTool.name,
+              params,
+              agent: 'typescript-agent'
+            });
+
+            return result;
+          } catch (error: any) {
+            const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+
+            console.error(`❌ MCP tool ${mcpTool.name} failed:`, errorMsg);
+
+            // Publish error event
+            client.publishEvent('git.tool.error', {
+              tool: mcpTool.name,
+              error: errorMsg,
+              agent: 'typescript-agent'
+            });
+
+            throw error;
+          }
+        });
+
+        console.log(`  ✅ Registered MCP tool as KADI tool: ${mcpTool.name}`);
+      } catch (error: any) {
+        console.error(`  ❌ Failed to register ${mcpTool.name}:`, error.message);
+        throw error; // Re-throw to fail fast and see which tool causes the issue
+      }
+    }
+
+    console.log(`✅ MCP integration complete: ${rawMCPTools.length} Git tools registered with KADI`);
+
+  } catch (error: any) {
+    console.error('❌ Failed to initialize MCP tools:', error.message);
+    console.error('   Agent will continue with built-in text tools only');
+    // Don't throw - allow agent to run with built-in tools even if MCP fails
+  }
+}
+
+/**
+ * Git health check tool - verifies Git executable is accessible
+ */
+client.registerTool({
+  name: 'git_health_check',
+  description: 'Check if Git is accessible and report version information',
+  input: z.object({}),
+  output: z.object({
+    accessible: z.boolean().describe('Whether Git is accessible'),
+    version: z.string().optional().describe('Git version string if accessible'),
+    error: z.string().optional().describe('Error message if not accessible')
+  })
+}, async (): Promise<{ accessible: boolean; version?: string; error?: string }> => {
+  console.log('🏥 Running Git health check...');
+
+  try {
+    // Try to invoke git_status tool through MCP
+    const result = await toolRegistry.invokeTool('git_status', {});
+
+    console.log('✅ Git health check passed');
+
+    return {
+      accessible: true,
+      version: 'Available via MCP (git-mcp-server)'
+    };
+  } catch (error: any) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+
+    console.error('❌ Git health check failed:', errorMsg);
+
+    return {
+      accessible: false,
+      error: errorMsg
+    };
+  }
+});
+
+// ============================================================================
 // Main Function
 // ============================================================================
 
@@ -335,9 +491,15 @@ async function main() {
   console.log('='.repeat(60));
   console.log(`Broker URL: ${config.brokerUrl}`);
   console.log(`Networks: ${config.networks.join(', ')}`);
+  console.log(`Git Base Dir: ${config.gitBaseDir}`);
   console.log();
 
   try {
+    // Initialize MCP tools before connecting to broker
+    console.log('⏳ Initializing MCP tools...');
+    await initializeMCPTools();
+    console.log();
+
     console.log('⏳ Connecting to broker...');
     console.log();
 
@@ -351,11 +513,25 @@ async function main() {
     console.log('✅ Connected successfully!');
     console.log();
     console.log('Available Tools:');
-    console.log('  • format_text(text, style) - Format text with styles');
-    console.log('  • validate_json(json_string) - Validate and parse JSON');
-    console.log('  • count_words(text) - Count words, characters, lines');
-    console.log('  • reverse_text(text) - Reverse text characters');
-    console.log('  • trim_text(text, mode) - Trim whitespace');
+    console.log('  Built-in Text Tools:');
+    console.log('    • format_text(text, style) - Format text with styles');
+    console.log('    • validate_json(json_string) - Validate and parse JSON');
+    console.log('    • count_words(text) - Count words, characters, lines');
+    console.log('    • reverse_text(text) - Reverse text characters');
+    console.log('    • trim_text(text, mode) - Trim whitespace');
+    console.log('  Git Tools (via MCP):');
+
+    const mcpTools = toolRegistry.getAllTools();
+    if (mcpTools.length > 0) {
+      for (const tool of mcpTools) {
+        console.log(`    • ${tool.name} - ${tool.description}`);
+      }
+    } else {
+      console.log('    (No MCP tools available)');
+    }
+
+    console.log('  Diagnostic Tools:');
+    console.log('    • git_health_check() - Check Git accessibility');
     console.log();
     console.log('Subscribed to Events:');
     console.log('  • text.processing - All text processing events');
@@ -365,11 +541,18 @@ async function main() {
     console.log('Press Ctrl+C to stop the agent...');
     console.log('='.repeat(60));
 
-    // Publish connection event
+    // Publish connection event with all tools
+    const allToolNames = [
+      'format_text', 'validate_json', 'count_words', 'reverse_text', 'trim_text',
+      'git_health_check',
+      ...mcpTools.map(t => t.name)
+    ];
+
     client.publishEvent('agent.connected', {
-      name: 'text-processor-typescript',
+      name: 'typescript-agent',
       networks: config.networks,
-      tools: ['format_text', 'validate_json', 'count_words', 'reverse_text', 'trim_text'],
+      tools: allToolNames,
+      gitBaseDir: config.gitBaseDir,
       timestamp: Date.now()
     });
 
@@ -399,6 +582,15 @@ process.on('SIGTERM', async () => {
   console.log('='.repeat(60));
   console.log('👋 Shutting down TypeScript Text Processing Agent...');
   console.log('='.repeat(60));
+
+  // Shutdown MCP clients first
+  try {
+    await toolRegistry.shutdown();
+  } catch (error) {
+    console.error('Error shutting down MCP clients:', error);
+  }
+
+  // Then disconnect from KADI broker
   await client.disconnect();
   process.exit(0);
 });
@@ -408,6 +600,15 @@ process.on('SIGINT', async () => {
   console.log('='.repeat(60));
   console.log('👋 Shutting down TypeScript Text Processing Agent...');
   console.log('='.repeat(60));
+
+  // Shutdown MCP clients first
+  try {
+    await toolRegistry.shutdown();
+  } catch (error) {
+    console.error('Error shutting down MCP clients:', error);
+  }
+
+  // Then disconnect from KADI broker
   await client.disconnect();
   process.exit(0);
 });
