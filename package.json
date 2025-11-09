@@ -10,7 +10,8 @@
     "build": "tsc",
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
-    "test": "vitest"
+    "test": "vitest",
+    "postinstall": "patch-package"
   },
   "keywords": [
     "kadi",
@@ -24,6 +25,8 @@
   "license": "MIT",
   "dependencies": {
     "@kadi.build/core": "file:../kadi/kadi-core",
+    "@modelcontextprotocol/sdk": "^1.21.1",
+    "dotenv": "^16.4.5",
     "zod": "^3.22.4"
   },
   "devDependencies": {
@@ -31,6 +34,7 @@
     "@typescript-eslint/eslint-plugin": "^6.19.0",
     "@typescript-eslint/parser": "^6.19.0",
     "eslint": "^8.56.0",
+    "patch-package": "^8.0.1",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3",
     "vitest": "^1.2.0"
