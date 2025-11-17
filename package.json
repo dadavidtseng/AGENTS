@@ -24,6 +24,7 @@
   "author": "ProtogameJS3D Team",
   "license": "MIT",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
     "@kadi.build/core": "file:../kadi/kadi-core",
     "@modelcontextprotocol/sdk": "^1.21.1",
     "dotenv": "^16.4.5",
@@ -33,6 +34,7 @@
     "@types/node": "^20.11.0",
     "@typescript-eslint/eslint-plugin": "^6.19.0",
     "@typescript-eslint/parser": "^6.19.0",
+    "@vitest/coverage-v8": "^1.6.1",
     "eslint": "^8.56.0",
     "patch-package": "^8.0.1",
     "tsx": "^4.7.0",
