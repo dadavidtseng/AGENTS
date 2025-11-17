@@ -1,159 +1,373 @@
 /**
- * Multi-Purpose KĀDI Agent with MCP Integration
- * ============================================
+ * TypeScript Agent Template for KĀDI Protocol
+ * ===========================================
  *
- * This agent provides:
- * - Text processing tools (built-in)
- * - Git operations via MCP server (27 tools)
- * - Worktree management
- * - Event pub/sub system
- * - WebSocket communication with KĀDI broker
+ * TEMPLATE USAGE:
+ * This file serves as a template for creating new KĀDI agents in TypeScript.
+ * Follow these steps to customize:
+ *
+ * 1. Replace tool definitions (lines 35-95) with your own Zod schemas
+ * 2. Update agent metadata in KadiClient config (lines 110-116)
+ * 3. Replace tool handlers (lines 122-293) with your business logic
+ * 4. Update event topics and payloads to match your domain
+ * 5. Modify networks array to join appropriate KĀDI networks
+ * 6. Update documentation comments with your agent's purpose
+ *
+ * ARCHITECTURE:
+ * This agent demonstrates broker-centralized architecture where:
+ * - Agent registers its own tools with the KĀDI broker
+ * - Agent can call broker's tools via client.load() (see examples/)
+ * - No MCP server spawning in agent code
+ * - Broker handles all tool routing and network isolation
+ *
+ * Built-in tools (customize these):
+ * - Text processing (format, validate, count, reverse, trim)
+ *
+ * Broker-provided tools (access via client.load()):
+ * - Git operations (from broker's git-mcp-server on 'git' network)
+ * - Filesystem operations (from broker's fs-mcp-server on 'global' network)
  *
  * Dependencies:
- * - @kadi.build/core: KĀDI protocol client library
- * - zod: Schema validation and type inference
- * - @cyanheads/git-mcp-server: Git operations via MCP
+ * - @kadi.build/core: KĀDI protocol client library with KadiClient and Zod
+ * - dotenv: Environment variable loading
  *
  * Usage:
- *     npm start
- *     # or
- *     npm run dev (with hot-reload)
+ *     npm start              # Production mode
+ *     npm run dev            # Development mode with hot-reload
+ *     npm run build          # Compile TypeScript
+ *     npm test               # Run test suite
  *
  * Environment Variables:
  *     KADI_BROKER_URL: WebSocket URL for KĀDI broker (default: ws://localhost:8080)
- *     KADI_NETWORK: Network to join (default: global,text,git)
- *     GIT_BASE_DIR: Base directory for Git operations (default: current directory)
+ *     KADI_NETWORK: Networks to join, comma-separated (default: global,text,git,slack,discord)
+ *
+ * @module typescript-agent-template
+ * @version 2.0.0
+ * @license MIT
  */
 
 import 'dotenv/config';
 import { KadiClient, z } from '@kadi.build/core';
-import { ToolRegistry } from './core/tool-registry.js';
-import mcpServersConfig from './config/mcp-servers.json' with { type: 'json' };
+import { registerAllTools } from './tools/index.js';
 
 // ============================================================================
 // Tool Schemas (Zod Schemas)
 // ============================================================================
+//
+// TEMPLATE PATTERN: Define input/output schemas using Zod
+//
+// 1. Define input schema with z.object()
+// 2. Define output schema with z.object()
+// 3. Use .describe() on all fields for auto-generated documentation
+// 4. Infer TypeScript types using z.infer<typeof schema>
+// 5. Use inferred types in tool handler function signatures
+//
+// TODO: Replace these example schemas with your agent's tool schemas
+// ============================================================================
 
+/**
+ * Input schema for format_text tool
+ *
+ * @example
+ * ```typescript
+ * const input: FormatTextInput = {
+ *   text: 'hello world',
+ *   style: 'uppercase'
+ * };
+ * ```
+ */
 const formatTextInputSchema = z.object({
   text: z.string().describe('Text to format'),
   style: z.enum(['uppercase', 'lowercase', 'capitalize', 'title']).describe('Formatting style to apply')
 });
 
+/**
+ * Output schema for format_text tool
+ *
+ * @example
+ * ```typescript
+ * const output: FormatTextOutput = {
+ *   result: 'HELLO WORLD',
+ *   original_length: 11,
+ *   formatted_length: 11
+ * };
+ * ```
+ */
 const formatTextOutputSchema = z.object({
   result: z.string().describe('Formatted text'),
   original_length: z.number().describe('Length of original text'),
   formatted_length: z.number().describe('Length of formatted text')
 });
 
+/** Input schema for validate_json tool */
 const validateJsonInputSchema = z.object({
   json_string: z.string().describe('JSON string to validate')
 });
 
+/** Output schema for validate_json tool */
 const validateJsonOutputSchema = z.object({
   valid: z.boolean().describe('Whether the JSON is valid'),
   parsed: z.any().optional().describe('Parsed JSON object if valid'),
   error: z.string().optional().describe('Error message if invalid')
 });
 
+/** Input schema for count_words tool */
 const countWordsInputSchema = z.object({
   text: z.string().describe('Text to analyze')
 });
 
+/** Output schema for count_words tool */
 const countWordsOutputSchema = z.object({
   words: z.number().describe('Number of words'),
   characters: z.number().describe('Number of characters'),
   lines: z.number().describe('Number of lines')
 });
 
+/** Input schema for reverse_text tool */
 const reverseTextInputSchema = z.object({
   text: z.string().describe('Text to reverse')
 });
 
+/** Output schema for reverse_text tool */
 const reverseTextOutputSchema = z.object({
   result: z.string().describe('Reversed text'),
   length: z.number().describe('Length of text')
 });
 
+/** Input schema for trim_text tool */
 const trimTextInputSchema = z.object({
   text: z.string().describe('Text to trim'),
-  mode: z.enum(['both', 'start', 'end']).describe('Where to trim whitespace')
+  mode: z.enum(['both', 'start', 'end']).describe('Trimming mode')
 });
 
+/** Output schema for trim_text tool */
 const trimTextOutputSchema = z.object({
   result: z.string().describe('Trimmed text'),
-  removed_chars: z.number().describe('Number of whitespace characters removed')
+  removed_chars: z.number().describe('Number of characters removed')
 });
 
-// Type inference from Zod schemas
+// ============================================================================
+// Type Inference from Schemas
+// ============================================================================
+//
+// TEMPLATE PATTERN: Use z.infer to derive TypeScript types from Zod schemas
+//
+// Benefits:
+// - Single source of truth (schema defines both validation and types)
+// - Automatic type safety in tool handlers
+// - No manual type duplication
+// - Changes to schemas automatically update types
+//
+// TODO: Add type inference for your custom schemas
+// ============================================================================
+
+/** Inferred TypeScript type for format_text input */
 type FormatTextInput = z.infer<typeof formatTextInputSchema>;
+
+/** Inferred TypeScript type for format_text output */
 type FormatTextOutput = z.infer<typeof formatTextOutputSchema>;
+
+/** Inferred TypeScript type for validate_json input */
 type ValidateJsonInput = z.infer<typeof validateJsonInputSchema>;
+
+/** Inferred TypeScript type for validate_json output */
 type ValidateJsonOutput = z.infer<typeof validateJsonOutputSchema>;
+
+/** Inferred TypeScript type for count_words input */
 type CountWordsInput = z.infer<typeof countWordsInputSchema>;
+
+/** Inferred TypeScript type for count_words output */
 type CountWordsOutput = z.infer<typeof countWordsOutputSchema>;
+
+/** Inferred TypeScript type for reverse_text input */
 type ReverseTextInput = z.infer<typeof reverseTextInputSchema>;
+
+/** Inferred TypeScript type for reverse_text output */
 type ReverseTextOutput = z.infer<typeof reverseTextOutputSchema>;
+
+/** Inferred TypeScript type for trim_text input */
 type TrimTextInput = z.infer<typeof trimTextInputSchema>;
+
+/** Inferred TypeScript type for trim_text output */
 type TrimTextOutput = z.infer<typeof trimTextOutputSchema>;
+
+/**
+ * Input schema for create_file tool
+ *
+ * @example
+ * ```typescript
+ * const input: CreateFileInput = {
+ *   filename: 'placeholder.txt',
+ *   content: 'This is placeholder content'
+ * };
+ * ```
+ */
+const createFileInputSchema = z.object({
+  filename: z.string().describe('Name of the file to create'),
+  content: z.string().describe('Content to write to the file')
+});
+
+/**
+ * Output schema for create_file tool
+ *
+ * @example
+ * ```typescript
+ * const output: CreateFileOutput = {
+ *   success: true,
+ *   filepath: '/path/to/placeholder.txt',
+ *   bytes_written: 27
+ * };
+ * ```
+ */
+const createFileOutputSchema = z.object({
+  success: z.boolean().describe('Whether file was created successfully'),
+  filepath: z.string().describe('Absolute path to created file'),
+  bytes_written: z.number().describe('Number of bytes written to file')
+});
+
+/** Inferred TypeScript type for create_file input */
+type CreateFileInput = z.infer<typeof createFileInputSchema>;
+
+/** Inferred TypeScript type for create_file output */
+type CreateFileOutput = z.infer<typeof createFileOutputSchema>;
+
+/**
+ * Input schema for agent_send_slack_message tool
+ */
+const agentSendSlackMessageInputSchema = z.object({
+  channel: z.string().describe('Slack channel ID (e.g., C09T6RU41HP)'),
+  text: z.string().describe('Message text to send'),
+  thread_ts: z.string().optional().describe('Optional thread timestamp')
+});
+
+/**
+ * Output schema for agent_send_slack_message tool
+ */
+const agentSendSlackMessageOutputSchema = z.object({
+  success: z.boolean().describe('Whether message was sent successfully'),
+  message: z.string().describe('Result message from Slack'),
+  timestamp: z.string().optional().describe('Slack message timestamp')
+});
+
+type AgentSendSlackMessageInput = z.infer<typeof agentSendSlackMessageInputSchema>;
+type AgentSendSlackMessageOutput = z.infer<typeof agentSendSlackMessageOutputSchema>;
 
 // ============================================================================
 // Configuration
 // ============================================================================
+//
+// TEMPLATE PATTERN: Load configuration from environment variables
+//
+// TODO: Customize these defaults for your agent
+// - brokerUrl: Change if using different broker
+// - networks: Update to match your agent's network requirements
+//
+// Common KĀDI networks:
+// - 'global': All agents can see tools on this network
+// - 'text': Domain-specific network for text processing
+// - 'git': Domain-specific network for git operations
+// - 'discord': Domain-specific network for Discord bot operations
+// ============================================================================
 
+/**
+ * Agent configuration loaded from environment variables
+ */
 const config = {
+  /** WebSocket URL for KĀDI broker */
   brokerUrl: process.env.KADI_BROKER_URL || 'ws://localhost:8080',
-  networks: (process.env.KADI_NETWORK || 'global,text,git').split(','),
-  gitBaseDir: process.env.GIT_BASE_DIR || process.cwd()
+
+  /** Networks to join (comma-separated in env var) */
+  networks: (process.env.KADI_NETWORK || 'global,text,git,slack,discord').split(',')
 };
-
-// Convert Windows path for MCP server compatibility
-// The MCP server requires Unix-style paths starting with "/"
-// On Windows, convert C:\path\to\dir to /path/to/dir (removing drive letter)
-let gitBaseDirNormalized = config.gitBaseDir.replace(/\\/g, '/');
-if (gitBaseDirNormalized.match(/^[A-Z]:/i)) {
-  // Remove Windows drive letter: C:/path -> /path
-  gitBaseDirNormalized = gitBaseDirNormalized.slice(2);
-}
-
-// Update MCP server config with GIT_BASE_DIR from environment
-// Using batch wrapper (launch-git-mcp.bat) to set PATH explicitly
-if (mcpServersConfig.servers && mcpServersConfig.servers[0]) {
-  mcpServersConfig.servers[0].env = {
-    ...mcpServersConfig.servers[0].env,
-    GIT_BASE_DIR: gitBaseDirNormalized
-  };
-
-  console.log(`✓ MCP Server Environment configured:`);
-  console.log(`  - GIT_BASE_DIR: ${gitBaseDirNormalized}`);
-  console.log(`  - Using batch wrapper: launch-git-mcp.bat (sets PATH internally)`);
-}
 
 // ============================================================================
 // KĀDI Client
 // ============================================================================
+//
+// TEMPLATE PATTERN: Initialize KadiClient with agent metadata
+//
+// TODO: Update these fields for your agent
+// - name: Unique agent identifier (kebab-case recommended)
+// - version: Semantic version of your agent
+// - role: Always 'agent' for agent processes
+// - broker: Broker WebSocket URL from config
+// - networks: Array of network names to join
+//
+// The client instance is used to:
+// 1. Register tools (client.registerTool)
+// 2. Publish events (client.publishEvent)
+// 3. Load broker tools (client.load)
+// 4. Connect and serve (client.serve)
+// ============================================================================
 
+/**
+ * KĀDI protocol client instance
+ *
+ * This client handles:
+ * - WebSocket connection to broker
+ * - Ed25519 authentication
+ * - Tool registration and invocation
+ * - Event pub/sub
+ * - Network isolation
+ */
 const client = new KadiClient({
-  name: 'typescript-agent',
-  version: '2.0.0',
+  name: process.env.AGENT_NAME || 'typescript-agent',
+  version: process.env.AGENT_VERSION || '1.0.0',
   role: 'agent',
   broker: config.brokerUrl,
   networks: config.networks
 });
 
 // ============================================================================
-// Tool Registrations
+// Tool Definitions
+// ============================================================================
+//
+// TEMPLATE PATTERN: Register tools with client.registerTool()
+//
+// Structure:
+// 1. client.registerTool({ metadata }, handler)
+// 2. Metadata: name, description, input schema, output schema
+// 3. Handler: async function with typed params and return value
+// 4. Handler should: validate, execute logic, publish events, return result
+//
+// Best Practices:
+// - Use emoji in console.log for visual distinction (📝 ✅ ❌ 🔍 etc.)
+// - Publish events for significant operations (success and error)
+// - Include agent name in event payloads for traceability
+// - Return structured data matching output schema
+// - Use try/catch for operations that might fail
+//
+// TODO: Replace these example tools with your agent's tools
 // ============================================================================
 
+/**
+ * Tool 1: Format Text
+ *
+ * Formats text with different styling options: uppercase, lowercase,
+ * capitalize (first letter), or title case (all words).
+ *
+ * @param params - Input parameters matching FormatTextInput schema
+ * @returns Formatted text with length metadata
+ *
+ * @example
+ * ```typescript
+ * const result = await client.invokeTool('format_text', {
+ *   text: 'hello world',
+ *   style: 'uppercase'
+ * });
+ * // Returns: { result: 'HELLO WORLD', original_length: 11, formatted_length: 11 }
+ * ```
+ */
 client.registerTool({
   name: 'format_text',
-  description: 'Format text with various styles (uppercase, lowercase, capitalize, title)',
+  description: 'Format text with different styles (uppercase, lowercase, capitalize, title case)',
   input: formatTextInputSchema,
   output: formatTextOutputSchema
 }, async (params: FormatTextInput): Promise<FormatTextOutput> => {
-  /**
-   * Format text according to specified style.
-   */
+  console.log(`📝 Formatting text with style: ${params.style}`);
+
   let result: string;
+  const originalLength = params.text.length;
 
   switch (params.style) {
     case 'uppercase':
@@ -166,65 +380,82 @@ client.registerTool({
       result = params.text.charAt(0).toUpperCase() + params.text.slice(1).toLowerCase();
       break;
     case 'title':
-      result = params.text.split(' ')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-        .join(' ');
+      result = params.text.replace(/\b\w/g, char => char.toUpperCase());
       break;
   }
 
-  console.log(`📝 Format Text: "${params.text}" → "${result}" (style: ${params.style})`);
+  const formattedLength = result.length;
 
-  // Publish event when formatting completes
+  // TEMPLATE PATTERN: Publish event for successful operation
+  // TODO: Replace 'text.processing' with your domain-specific event topic
+  // TODO: Replace 'text-processor-typescript' with your agent name
   client.publishEvent('text.processing', {
-    operation: 'format',
+    operation: 'format_text',
     style: params.style,
-    original_length: params.text.length,
-    formatted_length: result.length,
-    agent: 'text-processor-typescript'
+    original_length: originalLength,
+    formatted_length: formattedLength,
+    agent: 'text-processor-typescript'  // TODO: Replace with your agent name
   });
 
   return {
     result,
-    original_length: params.text.length,
-    formatted_length: result.length
+    original_length: originalLength,
+    formatted_length: formattedLength
   };
 });
 
+/**
+ * Tool 2: Validate JSON
+ *
+ * Validates and parses JSON strings, returning either the parsed object
+ * or an error message if invalid.
+ *
+ * @param params - Input parameters with json_string to validate
+ * @returns Validation result with parsed data or error message
+ *
+ * @example
+ * ```typescript
+ * const result = await client.invokeTool('validate_json', {
+ *   json_string: '{"name": "Alice", "age": 30}'
+ * });
+ * // Returns: { valid: true, parsed: { name: 'Alice', age: 30 } }
+ * ```
+ */
 client.registerTool({
   name: 'validate_json',
-  description: 'Validate JSON string and parse if valid',
+  description: 'Validate and parse JSON strings',
   input: validateJsonInputSchema,
   output: validateJsonOutputSchema
 }, async (params: ValidateJsonInput): Promise<ValidateJsonOutput> => {
-  /**
-   * Validate and parse JSON string.
-   */
+  console.log('🔍 Validating JSON string');
+
+  // TEMPLATE PATTERN: Use try/catch for operations that might fail
   try {
     const parsed = JSON.parse(params.json_string);
-
-    console.log(`✅ Valid JSON: ${params.json_string.substring(0, 50)}...`);
 
     client.publishEvent('text.processing', {
       operation: 'validate_json',
       valid: true,
-      agent: 'text-processor-typescript'
+      agent: 'text-processor-typescript'  // TODO: Replace
     });
 
     return {
       valid: true,
       parsed
     };
-  } catch (error) {
+  } catch (error: any) {
+    // TEMPLATE PATTERN: Type guard for Error instances
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
 
-    console.log(`❌ Invalid JSON: ${errorMsg}`);
-
+    // TEMPLATE PATTERN: Publish error events to separate topic
+    // TODO: Replace 'text.error' with your domain-specific error topic
     client.publishEvent('text.error', {
       operation: 'validate_json',
       error: errorMsg,
-      agent: 'text-processor-typescript'
+      agent: 'text-processor-typescript'  // TODO: Replace
     });
 
+    // TEMPLATE PATTERN: Return structured error (don't throw)
     return {
       valid: false,
       error: errorMsg
@@ -232,66 +463,92 @@ client.registerTool({
   }
 });
 
+/**
+ * Tool 3: Count Words
+ *
+ * Analyzes text to count words, characters, and lines.
+ *
+ * @param params - Input parameters with text to analyze
+ * @returns Word count, character count, and line count
+ */
 client.registerTool({
   name: 'count_words',
   description: 'Count words, characters, and lines in text',
   input: countWordsInputSchema,
   output: countWordsOutputSchema
 }, async (params: CountWordsInput): Promise<CountWordsOutput> => {
-  /**
-   * Count words, characters, and lines in text.
-   */
-  const words = params.text.trim().split(/\s+/).filter(w => w.length > 0).length;
+  console.log('🔢 Counting words in text');
+
+  const words = params.text.trim() ? params.text.trim().split(/\s+/).length : 0;
   const characters = params.text.length;
   const lines = params.text.split('\n').length;
-
-  console.log(`📊 Count: ${words} words, ${characters} chars, ${lines} lines`);
 
   client.publishEvent('text.processing', {
     operation: 'count_words',
     words,
     characters,
     lines,
-    agent: 'text-processor-typescript'
+    agent: 'text-processor-typescript'  // TODO: Replace
   });
 
-  return { words, characters, lines };
+  return {
+    words,
+    characters,
+    lines
+  };
 });
 
+/**
+ * Tool 4: Reverse Text
+ *
+ * Reverses the order of characters in the input text.
+ *
+ * @param params - Input parameters with text to reverse
+ * @returns Reversed text with length metadata
+ */
 client.registerTool({
   name: 'reverse_text',
   description: 'Reverse the order of characters in text',
   input: reverseTextInputSchema,
   output: reverseTextOutputSchema
 }, async (params: ReverseTextInput): Promise<ReverseTextOutput> => {
-  /**
-   * Reverse text character by character.
-   */
-  const result = params.text.split('').reverse().join('');
+  console.log('🔄 Reversing text');
 
-  console.log(`🔄 Reverse: "${params.text}" → "${result}"`);
+  const result = params.text.split('').reverse().join('');
+  const length = result.length;
 
   client.publishEvent('text.processing', {
-    operation: 'reverse',
-    length: params.text.length,
-    agent: 'text-processor-typescript'
+    operation: 'reverse_text',
+    length,
+    agent: 'text-processor-typescript'  // TODO: Replace
   });
 
   return {
     result,
-    length: params.text.length
+    length
   };
 });
 
+/**
+ * Tool 5: Trim Text
+ *
+ * Trims whitespace from text with configurable mode:
+ * - 'both': Trim from both ends (default trim())
+ * - 'start': Trim from start only (trimStart())
+ * - 'end': Trim from end only (trimEnd())
+ *
+ * @param params - Input parameters with text and mode
+ * @returns Trimmed text with count of removed characters
+ */
 client.registerTool({
   name: 'trim_text',
-  description: 'Remove whitespace from text (both sides, start, or end)',
+  description: 'Trim whitespace from text (both ends, start only, or end only)',
   input: trimTextInputSchema,
   output: trimTextOutputSchema
 }, async (params: TrimTextInput): Promise<TrimTextOutput> => {
-  /**
-   * Trim whitespace from text.
-   */
+  console.log(`✂️  Trimming text (mode: ${params.mode})`);
+
+  const originalLength = params.text.length;
   let result: string;
 
   switch (params.mode) {
@@ -306,212 +563,229 @@ client.registerTool({
       break;
   }
 
-  const removed = params.text.length - result.length;
-
-  console.log(`✂️ Trim: removed ${removed} chars (mode: ${params.mode})`);
+  const removedChars = originalLength - result.length;
 
   client.publishEvent('text.processing', {
-    operation: 'trim',
+    operation: 'trim_text',
     mode: params.mode,
-    removed_chars: removed,
-    agent: 'text-processor-typescript'
+    removed_chars: removedChars,
+    agent: 'text-processor-typescript'  // TODO: Replace
   });
 
   return {
     result,
-    removed_chars: removed
+    removed_chars: removedChars
   };
 });
 
-// ============================================================================
-// Event Subscriptions
-// ============================================================================
-
-client.subscribeToEvent('text.processing', (data: any) => {
-  const agent = data.agent || 'unknown';
-  const operation = data.operation || 'unknown';
-
-  console.log(`🔔 [${agent}] Text processing event: ${operation}`);
-});
-
-client.subscribeToEvent('text.error', (data: any) => {
-  const agent = data.agent || 'unknown';
-  const operation = data.operation || 'unknown';
-  const error = data.error || 'Unknown error';
-
-  console.log(`⚠️ [${agent}] Error in ${operation}: ${error}`);
-});
-
-client.subscribeToEvent('agent.connected', (data: any) => {
-  const agentName = data.name || 'unknown';
-  const networks = data.networks || [];
-
-  console.log(`🟢 Agent connected: ${agentName} on networks: ${networks.join(', ')}`);
-});
-
-// ============================================================================
-// MCP Tool Registry
-// ============================================================================
-
-const toolRegistry = new ToolRegistry();
-
 /**
- * Initialize MCP servers and register their tools with KADI
- */
-async function initializeMCPTools(): Promise<void> {
-  console.log('🔧 Initializing MCP tools...');
-
-  try {
-    // Initialize MCP servers (connects and discovers tools)
-    await toolRegistry.initialize(mcpServersConfig.servers);
-
-    // Get raw MCP tool definitions (with JSON Schemas)
-    // Access the private mcpClients map to get original MCP tool definitions
-    const mcpClients = (toolRegistry as any).mcpClients as Map<string, any>;
-    const rawMCPTools = Array.from(mcpClients.values())
-      .flatMap(client => client.getTools());
-
-    console.log(`📦 Discovered ${rawMCPTools.length} MCP tools with JSON Schemas`);
-
-    for (const mcpTool of rawMCPTools) {
-      try {
-        // Use JSON Schema approach to bypass Zod conversion
-        // This directly passes MCP's JSON Schemas to KADI without conversion
-        client.registerTool({
-          name: mcpTool.name,
-          description: mcpTool.description,
-          inputSchema: mcpTool.inputSchema as any,  // MCP JSON Schema (used as-is)
-          outputSchema: {
-            type: 'object',
-            properties: {
-              content: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    type: { type: 'string' },
-                    text: { type: 'string' }
-                  }
-                }
-              },
-              isError: { type: 'boolean' }
-            },
-            additionalProperties: true  // Allow extra fields
-          } as any,
-        }, async (params: any): Promise<any> => {
-          console.log(`🔨 Invoking MCP tool: ${mcpTool.name}`);
-
-          try {
-            const result = await toolRegistry.invokeTool(mcpTool.name, params);
-
-            // Publish success event
-            client.publishEvent('git.tool.success', {
-              tool: mcpTool.name,
-              params,
-              agent: 'typescript-agent'
-            });
-
-            return result;
-          } catch (error: any) {
-            const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-
-            console.error(`❌ MCP tool ${mcpTool.name} failed:`, errorMsg);
-
-            // Publish error event
-            client.publishEvent('git.tool.error', {
-              tool: mcpTool.name,
-              error: errorMsg,
-              agent: 'typescript-agent'
-            });
-
-            throw error;
-          }
-        });
-
-        console.log(`  ✅ Registered MCP tool as KADI tool: ${mcpTool.name}`);
-      } catch (error: any) {
-        console.error(`  ❌ Failed to register ${mcpTool.name}:`, error.message);
-        throw error; // Re-throw to fail fast and see which tool causes the issue
-      }
-    }
-
-    console.log(`✅ MCP integration complete: ${rawMCPTools.length} Git tools registered with KADI`);
-
-  } catch (error: any) {
-    console.error('❌ Failed to initialize MCP tools:', error.message);
-    console.error('   Agent will continue with built-in text tools only');
-    // Don't throw - allow agent to run with built-in tools even if MCP fails
-  }
-}
-
-/**
- * Git health check tool - verifies Git executable is accessible
+ * Tool 6: Create File
+ *
+ * Creates a new file with specified content in the current directory.
+ * This demonstrates file I/O operations in a KĀDI agent.
+ *
+ * @param params - Input parameters with filename and content
+ * @returns File creation result with path and bytes written
+ *
+ * @example
+ * ```typescript
+ * const result = await client.invokeTool('create_file', {
+ *   filename: 'placeholder.txt',
+ *   content: 'This is placeholder content'
+ * });
+ * // Returns: { success: true, filepath: '/path/to/placeholder.txt', bytes_written: 27 }
+ * ```
  */
 client.registerTool({
-  name: 'git_health_check',
-  description: 'Check if Git is accessible and report version information',
-  input: z.object({}),
-  output: z.object({
-    accessible: z.boolean().describe('Whether Git is accessible'),
-    version: z.string().optional().describe('Git version string if accessible'),
-    error: z.string().optional().describe('Error message if not accessible')
-  })
-}, async (): Promise<{ accessible: boolean; version?: string; error?: string }> => {
-  console.log('🏥 Running Git health check...');
+  name: 'create_file',
+  description: 'Create a new file with specified content',
+  input: createFileInputSchema,
+  output: createFileOutputSchema
+}, async (params: CreateFileInput): Promise<CreateFileOutput> => {
+  console.log(`📄 Creating file: ${params.filename}`);
+
+  // Import Node.js filesystem module
+  const fs = await import('fs/promises');
+  const path = await import('path');
 
   try {
-    // Try to invoke git_status tool through MCP
-    const result = await toolRegistry.invokeTool('git_status', {});
+    // Get absolute path
+    const filepath = path.resolve(process.cwd(), params.filename);
 
-    console.log('✅ Git health check passed');
+    // Write file to disk
+    await fs.writeFile(filepath, params.content, 'utf-8');
+
+    // Get file size
+    const stats = await fs.stat(filepath);
+    const bytesWritten = stats.size;
+
+    console.log(`✅ File created: ${filepath} (${bytesWritten} bytes)`);
+
+    // Publish success event
+    client.publishEvent('file.created', {
+      operation: 'create_file',
+      filename: params.filename,
+      filepath,
+      bytes_written: bytesWritten,
+      agent: 'typescript-agent'
+    });
 
     return {
-      accessible: true,
-      version: 'Available via MCP (git-mcp-server)'
+      success: true,
+      filepath,
+      bytes_written: bytesWritten
     };
   } catch (error: any) {
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`❌ Failed to create file: ${error.message}`);
 
-    console.error('❌ Git health check failed:', errorMsg);
+    // Publish error event
+    client.publishEvent('file.error', {
+      operation: 'create_file',
+      filename: params.filename,
+      error: error.message,
+      agent: 'typescript-agent'
+    });
 
     return {
-      accessible: false,
-      error: errorMsg
+      success: false,
+      filepath: '',
+      bytes_written: 0
     };
   }
 });
+
+/**
+ * Tool 7: Send Slack Message (via Broker MCP Upstream)
+ *
+ * Sends a message to Slack by invoking the broker's Slack MCP upstream tool.
+ * This demonstrates how a KĀDI agent can call MCP upstream tools.
+ *
+ * @param params - Input parameters with channel and text
+ * @returns Slack send result with success status and timestamp
+ */
+client.registerTool({
+  name: 'agent_send_slack_message',
+  description: 'Send a message to Slack channel via broker MCP upstream',
+  input: agentSendSlackMessageInputSchema,
+  output: agentSendSlackMessageOutputSchema
+}, async (params: AgentSendSlackMessageInput): Promise<AgentSendSlackMessageOutput> => {
+  console.log(`💬 Sending Slack message to channel: ${params.channel}`);
+
+  try {
+    // Get broker protocol to invoke MCP upstream tools
+    const protocol = client.getBrokerProtocol();
+
+    // Invoke Slack MCP upstream tool
+    // Note: Tool name is double-prefixed (slack_slack_send_message)
+    const result = await protocol.invokeTool({
+      targetAgent: 'slack',
+      toolName: 'slack_slack_send_message',
+      toolInput: {
+        channel: params.channel,
+        text: params.text,
+        thread_ts: params.thread_ts
+      },
+      timeout: 30000
+    });
+
+    console.log(`✅ Slack message sent successfully`);
+
+    // Extract timestamp from result
+    const resultStr = String((result as any).result || '');
+    const timestampMatch = resultStr.match(/Timestamp: ([\d.]+)/);
+    const timestamp = timestampMatch ? timestampMatch[1] : undefined;
+
+    // Publish success event
+    client.publishEvent('slack.message_sent', {
+      operation: 'agent_send_slack_message',
+      channel: params.channel,
+      timestamp,
+      agent: 'typescript-agent'
+    });
+
+    return {
+      success: true,
+      message: resultStr,
+      timestamp
+    };
+  } catch (error: any) {
+    console.error(`❌ Failed to send Slack message: ${error.message}`);
+
+    // Publish error event
+    client.publishEvent('slack.error', {
+      operation: 'agent_send_slack_message',
+      channel: params.channel,
+      error: error.message,
+      agent: 'typescript-agent'
+    });
+
+    return {
+      success: false,
+      message: `Error: ${error.message}`,
+      timestamp: undefined
+    };
+  }
+});
+
+// ============================================================================
+// Custom Tool Registry
+// ============================================================================
+//
+// TEMPLATE PATTERN: Pluggable tool system
+//
+// Add custom tools by creating files in src/tools/ directory.
+// Tools are automatically loaded from the registry.
+//
+// See src/tools/index.ts for more information.
+//
+registerAllTools(client);
 
 // ============================================================================
 // Main Function
 // ============================================================================
+//
+// TEMPLATE PATTERN: Entry point for agent startup
+//
+// Responsibilities:
+// 1. Print startup banner with configuration
+// 2. List all registered tools (for debugging/monitoring)
+// 3. Connect to broker with client.serve('broker')
+// 4. Handle connection errors gracefully
+//
+// IMPORTANT: client.serve() is a BLOCKING call that:
+// - Connects to broker via WebSocket
+// - Authenticates with Ed25519 key
+// - Registers all tools with broker
+// - Enters event loop (never returns)
+//
+// All informational logs MUST come BEFORE serve() call
+// Code after serve() never executes
+//
+// TODO: Update tool listings to match your agent's tools
+// ============================================================================
 
+/**
+ * Main entry point for the KĀDI agent
+ *
+ * Connects to broker and starts serving tool invocation requests.
+ * This function blocks indefinitely once serve() is called.
+ *
+ * @throws {Error} If broker connection fails
+ */
 async function main() {
   console.log('='.repeat(60));
-  console.log('🚀 Starting TypeScript Text Processing Agent for ProtogameJS3D');
+  console.log('🚀 Starting TypeScript Text Processing Agent');  // TODO: Update agent name
   console.log('='.repeat(60));
   console.log(`Broker URL: ${config.brokerUrl}`);
   console.log(`Networks: ${config.networks.join(', ')}`);
-  console.log(`Git Base Dir: ${config.gitBaseDir}`);
   console.log();
 
   try {
-    // Initialize MCP tools before connecting to broker
-    console.log('⏳ Initializing MCP tools...');
-    await initializeMCPTools();
-    console.log();
-
     console.log('⏳ Connecting to broker...');
     console.log();
 
-    // Note: serve() initiates connection and then keeps the process alive indefinitely
-    // It only returns if there's an error, so we print success info first
-    const servePromise = client.serve('broker');
-
-    // Wait a moment for connection to establish
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    console.log('✅ Connected successfully!');
-    console.log();
+    // TEMPLATE PATTERN: Print tool information BEFORE blocking serve() call
+    // TODO: Update this list to match your registered tools
     console.log('Available Tools:');
     console.log('  Built-in Text Tools:');
     console.log('    • format_text(text, style) - Format text with styles');
@@ -519,98 +793,180 @@ async function main() {
     console.log('    • count_words(text) - Count words, characters, lines');
     console.log('    • reverse_text(text) - Reverse text characters');
     console.log('    • trim_text(text, mode) - Trim whitespace');
-    console.log('  Git Tools (via MCP):');
-
-    const mcpTools = toolRegistry.getAllTools();
-    if (mcpTools.length > 0) {
-      for (const tool of mcpTools) {
-        console.log(`    • ${tool.name} - ${tool.description}`);
-      }
-    } else {
-      console.log('    (No MCP tools available)');
-    }
-
-    console.log('  Diagnostic Tools:');
-    console.log('    • git_health_check() - Check Git accessibility');
     console.log();
-    console.log('Subscribed to Events:');
-    console.log('  • text.processing - All text processing events');
-    console.log('  • text.error - All error events');
-    console.log('  • agent.connected - Agent connection events');
+    console.log('  File Operations:');
+    console.log('    • create_file(filename, content) - Create a new file');
+    console.log();
+    console.log('  Git Tools (via broker on \'git\' network):');
+    console.log('    • git_* tools provided by kadi-broker\'s git-mcp-server');
     console.log();
     console.log('Press Ctrl+C to stop the agent...');
     console.log('='.repeat(60));
+    console.log();
 
-    // Publish connection event with all tools
-    const allToolNames = [
-      'format_text', 'validate_json', 'count_words', 'reverse_text', 'trim_text',
-      'git_health_check',
-      ...mcpTools.map(t => t.name)
-    ];
+    // CRITICAL: serve() is blocking - all logs must come BEFORE this line
+    // Connect to broker and start serving tool invocations
+    // The broker will route tool calls to this agent based on network membership
 
-    client.publishEvent('agent.connected', {
-      name: 'typescript-agent',
-      networks: config.networks,
-      tools: allToolNames,
-      gitBaseDir: config.gitBaseDir,
-      timestamp: Date.now()
-    });
+    // Start Slack Bot after connection is established (async after serve starts)
+    const shouldEnableSlackBot = (process.env.ENABLE_SLACK_BOT === 'true' || process.env.ENABLE_SLACK_BOT === undefined) &&
+                                  process.env.ANTHROPIC_API_KEY &&
+                                  process.env.ANTHROPIC_API_KEY !== 'YOUR_ANTHROPIC_API_KEY_HERE';
+    if (shouldEnableSlackBot) {
+      console.log('🔄 Slack bot will start after broker connection...');
+      console.log();
 
-    // Now wait for the serve promise (which never resolves unless there's an error)
-    await servePromise;
+      // Give serve() a moment to establish connection, then start Slack bot
+      setTimeout(async () => {
+        try {
+          const { SlackBot } = await import('./slack-bot.js');
+          const slackBot = new SlackBot({
+            client,
+            anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
+            pollIntervalMs: parseInt(process.env.BOT_POLL_INTERVAL_MS || '5000'),
+          });
+          slackBot.start();
+          console.log('✅ Slack bot started (polling for @mentions every 10s)');
+        } catch (error) {
+          console.error('❌ Failed to start Slack bot:', error);
+        }
+      }, 2000); // Wait 2 seconds for broker connection
+    } else {
+      console.log('ℹ️  Slack bot disabled (ENABLE_SLACK_BOT=false or ANTHROPIC_API_KEY not configured)');
+      console.log();
+    }
 
-  } catch (error) {
-    console.error('❌ Agent failed to start:', error);
-    console.error();
-    console.error('Troubleshooting:');
-    console.error('  1. Is the KĀDI broker running at', config.brokerUrl, '?');
-    console.error('  2. Try starting the broker with: cd kadi-broker && npm run dev');
-    console.error('  3. Check if the port', config.brokerUrl.split(':')[2], 'is available');
+    // Start Discord bot if enabled via feature flag and API key is configured
+    const shouldEnableDiscordBot = (process.env.ENABLE_DISCORD_BOT === 'true' || process.env.ENABLE_DISCORD_BOT === undefined) &&
+                                    process.env.ANTHROPIC_API_KEY &&
+                                    process.env.ANTHROPIC_API_KEY !== 'YOUR_ANTHROPIC_API_KEY_HERE';
+    if (shouldEnableDiscordBot) {
+      console.log('🤖 Discord Bot Configuration:');
+      console.log('   - Anthropic API Key: Configured ✓');
+      console.log('   - Poll Interval: 5 seconds');
+      console.log('🔄 Discord bot will start after broker connection...');
+      console.log();
+
+      // Give serve() a moment to establish connection, then start Discord bot
+      setTimeout(async () => {
+        try {
+          const { DiscordBot } = await import('./discord-bot.js');
+          const discordBot = new DiscordBot({
+            client,
+            anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
+            pollIntervalMs: parseInt(process.env.BOT_POLL_INTERVAL_MS || '5000'),
+          });
+          discordBot.start();
+          console.log('✅ Discord bot started (polling for @mentions every 5s)');
+        } catch (error) {
+          console.error('❌ Failed to start Discord bot:', error);
+        }
+      }, 2500); // Wait 2.5 seconds for broker connection (slightly after Slack)
+    } else {
+      console.log('ℹ️  Discord bot disabled (ENABLE_DISCORD_BOT=false or ANTHROPIC_API_KEY not configured)');
+      console.log();
+    }
+
+    await client.serve('broker');
+
+    // IMPORTANT: This code never executes because serve() blocks indefinitely
+    // Connection success is visible when tools start being invoked
+    // Connection events and tool listings are printed above
+  } catch (error: any) {
+    console.error('❌ Failed to start agent:', error.message || error);
+    if (error.stack) {
+      console.error('Stack trace:', error.stack);
+    }
     process.exit(1);
   }
 }
 
 // ============================================================================
-// Entry Point
+// Graceful Shutdown
+// ============================================================================
+//
+// TEMPLATE PATTERN: Handle process termination signals
+//
+// SIGINT: Ctrl+C in terminal (user-initiated shutdown)
+// SIGTERM: System termination request (Docker/systemd stop)
+//
+// Both handlers:
+// 1. Disconnect from broker cleanly
+// 2. Log shutdown status
+// 3. Exit with appropriate code (0 for success, 1 for error)
+//
+// This ensures:
+// - Broker knows agent is offline
+// - No orphaned connections
+// - Clean logs for debugging
+//
+// TODO: Add cleanup for any additional resources (databases, files, etc.)
 // ============================================================================
 
-main();
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log();
-  console.log('='.repeat(60));
-  console.log('👋 Shutting down TypeScript Text Processing Agent...');
-  console.log('='.repeat(60));
-
-  // Shutdown MCP clients first
-  try {
-    await toolRegistry.shutdown();
-  } catch (error) {
-    console.error('Error shutting down MCP clients:', error);
-  }
-
-  // Then disconnect from KADI broker
-  await client.disconnect();
-  process.exit(0);
-});
-
+/**
+ * Handle Ctrl+C (SIGINT) for graceful shutdown
+ *
+ * Disconnects from broker and exits cleanly when user presses Ctrl+C
+ */
 process.on('SIGINT', async () => {
-  console.log();
-  console.log('='.repeat(60));
-  console.log('👋 Shutting down TypeScript Text Processing Agent...');
-  console.log('='.repeat(60));
+  console.log('\n⏳ Shutting down gracefully...');
 
-  // Shutdown MCP clients first
   try {
-    await toolRegistry.shutdown();
-  } catch (error) {
-    console.error('Error shutting down MCP clients:', error);
-  }
+    // TEMPLATE PATTERN: Disconnect from broker before exiting
+    await client.disconnect();
+    console.log('✅ Disconnected from broker');
 
-  // Then disconnect from KADI broker
-  await client.disconnect();
-  process.exit(0);
+    // TODO: Add cleanup for any resources your agent owns
+    // Example: await database.close()
+    // Example: await fileHandle.close()
+
+    process.exit(0);
+  } catch (error: any) {
+    console.error('❌ Error during shutdown:', error.message);
+    process.exit(1);
+  }
 });
 
-export default client;
+/**
+ * Handle SIGTERM for graceful shutdown
+ *
+ * Disconnects from broker and exits cleanly when system requests termination
+ * (e.g., Docker stop, systemd stop, kill command)
+ */
+process.on('SIGTERM', async () => {
+  console.log('\n⏳ Shutting down gracefully...');
+
+  try {
+    await client.disconnect();
+    console.log('✅ Disconnected from broker');
+
+    // TODO: Add cleanup for any resources your agent owns
+
+    process.exit(0);
+  } catch (error: any) {
+    console.error('❌ Error during shutdown:', error.message);
+    process.exit(1);
+  }
+});
+
+// ============================================================================
+// Start Agent
+// ============================================================================
+//
+// TEMPLATE PATTERN: Execute main function and handle fatal errors
+//
+// This is the last line of the file - starts the agent immediately when
+// the module is loaded.
+//
+// Fatal errors (thrown before serve() connects) are caught here and logged
+// ============================================================================
+
+/**
+ * Start the agent and handle fatal startup errors
+ *
+ * This executes immediately when the module loads
+ */
+main().catch((error) => {
+  console.error('💥 Fatal error:', error);
+  process.exit(1);
+});
