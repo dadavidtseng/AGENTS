@@ -1,286 +1,376 @@
-# TypeScript Calculator Agent
+# TypeScript Agent Template for KĀDI Protocol
 
-KĀDI calculator agent example for ProtogameJS3D demonstrating multi-language agent communication.
+**Production-ready template for building TypeScript agents in the KĀDI multi-agent ecosystem.**
 
-## Features
+This template demonstrates broker-centralized architecture, type-safe tool definitions with Zod schemas, and integration with broker-provided tools (git, filesystem, etc.). Use it as a starting point for your own KĀDI agents.
 
+## ✨ Features
+
+- ✅ **Broker-Centralized Architecture** - No MCP spawning in agent code
+- ✅ **Type-Safe Tool Definitions** - Zod schemas with automatic TypeScript inference
+- ✅ **Comprehensive Documentation** - JSDoc comments and template patterns throughout
+- ✅ **Production Examples** - Complete workflow examples including git integration
+- ✅ **Template Setup Guide** - Step-by-step customization instructions
 - ✅ **Ed25519 Authentication** - Cryptographic identity verification
-- ✅ **Zod Schema Validation** - Type-safe tool definitions with 77% less code
-- ✅ **Full Type Inference** - TypeScript types automatically derived from Zod schemas
-- ✅ **Event-Driven Architecture** - Pub/sub system for agent coordination
-- ✅ **WebSocket Communication** - Real-time bidirectional messaging
-- ✅ **Cross-Language Compatible** - Works seamlessly with Python, Go, Rust agents
+- ✅ **Event-Driven Architecture** - Pub/sub system for cross-agent coordination
+- ✅ **Cross-Language Compatible** - Works with Python, Go, Rust agents
 - ✅ **Hot-Reload Development** - Fast iteration with `tsx watch`
+- ✅ **Network Isolation** - Domain-specific tool visibility
 
-## Installation
+## 🚀 Quick Start
 
 ### Prerequisites
 
 - Node.js 18.0 or higher
-- npm or pnpm
-- KĀDI broker running (default: `ws://localhost:8080`)
+- KĀDI broker running at `ws://localhost:8080`
+- Access to `@kadi.build/core` package
 
-### Install Dependencies
+### Installation
 
 ```bash
+# Clone or copy this template
+cp -r Agent_TypeScript my-custom-agent
+cd my-custom-agent
+
+# Install dependencies
 npm install
-```
 
-## Usage
+# Configure environment
+cp .env.template .env
+# Edit .env with your configuration (broker URL, API keys, etc.)
 
-### Basic Usage
-
-```bash
-npm start
-```
-
-### Development Mode (with hot-reload)
-
-```bash
+# Run in development mode
 npm run dev
 ```
 
-### Build for Production
+### Customization
+
+See **[TEMPLATE_SETUP.md](./TEMPLATE_SETUP.md)** for detailed customization guide.
+
+## 📦 What's Included
+
+### Example Tools
+
+The template includes 5 text processing tools as examples:
+
+| Tool | Description | Input | Output |
+|------|-------------|-------|--------|
+| `format_text` | Format text with styles (uppercase, lowercase, capitalize, title) | `{text, style}` | `{result, original_length, formatted_length}` |
+| `validate_json` | Validate and parse JSON strings | `{json_string}` | `{valid, parsed?, error?}` |
+| `count_words` | Count words, characters, and lines | `{text}` | `{words, characters, lines}` |
+| `reverse_text` | Reverse character order | `{text}` | `{result, length}` |
+| `trim_text` | Trim whitespace (both/start/end) | `{text, mode}` | `{result, removed_chars}` |
+
+**Replace these with your own domain-specific tools** - see [TEMPLATE_SETUP.md](./TEMPLATE_SETUP.md#step-3-define-your-tool-schemas).
+
+### Documentation
+
+- **[README.md](./README.md)** - This file, project overview
+- **[TEMPLATE_SETUP.md](./TEMPLATE_SETUP.md)** - Complete customization guide
+- **[examples/](./examples/)** - Working examples with detailed comments
+  - `basic-tool-call.ts` - Calling agent tools from another agent
+  - `broker-tool-loading.ts` - Using broker's git tools
+  - `autonomous-workflow.ts` - Complete multi-tool workflow
+  - `README.md` - Examples documentation and troubleshooting
+- **[CLAUDE.md](./CLAUDE.md)** - AI context for this project
+- **[src/CLAUDE.md](./src/CLAUDE.md)** - Module-level documentation
+
+### Source Code
+
+- **[src/index.ts](./src/index.ts)** - Main agent implementation with comprehensive JSDoc comments
+  - Template patterns marked with `// TEMPLATE PATTERN:`
+  - Customization points marked with `// TODO: Replace...`
+  - Production-ready error handling
+  - Event publishing examples
+  - Graceful shutdown handlers
+
+## 📚 Usage
+
+### Development
 
 ```bash
-npm run build
-npm run start:prod
+# Run with hot-reload
+npm run dev
+
+# Type check without compilation
+npm run type-check
+
+# Lint code
+npm run lint
+
+# Run tests
+npm test
 ```
 
-### With Custom Configuration
+### Production
 
 ```bash
-# Set broker URL
-export KADI_BROKER_URL=ws://kadi.build:8080
+# Build TypeScript to JavaScript
+npm run build
 
-# Set networks
-export KADI_NETWORK=global,math,game
-
+# Run compiled code
 npm start
 ```
 
-## Available Tools
+### Environment Configuration
 
-The calculator agent provides four mathematical operations:
+Create `.env` file:
 
-### 1. Addition
-```json
-{
-  "tool": "add",
-  "input": {
-    "a": 5,
-    "b": 3
-  }
-}
-```
-**Output**: `{ "result": 8 }`
+```bash
+# WebSocket URL for KĀDI broker
+KADI_BROKER_URL=ws://localhost:8080
 
-### 2. Multiplication
-```json
-{
-  "tool": "multiply",
-  "input": {
-    "a": 6,
-    "b": 7
-  }
-}
-```
-**Output**: `{ "result": 42 }`
-
-### 3. Subtraction
-```json
-{
-  "tool": "subtract",
-  "input": {
-    "a": 10,
-    "b": 3
-  }
-}
-```
-**Output**: `{ "result": 7 }`
-
-### 4. Division
-```json
-{
-  "tool": "divide",
-  "input": {
-    "a": 15,
-    "b": 3
-  }
-}
-```
-**Output**: `{ "result": 5.0 }`
-
-**Division by zero**:
-```json
-{
-  "tool": "divide",
-  "input": {
-    "a": 10,
-    "b": 0
-  }
-}
-```
-**Output**: `{ "result": 0.0, "error": "Division by zero is not allowed" }`
-
-## Events
-
-### Published Events
-
-- **`math.calculation`** - Published after each successful calculation
-  ```typescript
-  {
-    operation: 'add',
-    operands: [5, 3],
-    result: 8,
-    agent: 'calculator-typescript'
-  }
-  ```
-
-- **`math.error`** - Published when an error occurs
-  ```typescript
-  {
-    operation: 'divide',
-    error: 'Division by zero is not allowed',
-    operands: [10, 0],
-    agent: 'calculator-typescript'
-  }
-  ```
-
-### Subscribed Events
-
-The agent subscribes to all `math.*` events to monitor calculations across all agents in the network.
-
-## Cross-Language Communication
-
-### Invoking TypeScript Tools from Python
-
-```python
-# Python client calling TypeScript agent
-from kadi import KadiClient
-
-client = KadiClient({
-    'name': 'python-client',
-    'broker': 'ws://localhost:8765',
-    'networks': ['global']
-})
-
-await client.connect()
-
-# Load TypeScript calculator agent
-calculator = await client.load('calculator', 'broker')
-
-# Call TypeScript tool from Python
-result = await calculator.add({'a': 5, 'b': 3})
-print(result)  # { 'result': 8 }
+# Networks to join (comma-separated)
+# - global: All agents can see tools
+# - text: Example domain (replace with yours)
+# - git: Access to broker's git tools
+KADI_NETWORK=global,text,git
 ```
 
-### Invoking TypeScript Tools from Another TypeScript Agent
+## 🔧 Architecture
+
+### Broker-Centralized Design
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   KĀDI Broker                       │
+│                                                     │
+│  ┌─────────────────────────────────────────────┐   │
+│  │  MCP Servers (spawned by broker)           │   │
+│  │  • git-mcp-server (git network)            │   │
+│  │  • filesystem-mcp-server (global network)  │   │
+│  │  • discord-mcp-server (discord network)    │   │
+│  └─────────────────────────────────────────────┘   │
+│                                                     │
+│  ┌─────────────────────────────────────────────┐   │
+│  │  Tool Registry & Network Router            │   │
+│  │  • Routes tools by network membership      │   │
+│  │  • Validates tool invocations              │   │
+│  │  • Publishes events to subscribers         │   │
+│  └─────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────┘
+                     │
+         ┌───────────┴───────────┐
+         │                       │
+    ┌────▼─────┐           ┌────▼─────┐
+    │ Agent 1  │           │ Agent 2  │
+    │ (Text)   │           │ (Custom) │
+    │          │           │          │
+    │ Registers│           │ Loads    │
+    │ own tools│           │ broker's │
+    │          │           │ tools    │
+    └──────────┘           └──────────┘
+```
+
+**Key Principles**:
+- ✅ Agents register their own tools with broker
+- ✅ Agents can load broker's tools via `client.load()`
+- ✅ No MCP server spawning in agent code
+- ✅ Broker handles all tool routing and network isolation
+- ✅ Clean separation of concerns
+
+See [examples/broker-tool-loading.ts](./examples/broker-tool-loading.ts) for how to call broker's tools.
+
+## 🎯 Template Usage Patterns
+
+### Pattern 1: Define Tool Schemas
+
+```typescript
+import { z } from '@kadi.build/core';
+
+// 1. Define input schema
+const myToolInputSchema = z.object({
+  param1: z.string().describe('Description for param1'),
+  param2: z.number().describe('Description for param2')
+});
+
+// 2. Define output schema
+const myToolOutputSchema = z.object({
+  result: z.string().describe('The result'),
+  metadata: z.object({
+    timestamp: z.string()
+  })
+});
+
+// 3. Infer TypeScript types
+type MyToolInput = z.infer<typeof myToolInputSchema>;
+type MyToolOutput = z.infer<typeof myToolOutputSchema>;
+```
+
+### Pattern 2: Register Tools
+
+```typescript
+client.registerTool({
+  name: 'my_tool',
+  description: 'Brief description',
+  input: myToolInputSchema,
+  output: myToolOutputSchema
+}, async (params: MyToolInput): Promise<MyToolOutput> => {
+  // Your business logic here
+  const result = processData(params);
+
+  // Publish event
+  client.publishEvent('mydomain.processing', {
+    operation: 'my_tool',
+    agent: 'my-agent',
+    timestamp: new Date().toISOString()
+  });
+
+  return result;
+});
+```
+
+### Pattern 3: Load Broker's Tools
+
+```typescript
+// Load broker's git tools
+const gitTools = await client.load('kadi-local', 'broker');
+
+// Use git tools
+const status = await gitTools.git_status({
+  repo_path: '/path/to/repo'
+});
+
+const commit = await gitTools.git_commit({
+  repo_path: '/path/to/repo',
+  message: 'Automated commit',
+  add_files: ['file1.txt', 'file2.txt']
+});
+```
+
+See [TEMPLATE_SETUP.md](./TEMPLATE_SETUP.md) for comprehensive customization guide.
+
+## 📖 Examples
+
+### Calling Agent Tools
 
 ```typescript
 import { KadiClient } from '@kadi.build/core';
 
 const client = new KadiClient({
-  name: 'typescript-client',
+  name: 'example-caller',
   broker: 'ws://localhost:8080',
-  networks: ['global']
+  networks: ['global', 'text']
 });
 
 await client.connect();
 
-// Load calculator agent
-const calculator = await client.load('calculator', 'broker');
+// Load this agent
+const textProcessor = await client.load('typescript-agent', 'broker');
 
-// Call tool
-const result = await calculator.multiply({ a: 6, b: 7 });
-console.log(result); // { result: 42 }
+// Call tools
+const formatted = await textProcessor.format_text({
+  text: 'hello world',
+  style: 'uppercase'
+});
+console.log(formatted.result); // "HELLO WORLD"
 ```
 
-## Development
+### Autonomous Workflow
 
-### Type Checking
+```typescript
+// 1. Process text with agent's tools
+const trimmed = await textProcessor.trim_text({ text: '  hello  ', mode: 'both' });
+const formatted = await textProcessor.format_text({ text: trimmed.result, style: 'uppercase' });
 
-```bash
-npm run type-check
+// 2. Get user approval
+const approved = await getUserApproval(formatted.result);
+
+// 3. Commit using broker's git tools
+if (approved) {
+  const gitTools = await client.load('kadi-local', 'broker');
+  await gitTools.git_commit({
+    repo_path: '/path/to/repo',
+    message: 'chore: automated text processing',
+    add_files: ['output.txt']
+  });
+}
 ```
 
-### Linting
+See [examples/](./examples/) for complete working examples.
 
-```bash
-npm run lint
-```
+## 🧪 Testing
 
-### Running Tests
+### Unit Tests
 
 ```bash
 npm test
 ```
 
-## Architecture
+### Integration Tests
 
-```
-src/index.ts
-├── Schemas (Zod Schemas with Type Inference)
-│   ├── addInputSchema → AddInput type
-│   ├── multiplyInputSchema → MultiplyInput type
-│   ├── subtractInputSchema → SubtractInput type
-│   └── divideInputSchema → DivideInput type
-├── KĀDI Client Configuration
-│   ├── Broker connection
-│   ├── Network registration
-│   └── Ed25519 authentication
-├── Tool Registration
-│   ├── client.registerTool() API
-│   ├── Schema validation
-│   └── Event publishing
-├── Event Subscriptions
-│   ├── math.calculation listener
-│   └── math.error listener
-└── Main Event Loop
-    ├── Connect to broker
-    ├── Register agent
-    └── Serve indefinitely
+```bash
+# Terminal 1: Start broker
+cd kadi-broker && npm start
+
+# Terminal 2: Start agent
+npm run dev
+
+# Terminal 3: Run examples
+npx tsx examples/basic-tool-call.ts
+npx tsx examples/broker-tool-loading.ts
+npx tsx examples/autonomous-workflow.ts
 ```
 
-## Type Safety
+## 🔍 Type Safety Example
 
 One of the key advantages of TypeScript + Zod is automatic type inference:
 
 ```typescript
 // Define schema once
-const addInputSchema = z.object({
-  a: z.number(),
-  b: z.number()
+const inputSchema = z.object({
+  text: z.string(),
+  count: z.number()
 });
 
 // Type automatically inferred!
-type AddInput = z.infer<typeof addInputSchema>;
-// Equivalent to: { a: number; b: number }
+type Input = z.infer<typeof inputSchema>;
+// Equivalent to: { text: string; count: number }
 
 // Tool handler has full type safety
 client.registerTool({
-  input: addInputSchema,
-  output: addOutputSchema
-}, async (params: AddInput) => {
-  // params.a and params.b are typed as numbers
-  // TypeScript will catch errors at compile-time!
-  const result = params.a + params.b;
-  return { result };
+  input: inputSchema,
+  output: outputSchema
+}, async (params: Input) => {
+  // params.text is typed as string
+  // params.count is typed as number
+  // TypeScript catches errors at compile-time!
+  return { result: params.text.repeat(params.count) };
 });
 ```
 
-## Integration with ProtogameJS3D
+## 🌐 Cross-Language Communication
 
-This agent demonstrates the multi-language agent architecture for ProtogameJS3D's AI-driven game development workflow:
+### From Python
 
-1. **Planner Agent** (Python) - Orchestrates complex tasks
-2. **Calculator Agent** (TypeScript) - Mathematical operations
-3. **UI-UX-Designer Agent** (TypeScript) - Design generation
-4. **Code Generator Agent** (TypeScript) - Code synthesis
+```python
+from kadi import KadiClient
 
-All agents communicate via the KĀDI protocol regardless of implementation language.
+client = KadiClient({
+    'name': 'python-client',
+    'broker': 'ws://localhost:8080',
+    'networks': ['global', 'text']
+})
 
-## Troubleshooting
+await client.connect()
+
+# Load TypeScript agent
+processor = await client.load('typescript-agent', 'broker')
+
+# Call TypeScript tool from Python
+result = await processor.format_text({'text': 'hello', 'style': 'uppercase'})
+print(result['result'])  # "HELLO"
+```
+
+### From Another TypeScript Agent
+
+```typescript
+const textProcessor = await client.load('typescript-agent', 'broker');
+const result = await textProcessor.count_words({ text: 'hello world' });
+console.log(result.words); // 2
+```
+
+## 🛠️ Troubleshooting
 
 ### Connection Refused
 
@@ -288,44 +378,78 @@ All agents communicate via the KĀDI protocol regardless of implementation langu
 
 **Solution**: Ensure KĀDI broker is running:
 ```bash
-# Start broker (from kadi-broker repository)
-npm run dev
+cd kadi-broker
+npm start
 ```
 
-### Authentication Failed
+### Tool Not Found
 
-**Problem**: `AuthenticationError: Invalid signature`
+**Problem**: `Error: Tool not found: git_status`
 
-**Solution**: Check that Ed25519 keypair is correctly generated. The agent automatically generates keys on startup.
-
-### Module Not Found
-
-**Problem**: `Error: Cannot find module '@kadi.build/core'`
-
-**Solution**: Install dependencies:
-```bash
-npm install
+**Solution**: Check broker's MCP configuration in `kadi-broker/config/mcp-upstreams.json`:
+```json
+{
+  "id": "kadi-local",
+  "enabled": true  // Must be true
+}
 ```
+Restart broker after changes.
 
-### TypeScript Errors
+### Network Not Accessible
 
-**Problem**: `TS2304: Cannot find name 'z'`
+**Problem**: `Error: Network 'git' not accessible`
 
-**Solution**: Ensure Zod is properly imported:
+**Solution**: Add network to agent configuration:
 ```typescript
-import { KadiClient, z } from '@kadi.build/core';
+networks: ['global', 'text', 'git']  // Add 'git'
 ```
 
-## Related Documentation
+See [examples/README.md#troubleshooting](./examples/README.md#troubleshooting) for more issues and solutions.
 
-- [Multi-Language Agents Planning Document](../../../.claude/plan/multi-language-agents.md)
-- [KĀDI Protocol Documentation](https://gitlab.com/humin-game-lab/kadi)
-- [ProtogameJS3D Main README](../../../README.md)
+## 📁 Project Structure
 
-## License
+```
+Agent_TypeScript/
+├── src/
+│   ├── index.ts           # Main agent implementation (with JSDoc)
+│   └── CLAUDE.md          # Module documentation
+├── examples/              # Working examples
+│   ├── basic-tool-call.ts
+│   ├── broker-tool-loading.ts
+│   ├── autonomous-workflow.ts
+│   └── README.md
+├── dist/                  # Compiled JavaScript (generated)
+├── package.json           # Project metadata
+├── tsconfig.json          # TypeScript configuration
+├── .env.example           # Environment template
+├── README.md              # This file
+├── TEMPLATE_SETUP.md      # Customization guide
+└── CLAUDE.md              # AI context
+```
 
-This project is part of ProtogameJS3D research thesis.
+## 🤝 Contributing
+
+This is a template project. To customize for your use case:
+
+1. Read [TEMPLATE_SETUP.md](./TEMPLATE_SETUP.md)
+2. Replace example tools with your domain-specific tools
+3. Update documentation to match your agent's purpose
+4. Test with examples and write your own tests
+
+## 📄 License
+
+MIT License - See package.json for details
+
+## 🔗 Related Projects
+
+- [KĀDI Protocol](https://gitlab.com/humin-game-lab/kadi)
+- [KĀDI Broker](../kadi/kadi-broker)
+- [KĀDI Core](../kadi-core)
+
+## 🙏 Acknowledgments
+
+Built for the **KĀDI (Knowledge Agent Development Infrastructure)** protocol, enabling seamless multi-language agent communication in distributed AI systems.
 
 ---
 
-**Built with KĀDI protocol** 🚀
+**Ready to build your own agent?** Start with [TEMPLATE_SETUP.md](./TEMPLATE_SETUP.md) 🚀
