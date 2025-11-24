@@ -1,4 +1,0 @@
-This is a placeholder file for the AGENTS directory.
-Last updated: 2025-11-07
-
-This directory contains various agent-related projects and configurations.
