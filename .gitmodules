@@ -1,0 +1,18 @@
+[submodule "mcp-client-discord"]
+	path = mcp-client-discord
+	url = https://github.com/dadavidtseng/mcp-client-discord.git
+[submodule "mcp-server-discord"]
+	path = mcp-server-discord
+	url = https://github.com/dadavidtseng/mcp-server-discord.git
+[submodule "mcp-server-slack"]
+	path = mcp-server-slack
+	url = https://github.com/dadavidtseng/mcp-server-slack.git
+[submodule "mcp-client-slack"]
+	path = mcp-client-slack
+	url = https://github.com/dadavidtseng/mcp-client-slack.git
+[submodule "template-agent-python"]
+	path = template-agent-python
+	url = https://github.com/dadavidtseng/template-agent-python.git
+[submodule "template-agent-typescript"]
+	path = template-agent-typescript
+	url = https://github.com/dadavidtseng/template-agent-typescript.git
