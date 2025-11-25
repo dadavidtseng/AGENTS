@@ -16,3 +16,9 @@
 [submodule "template-agent-typescript"]
 	path = template-agent-typescript
 	url = https://github.com/dadavidtseng/template-agent-typescript.git
+[submodule "kadi-broker"]
+	path = kadi-broker
+	url = https://github.com/dadavidtseng/kadi-broker.git
+[submodule "kadi/kadi-broker"]
+	path = kadi/kadi-broker
+	url = https://github.com/dadavidtseng/kadi-broker.git
