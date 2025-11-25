@@ -4,3 +4,9 @@
 [submodule "Agent_Python"]
 	path = Agent_Python
 	url = https://github.com/dadavidtseng/Agent_Python.git
+[submodule "MCP_Slack_Client"]
+	path = MCP_Slack_Client
+	url = https://github.com/dadavidtseng/MCP_Slack_Client.git
+[submodule "MCP_Slack_Server"]
+	path = MCP_Slack_Server
+	url = https://github.com/dadavidtseng/MCP_Slack_Server.git
