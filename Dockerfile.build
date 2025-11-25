@@ -1,0 +1,24 @@
+# ============================================================================
+# MCP_Slack_Server - Build-only Dockerfile
+# ============================================================================
+# This service is spawned by kadi-broker as a child process
+# This Dockerfile builds the dist/ directory which is mounted into broker
+# ============================================================================
+
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source code
+COPY . .
+
+# Build TypeScript
+RUN npm run build
+
+# Output: dist/ directory will be mounted into kadi-broker container
