@@ -1,0 +1,6 @@
+[submodule "Agent_TypeScript"]
+	path = Agent_TypeScript
+	url = https://github.com/dadavidtseng/Agent_TypeScript.git
+[submodule "Agent_Python"]
+	path = Agent_Python
+	url = https://github.com/dadavidtseng/Agent_Python.git
