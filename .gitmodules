@@ -10,3 +10,9 @@
 [submodule "MCP_Slack_Server"]
 	path = MCP_Slack_Server
 	url = https://github.com/dadavidtseng/MCP_Slack_Server.git
+[submodule "MCP_Discord_Server"]
+	path = MCP_Discord_Server
+	url = https://github.com/dadavidtseng/MCP_Discord_Server.git
+[submodule "MCP_Discord_Client"]
+	path = MCP_Discord_Client
+	url = https://github.com/dadavidtseng/MCP_Discord_Client.git
