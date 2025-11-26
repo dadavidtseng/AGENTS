@@ -216,9 +216,19 @@ export class SlackBot {
    * Poll MCP_Slack_Client for new mentions
    */
   private async pollForMentions(): Promise<void> {
-    // Skip if already processing or protocol not initialized
-    if (this.isProcessing || !this.protocol) {
+    // Skip if already processing
+    if (this.isProcessing) {
       return;
+    }
+
+    // Initialize protocol if not yet available
+    if (!this.protocol) {
+      this.protocol = this.client.getBrokerProtocol();
+      if (!this.protocol) {
+        console.warn('⚠️  Slack bot: Waiting for broker connection...');
+        return;
+      }
+      console.log('✅ Slack bot: Broker protocol initialized');
     }
 
     // Check circuit breaker
@@ -238,7 +248,7 @@ export class SlackBot {
         timeout: parseInt(process.env.BOT_TOOL_TIMEOUT_MS || '10000'),
       });
 
-      const data = JSON.parse(String(result.result || '{}'));
+      const data = JSON.parse(String(result.content[0].text || '{}'));
       const mentions: SlackMention[] = data.mentions || [];
 
       if (mentions.length > 0) {
