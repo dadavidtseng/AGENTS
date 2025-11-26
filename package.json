@@ -10,8 +10,7 @@
     "build": "tsc",
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
-    "test": "vitest",
-    "postinstall": "patch-package"
+    "test": "vitest"
   },
   "keywords": [
     "kadi",
