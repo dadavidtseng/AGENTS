@@ -1,7 +1,7 @@
 {
-  "name": "mcp-slack-client",
-  "version": "1.0.0",
-  "description": "MCP Server for Slack event listening with autonomous Claude-powered responses",
+  "name": "slack-event-publisher",
+  "version": "2.0.0",
+  "description": "KĀDI event publisher for Slack @mentions - real-time event-driven architecture",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -11,18 +11,16 @@
     "type-check": "tsc --noEmit"
   },
   "keywords": [
-    "mcp",
+    "kadi",
     "slack",
-    "claude",
-    "ai",
-    "bot"
+    "events",
+    "pubsub",
+    "real-time"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.32.1",
     "@kadi.build/core": "file:../kadi/kadi-core",
-    "@modelcontextprotocol/sdk": "^1.0.4",
     "@slack/bolt": "^4.1.0",
     "dotenv": "^16.4.7",
     "zod": "^3.24.1"

@@ -18,7 +18,7 @@
  * 4. Events consumed by template-agent-typescript subscribers
  */
 
-import { KadiClient } from '@kadi.build/core';
+import { KadiClient, z } from '@kadi.build/core';
 import type { SlackMentionEvent } from './types.js';
 import type { Config } from './index.js';
 
@@ -70,13 +70,36 @@ export class KadiEventPublisher {
    * Must be called before each connection attempt to avoid handshake state issues
    */
   private createClient(): KadiClient {
-    return new KadiClient({
+    const client = new KadiClient({
       name: 'mcp-client-slack',
       version: '1.0.0',
       role: 'agent',
       broker: this.brokerUrl,
       networks: ['slack']
     });
+
+    // Register a dummy tool to make agent visible in system snapshots
+    // This is a test to verify that broker filters agents without tools
+    const addNumberInputSchema = z.object({
+      a: z.number().describe('First number'),
+      b: z.number().describe('Second number')
+    });
+
+    client.registerTool(
+      {
+        name: 'addNumber',
+        description: 'Dummy tool for testing - adds two numbers together',
+        input: addNumberInputSchema,
+        output: z.object({
+          result: z.number().describe('Sum of a and b')
+        })
+      },
+      async (params: z.infer<typeof addNumberInputSchema>) => {
+        return { result: params.a + params.b };
+      }
+    );
+
+    return client;
   }
 
   /**

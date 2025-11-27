@@ -1,32 +1,22 @@
 /**
- * MCP_Slack_Client - Slack Event Listener with Claude-Powered Auto-Response
- * =========================================================================
+ * Slack Event Publisher for KĀDI
+ * ================================
  *
- * This MCP server listens for Slack @mentions and automatically responds using
- * Claude API. It queues incoming mentions for Agent_TypeScript to retrieve and
- * process through the KADI broker.
+ * Pure KĀDI event publisher that listens for Slack @mentions via Socket Mode
+ * and publishes them as real-time events to the KĀDI broker.
  *
  * Architecture:
  * - Slack Socket Mode: Receives @mention events in real-time
- * - Mention Queue: In-memory queue of unprocessed mentions
- * - Claude API Client: Processes user messages with AI
- * - MCP Server: Exposes get_mentions tool for broker integration
+ * - KĀDI Publisher: Publishes events to broker topics
+ * - Event-Driven: No polling, push-based architecture
  *
  * Flow:
- * 1. User @mentions SlackBot in channel
+ * 1. User @mentions bot in Slack channel
  * 2. Socket Mode receives app_mention event
- * 3. Event queued in mentions queue
- * 4. Agent_TypeScript polls get_mentions via broker
- * 5. Agent processes with Claude API
- * 6. Agent replies via MCP_Slack_Server
+ * 3. Event published to topic: slack.app_mention.{BOT_USER_ID}
+ * 4. Subscribers receive event in real-time via KĀDI broker
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
 import { App } from '@slack/bolt';
 import { z } from 'zod';
 import * as dotenv from 'dotenv';
@@ -42,10 +32,15 @@ dotenv.config();
 const ConfigSchema = z.object({
   SLACK_BOT_TOKEN: z.string().min(1, 'SLACK_BOT_TOKEN is required'),
   SLACK_APP_TOKEN: z.string().min(1, 'SLACK_APP_TOKEN is required'),
-  ANTHROPIC_API_KEY: z.string().optional().default(''),
-  MCP_LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
-  KADI_BROKER_URL: z.string().url('KADI_BROKER_URL must be a valid WebSocket URL').describe('KĀDI broker WebSocket URL'),
-  SLACK_BOT_USER_ID: z.string().regex(/^U[A-Z0-9]+$/, 'SLACK_BOT_USER_ID must be a valid Slack user ID (format: U*)').describe('Slack bot user ID for event routing'),
+  KADI_BROKER_URL: z
+    .string()
+    .url('KADI_BROKER_URL must be a valid WebSocket URL')
+    .describe('KĀDI broker WebSocket URL'),
+  SLACK_BOT_USER_ID: z
+    .string()
+    .regex(/^U[A-Z0-9]+$/, 'SLACK_BOT_USER_ID must be a valid Slack user ID (format: U*)')
+    .describe('Slack bot user ID for event routing'),
+  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -55,10 +50,9 @@ function loadConfig(): Config {
     return ConfigSchema.parse({
       SLACK_BOT_TOKEN: process.env.SLACK_BOT_TOKEN,
       SLACK_APP_TOKEN: process.env.SLACK_APP_TOKEN,
-      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-      MCP_LOG_LEVEL: process.env.MCP_LOG_LEVEL || 'info',
       KADI_BROKER_URL: process.env.KADI_BROKER_URL,
       SLACK_BOT_USER_ID: process.env.SLACK_BOT_USER_ID,
+      LOG_LEVEL: process.env.LOG_LEVEL || 'info',
     });
   } catch (error) {
     console.error('❌ Configuration validation failed:', error);
@@ -89,7 +83,7 @@ interface SlackMention {
 }
 
 // ============================================================================
-// Slack Client Manager
+// Slack Manager
 // ============================================================================
 
 class SlackManager {
@@ -114,11 +108,12 @@ class SlackManager {
         socketMode: true,
       });
 
+      this.botUserId = config.SLACK_BOT_USER_ID;
       this.registerEventHandlers();
       this.enabled = true;
     } else {
       console.log('⚠️  Slack tokens appear to be placeholders - running in stub mode');
-      console.log('   Tokens must start with xoxb- and xapp- to enable Slack connection');
+      console.log('   Set valid SLACK_BOT_TOKEN and SLACK_APP_TOKEN to enable Slack integration');
     }
   }
 
@@ -128,23 +123,27 @@ class SlackManager {
   private registerEventHandlers(): void {
     if (!this.app) return;
 
-    // Listen for @mentions
+    // Listen for @mentions of the bot
     this.app.event('app_mention', async ({ event }) => {
       await this.handleMention(event);
     });
 
-    // Error handler
-    this.app.error(async (error) => {
-      console.error('❌ Slack app error:', error);
-    });
+    console.log('✅ Registered Slack event handlers');
   }
 
   /**
-   * Handle incoming @mention events
+   * Handle incoming @mention event
    */
   private async handleMention(event: any): Promise<void> {
     try {
-      // Remove bot mention from text
+      // Get bot user ID from Slack API (cached after first call)
+      if (!this.botUserId && this.app) {
+        const authResult = await this.app.client.auth.test();
+        this.botUserId = authResult.user_id as string;
+        console.log(`🤖 Bot user ID: ${this.botUserId}`);
+      }
+
+      // Remove bot mention tags from text (e.g., <@U12345>)
       const cleanText = event.text.replace(/<@[A-Z0-9]+>/g, '').trim();
 
       // Create mention object
@@ -159,7 +158,7 @@ class SlackManager {
 
       // Publish to KĀDI event bus (non-blocking)
       if (this.publisher && this.botUserId) {
-        this.publisher.publishMention(mention, this.botUserId).catch(error => {
+        this.publisher.publishMention(mention, this.botUserId).catch((error) => {
           console.error('[KĀDI] Failed to publish mention event:', error);
           // Don't block Slack processing on publish failure
         });
@@ -182,15 +181,6 @@ class SlackManager {
 
     await this.app.start();
     console.log('✅ Slack Socket Mode listener started');
-
-    // Extract bot user ID from Slack SDK
-    try {
-      const authResult = await this.app.client.auth.test();
-      this.botUserId = authResult.user_id || '';
-      console.log(`🤖 Bot user ID: ${this.botUserId}`);
-    } catch (error) {
-      console.error('❌ Failed to retrieve bot user ID:', error);
-    }
   }
 
   /**
@@ -207,11 +197,10 @@ class SlackManager {
 }
 
 // ============================================================================
-// MCP Server
+// Slack Event Publisher (Main Application)
 // ============================================================================
 
-class SlackClientMCPServer {
-  private server: Server;
+class SlackEventPublisher {
   private slackManager: SlackManager;
   private publisher: KadiEventPublisher;
   private config: Config;
@@ -220,74 +209,41 @@ class SlackClientMCPServer {
     this.config = loadConfig();
     this.publisher = new KadiEventPublisher(this.config);
     this.slackManager = new SlackManager(this.config, this.publisher);
-
-    // Create MCP server
-    this.server = new Server(
-      {
-        name: 'mcp-slack-client',
-        version: '1.0.0',
-      },
-      {
-        capabilities: {
-          tools: {},
-        },
-      }
-    );
-
-    this.registerHandlers();
   }
 
   /**
-   * Register MCP protocol handlers
-   */
-  private registerHandlers(): void {
-    // List available tools
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: [],
-    }));
-
-    // Handle tool execution
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      throw new Error(`Unknown tool: ${request.params.name}`);
-    });
-  }
-
-  /**
-   * Start both Slack listener and MCP server
+   * Start the event publisher
    */
   async run(): Promise<void> {
-    console.log('🚀 Starting MCP_Slack_Client...');
+    console.log('🚀 Starting Slack Event Publisher...');
     console.log('📋 Configuration:');
-    console.log(`   - Log Level: ${this.config.MCP_LOG_LEVEL}`);
+    console.log(`   - Log Level: ${this.config.LOG_LEVEL}`);
+    console.log(`   - Broker: ${this.config.KADI_BROKER_URL}`);
 
     // Start Slack Socket Mode
     await this.slackManager.start();
 
-    // Connect to KĀDI broker FIRST (before MCP stdio transport)
+    // Connect to KĀDI broker
     await this.publisher.connect();
 
-    // Check if running in standalone mode (no stdio parent process)
-    const isStandalone = process.env.STANDALONE_MODE === 'true';
+    console.log('✅ Slack Event Publisher ready');
+    console.log('🎧 Listening for Slack @mentions...');
+    console.log('📤 Publishing events to KĀDI broker');
 
-    if (isStandalone) {
-      console.log('✅ MCP_Slack_Client ready (standalone KĀDI client mode)');
-      console.log('🎧 Listening for Slack @mentions...');
+    // Keep process alive and handle graceful shutdown
+    process.on('SIGINT', async () => {
+      console.log('\n🛑 Shutting down gracefully...');
+      await this.slackManager.stop();
+      await this.publisher.disconnect();
+      process.exit(0);
+    });
 
-      // Keep process alive in standalone mode
-      process.on('SIGINT', async () => {
-        console.log('\n🛑 Shutting down gracefully...');
-        await this.slackManager.stop();
-        await this.publisher.disconnect();
-        process.exit(0);
-      });
-    } else {
-      // Start MCP server with stdio transport (for broker-managed mode)
-      const transport = new StdioServerTransport();
-      await this.server.connect(transport);
-
-      console.log('✅ MCP_Slack_Client ready (MCP upstream mode)');
-      console.log('🎧 Listening for Slack @mentions...');
-    }
+    process.on('SIGTERM', async () => {
+      console.log('\n🛑 Received SIGTERM, shutting down...');
+      await this.slackManager.stop();
+      await this.publisher.disconnect();
+      process.exit(0);
+    });
   }
 }
 
@@ -297,8 +253,8 @@ class SlackClientMCPServer {
 
 async function main(): Promise<void> {
   try {
-    const server = new SlackClientMCPServer();
-    await server.run();
+    const publisher = new SlackEventPublisher();
+    await publisher.run();
   } catch (error) {
     console.error('💥 Fatal error:', error);
     process.exit(1);
