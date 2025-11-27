@@ -2,11 +2,11 @@
  * Slack Bot Integration for Agent_TypeScript with Resilience
  * ===========================================================
  *
- * Polls MCP_Slack_Client for @mentions and responds using Claude API.
+ * Subscribes to Slack @mention events via KĀDI event bus and responds using Claude API.
  * Includes retry logic, circuit breaker, and timeout metrics.
  *
  * Flow:
- * 1. Poll get_slack_mentions every 10 seconds
+ * 1. Subscribe to slack.app_mention.{BOT_USER_ID} events
  * 2. For each mention, call Claude API with user message
  * 3. Execute any tool calls Claude requests via KADI broker
  * 4. Reply to Slack thread via MCP_Slack_Server
@@ -19,6 +19,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import type { KadiClient } from '@kadi.build/core';
+import { SlackMentionEventSchema } from './types/slack-events.js';
 
 // ============================================================================
 // Types
@@ -36,7 +37,7 @@ interface SlackMention {
 interface SlackBotConfig {
   client: KadiClient;
   anthropicApiKey: string;
-  pollIntervalMs: number;
+  botUserId: string;
 }
 
 // ============================================================================
@@ -47,22 +48,20 @@ export class SlackBot {
   private client: KadiClient;
   private protocol: any = null;
   private anthropic: Anthropic;
-  private pollInterval: NodeJS.Timeout | null = null;
-  private pollIntervalMs: number;
-  private isProcessing = false;
+  private botUserId: string;
 
-  // Circuit breaker state
+  // Circuit breaker state (retained for processMention error handling)
   private failureCount = 0;
   private lastFailureTime = 0;
   private readonly maxFailures = 5;
   private readonly resetTimeMs = 60000; // 1 minute
   private isCircuitOpen = false;
 
-  // Retry configuration
+  // Retry configuration (retained for tool invocation)
   private readonly maxRetries = 3;
   private readonly baseDelayMs = 1000;
 
-  // Timeout metrics
+  // Timeout metrics (retained for monitoring)
   private totalRequests = 0;
   private timeoutCount = 0;
   private successCount = 0;
@@ -71,7 +70,7 @@ export class SlackBot {
     this.client = config.client;
     // Don't get protocol here - will be initialized in start()
     this.anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
-    this.pollIntervalMs = config.pollIntervalMs;
+    this.botUserId = config.botUserId;
   }
 
   /**
@@ -185,83 +184,81 @@ export class SlackBot {
   }
 
   /**
-   * Start polling for Slack mentions
+   * Start event subscription for Slack mentions
    */
   start(): void {
-    console.log(`🤖 Starting Slack bot (polling every ${this.pollIntervalMs / 1000}s)...`);
+    console.log('🤖 Starting Slack bot with event-driven architecture...');
 
     // Initialize protocol now that client is connected
     this.protocol = this.client.getBrokerProtocol();
 
-    this.pollInterval = setInterval(() => {
-      this.pollForMentions();
-    }, this.pollIntervalMs);
-
-    // Poll immediately on start
-    this.pollForMentions();
+    // Subscribe to Slack mention events
+    this.subscribeToMentions();
   }
 
   /**
-   * Stop polling
+   * Stop event subscription
    */
   stop(): void {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = null;
-      console.log('🛑 Slack bot stopped');
-    }
+    // Unsubscribe from events if needed
+    console.log('🛑 Slack bot stopped');
   }
 
   /**
-   * Poll MCP_Slack_Client for new mentions
+   * Subscribe to Slack mention events via KĀDI event bus
    */
-  private async pollForMentions(): Promise<void> {
-    // Skip if already processing
-    if (this.isProcessing) {
-      return;
-    }
+  private subscribeToMentions(): void {
+    const topic = `slack.app_mention.${this.botUserId}`;
 
-    // Initialize protocol if not yet available
-    if (!this.protocol) {
-      this.protocol = this.client.getBrokerProtocol();
-      if (!this.protocol) {
-        console.warn('⚠️  Slack bot: Waiting for broker connection...');
-        return;
-      }
-      console.log('✅ Slack bot: Broker protocol initialized');
-    }
-
-    // Check circuit breaker
-    if (this.checkCircuitBreaker()) {
-      console.warn('⚡ Circuit breaker is OPEN - skipping poll');
-      return;
-    }
-
-    this.isProcessing = true;
+    console.log(`[KĀDI] Subscriber: Registering subscription {topic: ${topic}, botUserId: ${this.botUserId}}`);
 
     try {
-      // Get mentions from MCP_Slack_Client with retry logic
-      const result = await this.invokeToolWithRetry({
-        targetAgent: 'slack-client',
-        toolName: 'slack_client_get_slack_mentions',
-        toolInput: { limit: 5 },
-        timeout: parseInt(process.env.BOT_TOOL_TIMEOUT_MS || '10000'),
+      this.client.subscribeToEvent(topic, async (event: unknown) => {
+        // Check circuit breaker before processing
+        if (this.checkCircuitBreaker()) {
+          console.warn('[KĀDI] Subscriber: Event processing skipped {reason: circuit breaker OPEN}');
+          return;
+        }
+
+        // Extract event data from KĀDI envelope
+        // KĀDI wraps events in: { eventName, data, timestamp, source, metadata }
+        const eventData = (event as any)?.data || event;
+
+        // Validate event payload with schema
+        const validationResult = SlackMentionEventSchema.safeParse(eventData);
+
+        if (!validationResult.success) {
+          const errorDetails = validationResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+          console.error(`[KĀDI] Subscriber: Event validation failed {errors: [${errorDetails}]}`);
+          return;
+        }
+
+        const mention = validationResult.data;
+
+        // Truncate text for logging (don't log full message content)
+        const textPreview = mention.text.length > 50
+          ? mention.text.substring(0, 50) + '...'
+          : mention.text;
+
+        console.log(`[KĀDI] Subscriber: Event received {mentionId: ${mention.id}, user: ${mention.user}, channel: ${mention.channel}, textPreview: "${textPreview}", timestamp: ${mention.timestamp}}`);
+
+        // Convert to SlackMention format for existing processing logic
+        const slackMention: SlackMention = {
+          id: mention.id,
+          user: mention.user,
+          text: mention.text,
+          channel: mention.channel,
+          thread_ts: mention.thread_ts,
+          ts: mention.ts,
+        };
+
+        // Process mention using existing logic
+        await this.processMention(slackMention);
       });
 
-      const data = JSON.parse(String(result.content[0].text || '{}'));
-      const mentions: SlackMention[] = data.mentions || [];
-
-      if (mentions.length > 0) {
-        console.log(`📬 Received ${mentions.length} Slack mention(s)`);
-
-        for (const mention of mentions) {
-          await this.processMention(mention);
-        }
-      }
+      console.log(`[KĀDI] Subscriber: Subscription registered successfully {topic: ${topic}}`);
     } catch (error: any) {
-      console.error('❌ Error polling Slack mentions:', error);
-    } finally {
-      this.isProcessing = false;
+      console.error(`[KĀDI] Subscriber: Subscription registration failed {topic: ${topic}, error: ${error.message || 'Unknown error'}}`);
     }
   }
 
@@ -406,7 +403,7 @@ export class SlackBot {
       return;
     }
 
-    await this.protocol.invokeTool({
+    await this.invokeToolWithRetry({
       targetAgent: 'slack-server',
       toolName: 'slack_send_reply',
       toolInput: {

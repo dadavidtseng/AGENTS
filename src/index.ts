@@ -823,10 +823,10 @@ async function main() {
           const slackBot = new SlackBot({
             client,
             anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
-            pollIntervalMs: parseInt(process.env.BOT_POLL_INTERVAL_MS || '5000'),
+            botUserId: process.env.SLACK_BOT_USER_ID!,
           });
           slackBot.start();
-          console.log('✅ Slack bot started (polling for @mentions every 10s)');
+          console.log('✅ Slack bot started (subscribed to Slack mention events)');
         } catch (error) {
           console.error('❌ Failed to start Slack bot:', error);
         }
