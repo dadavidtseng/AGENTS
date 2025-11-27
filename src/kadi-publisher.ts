@@ -73,7 +73,7 @@ export class KadiEventPublisher {
     return new KadiClient({
       name: 'mcp-client-slack',
       version: '1.0.0',
-      role: 'client',
+      role: 'agent',
       broker: this.brokerUrl,
       networks: ['slack']
     });
