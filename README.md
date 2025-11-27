@@ -13,6 +13,7 @@ This template demonstrates broker-centralized architecture, type-safe tool defin
 - ✅ **Template Setup Guide** - Step-by-step customization instructions
 - ✅ **Ed25519 Authentication** - Cryptographic identity verification
 - ✅ **Event-Driven Architecture** - Pub/sub system for cross-agent coordination
+- ✅ **Slack Bot Integration** - Real-time @mention processing with Claude API (optional)
 - ✅ **Cross-Language Compatible** - Works with Python, Go, Rust agents
 - ✅ **Hot-Reload Development** - Fast iteration with `tsx watch`
 - ✅ **Network Isolation** - Domain-specific tool visibility
@@ -114,7 +115,7 @@ npm start
 
 ### Environment Configuration
 
-Create `.env` file:
+Create `.env` file based on `.env.template`:
 
 ```bash
 # WebSocket URL for KĀDI broker
@@ -124,8 +125,142 @@ KADI_BROKER_URL=ws://localhost:8080
 # - global: All agents can see tools
 # - text: Example domain (replace with yours)
 # - git: Access to broker's git tools
-KADI_NETWORK=global,text,git
+# - slack: For Slack bot integration
+KADI_NETWORK=global,text,git,slack
+
+# Slack Bot (optional)
+ENABLE_SLACK_BOT=true
+SLACK_BOT_USER_ID=U01234ABCD  # Get from Slack app settings
+ANTHROPIC_API_KEY=sk-ant-your-key-here
 ```
+
+See `.env.template` for complete configuration options.
+
+## 🤖 Slack Bot Integration (Optional)
+
+### Overview
+
+The template includes an optional Slack bot that:
+- Subscribes to Slack @mention events via KĀDI event bus (real-time, <100ms latency)
+- Processes mentions using Claude API with tool execution support
+- Replies to Slack threads via MCP_Slack_Server
+- Includes circuit breaker and retry logic for resilience
+
+### 🔴 Breaking Changes (v2.0.0)
+
+**What Changed:**
+- ❌ **REMOVED**: Polling-based mention retrieval (`get_slack_mentions` tool)
+- ✅ **ADDED**: Event-driven subscription (`slack.app_mention.{BOT_USER_ID}`)
+
+**Migration Required:**
+- Add `SLACK_BOT_USER_ID` to `.env`
+- Remove `BOT_POLL_INTERVAL_MS` (no longer used)
+- Event subscription is automatic - no code changes needed
+
+### Setup
+
+**Prerequisites:**
+1. KĀDI broker running
+2. MCP_Slack_Client running (publishes mention events)
+3. MCP_Slack_Server running (handles replies)
+4. Slack bot configured with required scopes
+
+**Step 1: Configure Environment**
+
+Add to `.env`:
+```env
+ENABLE_SLACK_BOT=true
+SLACK_BOT_USER_ID=U01234ABCD  # Get from Slack app settings > OAuth & Permissions
+ANTHROPIC_API_KEY=sk-ant-your-key-here
+KADI_NETWORK=global,text,slack  # Must include 'slack' network
+```
+
+**Step 2: Start Agent**
+
+```bash
+npm run dev
+```
+
+Look for:
+```
+🤖 Starting Slack bot with event-driven architecture...
+📡 Subscribing to Slack mention events on topic: slack.app_mention.U01234ABCD
+✅ Successfully subscribed to Slack mention events
+```
+
+**Step 3: Test**
+
+1. @mention your bot in Slack: `@YourBot what's the weather?`
+2. Bot receives event in <100ms
+3. Claude API processes message
+4. Bot replies in thread
+
+### Architecture
+
+```
+Slack @mention → MCP_Slack_Client → KĀDI Event Bus (slack.app_mention.U*)
+                                              ↓
+                                    Agent_TypeScript subscribes
+                                              ↓
+                                 Event validation (Zod schema)
+                                              ↓
+                                    Claude API + Tool Execution
+                                              ↓
+                                    MCP_Slack_Server (reply)
+```
+
+### Event Flow
+
+1. **Event Published**: MCP_Slack_Client publishes `SlackMentionEvent` to topic `slack.app_mention.{BOT_USER_ID}`
+2. **Event Received**: Agent_TypeScript subscriber receives event
+3. **Validation**: Event validated with `SlackMentionEventSchema` (Zod)
+4. **Circuit Breaker**: Check if processing should continue (handles outages gracefully)
+5. **Processing**: Claude API called with user message and available tools
+6. **Tool Execution**: Any tool calls executed via KĀDI broker
+7. **Reply**: Final response sent to Slack via MCP_Slack_Server
+
+### Resilience Features
+
+- **Circuit Breaker**: Opens after 5 failures, auto-resets after 1 minute
+- **Exponential Backoff**: Retries with 1s, 2s, 4s delays
+- **Timeout Metrics**: Tracks success/failure rates
+- **Schema Validation**: Ensures event integrity with Zod
+
+### Migration from v1.x
+
+**Old (Polling - v1.x):**
+```typescript
+// ❌ No longer works
+setInterval(async () => {
+  const result = await invokeTool({
+    targetAgent: 'slack-client',
+    toolName: 'slack_client_get_slack_mentions',
+    toolInput: { limit: 5 },
+    timeout: 10000
+  });
+}, 10000);
+```
+
+**New (Event Subscription - v2.0.0+):**
+```typescript
+// ✅ Automatic event subscription
+// No code changes needed - configured via environment variables
+// SlackBot class handles subscription internally
+```
+
+### Troubleshooting
+
+**Bot not receiving mentions:**
+1. Check `SLACK_BOT_USER_ID` matches your Slack app's bot user ID
+2. Verify `KADI_NETWORK` includes `slack`
+3. Confirm MCP_Slack_Client is running and publishing events
+4. Check KĀDI broker logs for event routing
+
+**Circuit breaker opening frequently:**
+1. Check network connectivity to KĀDI broker
+2. Verify MCP_Slack_Server is running
+3. Review timeout settings (`BOT_TOOL_TIMEOUT_MS`)
+4. Check Claude API rate limits
 
 ## 🔧 Architecture
 
