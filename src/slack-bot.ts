@@ -487,6 +487,62 @@ export class SlackBot {
           required: ['json_string'],
         },
       },
+      {
+        name: 'git_git_status',
+        description: 'Get current git repository status showing branch, staged/unstaged changes, untracked files, and conflicts. Use when user asks about git status, current changes, or repository state. Returns structured status information.',
+        input_schema: {
+          type: 'object',
+          properties: {},
+          required: [],
+        },
+      },
+      {
+        name: 'git_git_log',
+        description: 'Show git commit history. Use this when user asks about recent commits, commit history, or git log.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            maxCount: {
+              type: 'number',
+              description: 'Maximum number of commits to show (default: 10)',
+            },
+          },
+          required: [],
+        },
+      },
+      {
+        name: 'git_git_diff',
+        description: 'Show differences between working directory and last commit, or between commits. Use when user asks what changed, show diff, or compare versions.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            target: {
+              type: 'string',
+              description: 'Optional: commit hash, branch name, or file path to diff',
+            },
+          },
+          required: [],
+        },
+      },
+      {
+        name: 'git_git_branch',
+        description: 'List, create, or delete git branches. Use when user asks about branches, create branch, or delete branch.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            action: {
+              type: 'string',
+              enum: ['list', 'create', 'delete'],
+              description: 'Action to perform: list (show all branches), create (new branch), delete (remove branch)',
+            },
+            branchName: {
+              type: 'string',
+              description: 'Branch name (required for create/delete actions)',
+            },
+          },
+          required: ['action'],
+        },
+      },
     ];
   }
 
