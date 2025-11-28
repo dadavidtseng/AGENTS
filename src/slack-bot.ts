@@ -562,6 +562,20 @@ export class SlackBot {
           required: ['action'],
         },
       },
+      {
+        name: 'git_git_set_working_dir',
+        description: 'Set the working directory for subsequent git operations. Use this BEFORE other git commands when user specifies a directory path. This persists the directory across tool calls in the same session.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            path: {
+              type: 'string',
+              description: 'Absolute path to the git repository directory (e.g., "C:\\\\p4\\\\Personal\\\\SD\\\\template-agent-typescript")',
+            },
+          },
+          required: ['path'],
+        },
+      },
     ];
   }
 
