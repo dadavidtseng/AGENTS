@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "shrimp-AGENTS": {
+      "command": "node",
+      "args": [
+        "C:\\GitHub\\mcp-shrimp-task-manager\\dist\\index.js"
+      ],
+      "env": {
+        "DATA_DIR": "C:\\p4\\Personal\\SD\\AGENTS\\.claude\\shrimp_data",
+        "TEMPLATES_USE": "en",
+        "ENABLE_GUI": "true",
+        "WEB_PORT": "3000"
+      }
+    },
+    "spec-workflow-AGENTS": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@pimzino/spec-workflow-mcp@latest",
+        "C:\\p4\\Personal\\SD\\AGENTS"
+      ]
+    }
+  }
+}
