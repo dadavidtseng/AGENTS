@@ -378,15 +378,34 @@ export class SlackBot {
         timeout: 30000,
       });
 
-      // Handle the result - invokeTool may return different structures
+      // Handle the result - MCP tools return results in various formats
+      // Some return { result: string }, some return { content: [...] }, some return plain values
       if (result && typeof result === 'object') {
-        return { success: true, result: result.result || result };
+        // MCP tools often return { content: [{ type: 'text', text: '...' }] }
+        if (Array.isArray(result.content)) {
+          const textContent = result.content
+            .filter((item: any) => item.type === 'text')
+            .map((item: any) => item.text)
+            .join('\n');
+          return textContent || JSON.stringify(result);
+        }
+
+        // Some tools return { result: { ... } }
+        if (result.result !== undefined) {
+          return result.result;
+        }
+
+        // Return the whole result object as fallback
+        return result;
       }
 
-      return { success: true, result };
+      return result;
     } catch (error: any) {
       console.error(`❌ Tool execution failed (${toolName}):`, error);
-      return { success: false, error: String(error) };
+
+      // Extract useful error message for Claude
+      const errorMessage = error.message || String(error);
+      return `Error executing tool: ${errorMessage}`;
     }
   }
 
