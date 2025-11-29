@@ -22,3 +22,6 @@
 [submodule "mcp-server-git"]
 	path = mcp-server-git
 	url = https://github.com/dadavidtseng/mcp-server-git.git
+[submodule ".claude/shrimp_data"]
+	path = .claude/shrimp_data
+	url = https://github.com/dadavidtseng/shrimp_data_AGENTS.git

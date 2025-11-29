@@ -1,0 +1,11 @@
+{
+  "enabledMcpjsonServers": [
+    "shrimp-AGENTS",
+    "spec-workflow-AGENTS"
+  ],
+  "permissions": {
+    "allow": [
+      "mcp__spec-workflow-AGENTS__approvals"
+    ]
+  }
+}

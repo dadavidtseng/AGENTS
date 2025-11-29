@@ -1,0 +1,14 @@
+{
+  "filePath": ".spec-workflow/specs/discord-slack-event-unification/design.md",
+  "currentVersion": 1,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-29T01:44:44.548Z",
+      "trigger": "initial",
+      "approvalId": "approval_1764380684540_frcy372jv",
+      "approvalTitle": "Design Document - Discord/Slack Event-Based Unification"
+    }
+  ]
+}
