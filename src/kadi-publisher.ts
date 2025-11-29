@@ -7,42 +7,40 @@
  *
  * Architecture:
  * - Publishes to topic: slack.app_mention.{BOT_USER_ID}
- * - Uses KadiClient from @kadi.build/core
+ * - Uses shared KadiEventPublisher from @agents/shared
  * - Graceful degradation pattern (stub mode if broker unavailable)
  * - Fail-fast on publish errors (no retry logic)
  *
  * Flow:
- * 1. Initialize KadiClient with broker URL and bot user ID
+ * 1. Initialize shared KadiEventPublisher with Slack-specific config
  * 2. Connect to KĀDI broker via WebSocket
  * 3. Publish SlackMentionEvent when mentions are received
  * 4. Events consumed by template-agent-typescript subscribers
  */
 
-import { KadiClient, z } from '@kadi.build/core';
+import { KadiEventPublisher as SharedPublisher, PublisherConfig } from '@agents/shared';
 import type { SlackMentionEvent } from './types.js';
 import type { Config } from './index.js';
 
 /**
- * KĀDI Event Publisher
+ * KĀDI Event Publisher for Slack
  *
- * Publishes Slack @mention events to the KĀDI broker using event-driven
- * publish-subscribe pattern. Replaces the polling-based queue mechanism
- * with real-time event delivery.
+ * Thin wrapper around shared KadiEventPublisher with Slack-specific
+ * configuration and publishMention() convenience method.
  */
 export class KadiEventPublisher {
-  private client: KadiClient | null = null;
+  private publisher: SharedPublisher;
   private enabled: boolean = false;
-  private brokerUrl: string = '';
 
   /**
-   * Create a new KĀDI Event Publisher
+   * Create a new KĀDI Event Publisher for Slack
    *
    * @param config - Configuration object with KADI_BROKER_URL and SLACK_BOT_USER_ID
    *
    * @example
    * ```typescript
    * const publisher = new KadiEventPublisher({
-   *   KADI_BROKER_URL: 'ws://localhost:8080',
+   *   KADI_BROKER_URL: 'ws://localhost:8080/kadi',
    *   SLACK_BOT_USER_ID: 'U12345678',
    *   ...otherConfig
    * });
@@ -57,57 +55,26 @@ export class KadiEventPublisher {
         config.KADI_BROKER_URL.startsWith('wss://'));
 
     if (hasValidBrokerUrl) {
-      this.brokerUrl = config.KADI_BROKER_URL;
       this.enabled = true;
-    } else {
-      console.log('⚠️  KĀDI broker URL not configured - running in stub mode');
-      console.log('   Set KADI_BROKER_URL to enable event publishing');
     }
-  }
 
-  /**
-   * Create a new KadiClient instance
-   * Must be called before each connection attempt to avoid handshake state issues
-   */
-  private createClient(): KadiClient {
-    const client = new KadiClient({
-      name: 'mcp-client-slack',
+    // Create Slack-specific publisher configuration
+    const publisherConfig: PublisherConfig = {
+      brokerUrl: config.KADI_BROKER_URL || '',
+      clientName: 'mcp-client-slack',
+      networks: ['slack'],
       version: '1.0.0',
-      role: 'agent',
-      broker: this.brokerUrl,
-      networks: ['slack']
-    });
+      role: 'agent'
+    };
 
-    // Register a dummy tool to make agent visible in system snapshots
-    // This is a test to verify that broker filters agents without tools
-    const addNumberInputSchema = z.object({
-      a: z.number().describe('First number'),
-      b: z.number().describe('Second number')
-    });
-
-    client.registerTool(
-      {
-        name: 'addNumber',
-        description: 'Dummy tool for testing - adds two numbers together',
-        input: addNumberInputSchema,
-        output: z.object({
-          result: z.number().describe('Sum of a and b')
-        })
-      },
-      async (params: z.infer<typeof addNumberInputSchema>) => {
-        return { result: params.a + params.b };
-      }
-    );
-
-    return client;
+    // Instantiate shared publisher with Slack config
+    this.publisher = new SharedPublisher(publisherConfig);
   }
 
   /**
    * Connect to KĀDI broker with retry logic
    *
-   * Establishes WebSocket connection and performs authentication handshake.
-   * Retries with exponential backoff when broker is not ready (e.g., during startup).
-   * Logs connection status for debugging.
+   * Delegates to shared publisher connect() method.
    *
    * @throws {Error} If connection fails after all retries
    *
@@ -118,46 +85,7 @@ export class KadiEventPublisher {
    * ```
    */
   async connect(): Promise<void> {
-    if (!this.enabled) {
-      console.log('[KĀDI] Publisher: Event publishing disabled {mode: stub}');
-      return;
-    }
-
-    const maxRetries = 5;
-    const baseDelayMs = 1000;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      console.log(`[KĀDI] Publisher: Attempting connection to broker (attempt ${attempt}/${maxRetries})...`);
-
-      // Create a fresh client for each attempt to avoid handshake state issues
-      this.client = this.createClient();
-
-      try {
-        const agentId = await this.client.connect();
-        console.log(`[KĀDI] Publisher: Connected successfully {agentId: ${agentId || 'unknown'}, networks: ['slack']}`);
-        return; // Success - exit retry loop
-      } catch (error: any) {
-        const isLastAttempt = attempt === maxRetries;
-
-        // Disconnect failed client to clean up resources
-        try {
-          await this.client.disconnect();
-        } catch {
-          // Ignore disconnect errors
-        }
-
-        if (isLastAttempt) {
-          console.error(`[KĀDI] Publisher: Connection failed after ${maxRetries} attempts {error: ${error.message || 'Unknown error'}}`);
-          this.client = null; // Clear client on final failure
-          throw error; // Fail-fast after all retries exhausted
-        }
-
-        // Exponential backoff: 1s, 2s, 4s, 8s, 16s
-        const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
-        console.warn(`[KĀDI] Publisher: Connection failed, retrying in ${delayMs}ms... {error: ${error.message || 'Unknown error'}}`);
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-      }
-    }
+    return this.publisher.connect();
   }
 
   /**
@@ -197,8 +125,7 @@ export class KadiEventPublisher {
     },
     botUserId: string
   ): Promise<void> {
-    if (!this.client || !this.enabled) {
-      console.log('[KĀDI] Publisher: Event publishing disabled, mention not published {mode: stub}');
+    if (!this.enabled) {
       return;
     }
 
@@ -222,21 +149,18 @@ export class KadiEventPublisher {
       ? mention.text.substring(0, 50) + '...'
       : mention.text;
 
-    try {
-      this.client.publishEvent(topic, event);
-      console.log(`[KĀDI] Publisher: Event published successfully {topic: ${topic}, mentionId: ${mention.id}, user: ${mention.user}, textPreview: "${textPreview}"}`);
-    } catch (error: any) {
-      // Fail-fast on publish errors (no retry)
-      console.error(`[KĀDI] Publisher: Event publication failed {topic: ${topic}, mentionId: ${mention.id}, error: ${error.message || 'Unknown error'}}`);
-      throw error;
-    }
+    // Delegate to shared publisher with metadata for logging
+    await this.publisher.publishEvent(topic, event, {
+      eventId: mention.id,
+      user: mention.user,
+      textPreview
+    });
   }
 
   /**
    * Disconnect from KĀDI broker
    *
-   * Performs cleanup and gracefully closes WebSocket connection.
-   * Safe to call multiple times (idempotent).
+   * Delegates to shared publisher disconnect() method.
    *
    * @example
    * ```typescript
@@ -245,18 +169,6 @@ export class KadiEventPublisher {
    * ```
    */
   async disconnect(): Promise<void> {
-    if (!this.client || !this.enabled) {
-      return;
-    }
-
-    console.log('[KĀDI] Publisher: Disconnecting from broker...');
-
-    try {
-      await this.client.disconnect();
-      console.log('[KĀDI] Publisher: Disconnected successfully');
-    } catch (error: any) {
-      console.error(`[KĀDI] Publisher: Disconnection failed {error: ${error.message || 'Unknown error'}}`);
-      // Don't throw - best effort cleanup
-    }
+    return this.publisher.disconnect();
   }
 }
