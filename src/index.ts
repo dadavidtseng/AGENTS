@@ -843,7 +843,8 @@ async function main() {
     if (shouldEnableDiscordBot) {
       console.log('🤖 Discord Bot Configuration:');
       console.log('   - Anthropic API Key: Configured ✓');
-      console.log('   - Poll Interval: 5 seconds');
+      console.log('   - Bot User ID:', process.env.DISCORD_BOT_USER_ID || 'Not configured');
+      console.log('   - Mode: Event-driven (KĀDI subscriptions)');
       console.log('🔄 Discord bot will start after broker connection...');
       console.log();
 
@@ -854,10 +855,10 @@ async function main() {
           const discordBot = new DiscordBot({
             client,
             anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
-            pollIntervalMs: parseInt(process.env.BOT_POLL_INTERVAL_MS || '5000'),
+            botUserId: process.env.DISCORD_BOT_USER_ID!,
           });
           discordBot.start();
-          console.log('✅ Discord bot started (polling for @mentions every 5s)');
+          console.log('✅ Discord bot started (subscribed to Discord mention events)');
         } catch (error) {
           console.error('❌ Failed to start Discord bot:', error);
         }

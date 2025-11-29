@@ -3,7 +3,7 @@
  * ===========================================================
  *
  * Subscribes to Slack @mention events via KĀDI event bus and responds using Claude API.
- * Includes retry logic, circuit breaker, and timeout metrics.
+ * Extends BaseBot for circuit breaker, retry logic, and metrics tracking.
  *
  * Flow:
  * 1. Subscribe to slack.app_mention.{BOT_USER_ID} events
@@ -11,7 +11,7 @@
  * 3. Execute any tool calls Claude requests via KADI broker
  * 4. Reply to Slack thread via MCP_Slack_Server
  *
- * Resilience Features:
+ * Resilience Features (inherited from BaseBot):
  * - Exponential backoff retry (3 attempts with 1s, 2s, 4s delays)
  * - Circuit breaker (opens after 5 failures, resets after 1 minute)
  * - Timeout metrics tracking
@@ -19,6 +19,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import type { KadiClient } from '@kadi.build/core';
+import { BaseBot } from '@agents/shared';
 import { SlackMentionEventSchema } from './types/slack-events.js';
 
 // ============================================================================
@@ -41,156 +42,24 @@ interface SlackBotConfig {
 }
 
 // ============================================================================
-// Slack Bot Manager with Resilience
+// Slack Bot Manager extending BaseBot
 // ============================================================================
 
-export class SlackBot {
-  private client: KadiClient;
-  private protocol: any = null;
-  private anthropic: Anthropic;
-  private botUserId: string;
-
-  // Circuit breaker state (retained for processMention error handling)
-  private failureCount = 0;
-  private lastFailureTime = 0;
-  private readonly maxFailures = 5;
-  private readonly resetTimeMs = 60000; // 1 minute
-  private isCircuitOpen = false;
-
-  // Retry configuration (retained for tool invocation)
-  private readonly maxRetries = 3;
-  private readonly baseDelayMs = 1000;
-
-  // Timeout metrics (retained for monitoring)
-  private totalRequests = 0;
-  private timeoutCount = 0;
-  private successCount = 0;
-
+export class SlackBot extends BaseBot {
   constructor(config: SlackBotConfig) {
-    this.client = config.client;
-    // Don't get protocol here - will be initialized in start()
-    this.anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
-    this.botUserId = config.botUserId;
-  }
-
-  /**
-   * Sleep for specified milliseconds
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  /**
-   * Check circuit breaker state and reset if needed
-   */
-  private checkCircuitBreaker(): boolean {
-    const now = Date.now();
-
-    // Reset circuit if enough time has passed
-    if (this.isCircuitOpen && (now - this.lastFailureTime) > this.resetTimeMs) {
-      console.log('🔧 Circuit breaker reset - attempting recovery');
-      this.isCircuitOpen = false;
-      this.failureCount = 0;
-    }
-
-    return this.isCircuitOpen;
-  }
-
-  /**
-   * Record failure and update circuit breaker
-   */
-  private recordFailure(_error: any): void {
-    this.failureCount++;
-    this.lastFailureTime = Date.now();
-    this.timeoutCount++;
-
-    if (this.failureCount >= this.maxFailures && !this.isCircuitOpen) {
-      this.isCircuitOpen = true;
-      console.error(`⚡ Circuit breaker OPEN after ${this.failureCount} failures`);
-      console.error(`   Will retry after ${this.resetTimeMs / 1000} seconds`);
-    }
-
-    // Log timeout metrics every 10 requests
-    if (this.totalRequests % 10 === 0) {
-      this.logMetrics();
-    }
-  }
-
-  /**
-   * Record success and reset failure counter
-   */
-  private recordSuccess(): void {
-    if (this.failureCount > 0) {
-      console.log(`✅ Request succeeded - resetting failure count (was ${this.failureCount})`);
-    }
-    this.failureCount = 0;
-    this.successCount++;
-  }
-
-  /**
-   * Log timeout and success metrics
-   */
-  private logMetrics(): void {
-    const successRate = this.totalRequests > 0
-      ? ((this.successCount / this.totalRequests) * 100).toFixed(1)
-      : '0.0';
-    const timeoutRate = this.totalRequests > 0
-      ? ((this.timeoutCount / this.totalRequests) * 100).toFixed(1)
-      : '0.0';
-
-    console.log('📊 Slack Bot Metrics:');
-    console.log(`   Total Requests: ${this.totalRequests}`);
-    console.log(`   Successes: ${this.successCount} (${successRate}%)`);
-    console.log(`   Timeouts: ${this.timeoutCount} (${timeoutRate}%)`);
-    console.log(`   Circuit Breaker: ${this.isCircuitOpen ? 'OPEN' : 'CLOSED'}`);
-  }
-
-  /**
-   * Invoke tool with retry logic and exponential backoff
-   */
-  private async invokeToolWithRetry(
-    params: {
-      targetAgent: string;
-      toolName: string;
-      toolInput: any;
-      timeout: number;
-    },
-    retryCount = 0
-  ): Promise<any> {
-    this.totalRequests++;
-
-    try {
-      const result = await this.protocol.invokeTool(params);
-      this.recordSuccess();
-      return result;
-    } catch (error: any) {
-      const isTimeout = error.message?.includes('timeout');
-      const isNetworkError = error.message?.includes('ECONNREFUSED') ||
-                            error.message?.includes('ENOTFOUND');
-
-      // Only retry on timeout or network errors
-      if ((isTimeout || isNetworkError) && retryCount < this.maxRetries) {
-        const delayMs = this.baseDelayMs * Math.pow(2, retryCount);
-        console.warn(`⚠️  Request failed (${error.message}), retrying in ${delayMs}ms (attempt ${retryCount + 1}/${this.maxRetries})...`);
-
-        await this.sleep(delayMs);
-        return this.invokeToolWithRetry(params, retryCount + 1);
-      }
-
-      // Record failure after all retries exhausted
-      this.recordFailure(error);
-      throw error;
-    }
+    super(config);
   }
 
   /**
    * Start event subscription for Slack mentions
+   *
+   * Overrides BaseBot.start() to initialize protocol and subscribe to Slack events.
    */
   start(): void {
     console.log('🤖 Starting Slack bot with event-driven architecture...');
 
-    // Initialize protocol now that client is connected
-    this.protocol = this.client.getBrokerProtocol();
+    // Initialize protocol from BaseBot
+    this.initializeProtocol();
 
     // Subscribe to Slack mention events
     this.subscribeToMentions();
@@ -198,10 +67,34 @@ export class SlackBot {
 
   /**
    * Stop event subscription
+   *
+   * Overrides BaseBot.stop() to cleanup Slack-specific resources.
    */
   stop(): void {
     // Unsubscribe from events if needed
     console.log('🛑 Slack bot stopped');
+  }
+
+  /**
+   * Handle Slack mention event
+   *
+   * Implements BaseBot.handleMention() abstract method.
+   * Processes Slack-specific mention format and delegates to processMention().
+   *
+   * @param event - Slack mention event from KĀDI
+   */
+  protected async handleMention(event: any): Promise<void> {
+    // Convert to SlackMention format
+    const slackMention: SlackMention = {
+      id: event.id,
+      user: event.user,
+      text: event.text,
+      channel: event.channel,
+      thread_ts: event.thread_ts,
+      ts: event.ts,
+    };
+
+    await this.processMention(slackMention);
   }
 
   /**
@@ -214,7 +107,7 @@ export class SlackBot {
 
     try {
       this.client.subscribeToEvent(topic, async (event: unknown) => {
-        // Check circuit breaker before processing
+        // Check circuit breaker before processing (from BaseBot)
         if (this.checkCircuitBreaker()) {
           console.warn('[KĀDI] Subscriber: Event processing skipped {reason: circuit breaker OPEN}');
           return;
@@ -242,18 +135,8 @@ export class SlackBot {
 
         console.log(`[KĀDI] Subscriber: Event received {mentionId: ${mention.id}, user: ${mention.user}, channel: ${mention.channel}, textPreview: "${textPreview}", timestamp: ${mention.timestamp}}`);
 
-        // Convert to SlackMention format for existing processing logic
-        const slackMention: SlackMention = {
-          id: mention.id,
-          user: mention.user,
-          text: mention.text,
-          channel: mention.channel,
-          thread_ts: mention.thread_ts,
-          ts: mention.ts,
-        };
-
-        // Process mention using existing logic
-        await this.processMention(slackMention);
+        // Process mention using handleMention
+        await this.handleMention(mention);
       });
 
       console.log(`[KĀDI] Subscriber: Subscription registered successfully {topic: ${topic}}`);
@@ -422,6 +305,7 @@ export class SlackBot {
       return;
     }
 
+    // Use BaseBot's invokeToolWithRetry for resilient invocation
     await this.invokeToolWithRetry({
       targetAgent: 'slack-server',
       toolName: 'slack_send_reply',
