@@ -1,4 +1,4 @@
-# MCP Discord Client
+# mcp-client-discord
 
 ## Changelog
 
@@ -11,7 +11,7 @@
 
 ## Project Vision
 
-MCP Discord Client is a TypeScript-based Model Context Protocol (MCP) server that bridges Discord events with AI-powered autonomous response systems. It listens for Discord mentions in real-time via the Discord Gateway and queues them for processing by external AI agents (specifically Agent_TypeScript) through the KADI broker architecture.
+MCP Discord Client is a TypeScript-based Model Context Protocol (MCP) server that bridges Discord events with AI-powered autonomous response systems. It listens for Discord mentions in real-time via the Discord Gateway and queues them for processing by external AI agents (specifically template-agent-typescript) through the KADI broker architecture.
 
 The project enables seamless integration between Discord communities and Claude AI, allowing natural conversational interactions where users can @mention a bot and receive intelligent, context-aware responses powered by Anthropic's Claude API.
 
@@ -24,9 +24,9 @@ graph LR
     C -->|Queue Mention| D[MentionQueue]
     D -->|get_discord_mentions| E[MCP Server]
     E -->|STDIO Transport| F[KADI Broker]
-    F -->|Tool Invocation| G[Agent_TypeScript]
+    F -->|Tool Invocation| G[template-agent-typescript]
     G -->|Claude API| H[AI Processing]
-    G -->|Response| I[MCP_Discord_Server]
+    G -->|Response| I[mcp-server-discord]
     I -->|Reply| A
 ```
 
@@ -44,15 +44,15 @@ graph LR
 2. Discord Gateway receives `messageCreate` event via WebSocket
 3. DiscordManager validates mention and extracts clean text
 4. Mention object queued in MentionQueue with metadata (user, channel, timestamp)
-5. Agent_TypeScript polls `get_discord_mentions` tool via KADI broker
+5. template-agent-typescript polls `get_discord_mentions` tool via KADI broker
 6. Mentions retrieved and removed from queue (FIFO batch retrieval)
-7. Agent processes with Claude API and responds via MCP_Discord_Server
+7. Agent processes with Claude API and responds via mcp-server-discord
 
 ## Module Structure Diagram
 
 ```mermaid
 graph TD
-    A["(Root) MCP_Discord_Client"] --> B["src"];
+    A["(Root) mcp-client-discord"] --> B["src"];
 
     click B "./src/CLAUDE.md" "View src module documentation"
 ```
@@ -76,7 +76,7 @@ graph TD
 1. **Clone and Install**
    ```bash
    git clone <repository-url>
-   cd MCP_Discord_Client
+   cd mcp-client-discord
    npm install
    ```
 
@@ -128,13 +128,13 @@ Register in `kadi-broker/config/mcp-upstreams.json`:
 ```json
 {
   "id": "discord-client",
-  "name": "Discord Event Listener (MCP_Discord_Client)",
+  "name": "Discord Event Listener (mcp-client-discord)",
   "type": "stdio",
   "prefix": "discord_client",
   "enabled": true,
   "stdio": {
     "command": "node",
-    "args": ["C:\\path\\to\\MCP_Discord_Client\\dist\\index.js"],
+    "args": ["C:\\path\\to\\mcp-client-discord\\dist\\index.js"],
     "env": {
       "DISCORD_TOKEN": "your_token",
       "DISCORD_GUILD_ID": "your_guild_id"
@@ -223,13 +223,13 @@ Register in `kadi-broker/config/mcp-upstreams.json`:
 
 **Understanding the System**:
 1. This is a **listener-only** service - it does NOT send Discord messages
-2. Message sending handled by separate `MCP_Discord_Server` service
+2. Message sending handled by separate `mcp-server-discord` service
 3. Bot must be invited to channels with proper permissions
 4. Message Content Intent required in Discord Developer Portal
 
 **Common Integration Patterns**:
 ```typescript
-// Agent_TypeScript polling pattern
+// template-agent-typescript polling pattern
 const result = await protocol.invokeTool({
   targetAgent: 'discord-client',
   toolName: 'discord_client_get_discord_mentions',
@@ -276,7 +276,7 @@ const { mentions, count } = JSON.parse(result.content[0].text);
 
 **Do Not Change Without Coordination**:
 - MCP tool names (`get_discord_mentions`)
-- Tool output JSON structure (breaks Agent_TypeScript integration)
+- Tool output JSON structure (breaks template-agent-typescript integration)
 - STDIO transport mechanism (broker expects specific format)
 - Discord Intent requirements (breaks Gateway connection)
 
@@ -297,6 +297,6 @@ const { mentions, count } = JSON.parse(result.content[0].text);
 - Check if mentions are being consumed faster than produced
 
 **MCP tool not found**:
-- Ensure server started successfully (check logs for "MCP_Discord_Client ready")
+- Ensure server started successfully (check logs for "mcp-client-discord ready")
 - Verify KADI broker configuration matches tool name
 - Check STDIO transport connection established

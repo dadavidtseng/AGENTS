@@ -1,15 +1,15 @@
-# MCP_Discord_Client
+# mcp-client-discord
 
 Discord Event Listener with Claude-Powered Auto-Response via KADI Broker.
 
 ## Overview
 
-MCP_Discord_Client is a TypeScript-based MCP server that listens for Discord @mentions and queues them for Agent_TypeScript to process. It uses Discord Gateway to receive real-time events.
+mcp-client-discord is a TypeScript-based MCP server that listens for Discord @mentions and queues them for template-agent-typescript to process. It uses Discord Gateway to receive real-time events.
 
 ## Architecture
 
 ```
-Discord Channel → Gateway Event → Mention Queue → Agent_TypeScript → Claude API → MCP_Discord_Server → Discord Reply
+Discord Channel → Gateway Event → Mention Queue → template-agent-typescript → Claude API → mcp-server-discord → Discord Reply
 ```
 
 ### Components
@@ -106,13 +106,13 @@ The MCP server is registered in `kadi-broker/config/mcp-upstreams.json`:
 ```json
 {
   "id": "discord-client",
-  "name": "Discord Event Listener (MCP_Discord_Client)",
+  "name": "Discord Event Listener (mcp-client-discord)",
   "type": "stdio",
   "prefix": "discord_client",
   "enabled": true,
   "stdio": {
     "command": "node",
-    "args": ["C:\\p4\\Personal\\SD\\MCP_Discord_Client\\dist\\index.js"],
+    "args": ["C:\\p4\\Personal\\SD\\mcp-client-discord\\dist\\index.js"],
     "env": {
       "DISCORD_TOKEN": "your_token",
       "DISCORD_GUILD_ID": "your_guild_id"
@@ -121,6 +121,47 @@ The MCP server is registered in `kadi-broker/config/mcp-upstreams.json`:
   "networks": ["discord"]
 }
 ```
+
+## Event Topics
+
+### Topic Pattern Standard
+
+All KĀDI events follow the standardized topic pattern: **`{platform}.{event_type}.{bot_id}`**
+
+- **`{platform}`**: Platform identifier (`slack`, `discord`, etc.)
+- **`{event_type}`**: Event type (`app_mention`, `mention`, etc.)
+- **`{bot_id}`**: Bot unique identifier (critical for multi-bot deployments)
+
+**Why bot_id is required:**
+- ✅ Enables multiple bot instances in the same server
+- ✅ Routes events only to the intended bot
+- ✅ Prevents cross-bot event delivery
+- ✅ Supports multi-tenant deployments
+
+**Validation:** Topics are automatically validated by `@agents/shared` package. Invalid patterns will log warnings but still publish.
+
+See [TOPIC_PATTERN.md](../shared/TOPIC_PATTERN.md) for complete documentation.
+
+### `discord.mention.{BOT_USER_ID}`
+
+Published when the bot is @mentioned in Discord.
+
+**Event Payload (DiscordMentionEvent):**
+```typescript
+{
+  id: string;           // Unique message ID
+  user: string;         // Discord user ID who mentioned the bot
+  username: string;     // Discord username
+  text: string;         // Message text (with @bot mention removed)
+  channel: string;      // Discord channel ID
+  channelName: string;  // Discord channel name
+  guild: string;        // Discord guild/server ID
+  ts: string;           // ISO 8601 timestamp
+  timestamp: string;    // ISO 8601 datetime when event was published
+}
+```
+
+---
 
 ## Usage with Agent_TypeScript
 
