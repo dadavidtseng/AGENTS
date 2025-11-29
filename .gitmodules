@@ -18,7 +18,7 @@
 	url = https://github.com/dadavidtseng/template-agent-typescript.git
 [submodule "kadi/kadi-broker"]
 	path = kadi/kadi-broker
-	url = https://github.com/dadavidtseng/mcp-server-discord.git
+	url = https://github.com/dadavidtseng/kadi-broker.git
 [submodule "mcp-server-git"]
 	path = mcp-server-git
 	url = https://github.com/dadavidtseng/mcp-server-git.git
