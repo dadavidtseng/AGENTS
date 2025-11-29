@@ -143,7 +143,7 @@ See `.env.template` for complete configuration options.
 The template includes an optional Slack bot that:
 - Subscribes to Slack @mention events via KĀDI event bus (real-time, <100ms latency)
 - Processes mentions using Claude API with tool execution support
-- Replies to Slack threads via MCP_Slack_Server
+- Replies to Slack threads via mcp-server-slack
 - Includes circuit breaker and retry logic for resilience
 
 ### 🔴 Breaking Changes (v2.0.0)
@@ -161,8 +161,8 @@ The template includes an optional Slack bot that:
 
 **Prerequisites:**
 1. KĀDI broker running
-2. MCP_Slack_Client running (publishes mention events)
-3. MCP_Slack_Server running (handles replies)
+2. mcp-client-slack running (publishes mention events)
+3. mcp-server-slack running (handles replies)
 4. Slack bot configured with required scopes
 
 **Step 1: Configure Environment**
@@ -198,26 +198,51 @@ Look for:
 ### Architecture
 
 ```
-Slack @mention → MCP_Slack_Client → KĀDI Event Bus (slack.app_mention.U*)
+Slack @mention → mcp-client-slack → KĀDI Event Bus (slack.app_mention.U*)
                                               ↓
-                                    Agent_TypeScript subscribes
+                                    template-agent-typescript subscribes
                                               ↓
                                  Event validation (Zod schema)
                                               ↓
                                     Claude API + Tool Execution
                                               ↓
-                                    MCP_Slack_Server (reply)
+                                    mcp-server-slack (reply)
 ```
 
 ### Event Flow
 
-1. **Event Published**: MCP_Slack_Client publishes `SlackMentionEvent` to topic `slack.app_mention.{BOT_USER_ID}`
-2. **Event Received**: Agent_TypeScript subscriber receives event
+1. **Event Published**: mcp-client-slack publishes `SlackMentionEvent` to topic `slack.app_mention.{BOT_USER_ID}`
+2. **Event Received**: template-agent-typescript subscriber receives event
 3. **Validation**: Event validated with `SlackMentionEventSchema` (Zod)
 4. **Circuit Breaker**: Check if processing should continue (handles outages gracefully)
 5. **Processing**: Claude API called with user message and available tools
 6. **Tool Execution**: Any tool calls executed via KĀDI broker
-7. **Reply**: Final response sent to Slack via MCP_Slack_Server
+7. **Reply**: Final response sent to Slack via mcp-server-slack
+
+### Event Topics
+
+#### Topic Pattern Standard
+
+All KĀDI events follow the standardized topic pattern: **`{platform}.{event_type}.{bot_id}`**
+
+- **`{platform}`**: Platform identifier (`slack`, `discord`, etc.)
+- **`{event_type}`**: Event type (`app_mention`, `mention`, etc.)
+- **`{bot_id}`**: Bot unique identifier (critical for multi-bot deployments)
+
+**Why bot_id is required:**
+- ✅ Enables multiple bot instances in the same workspace
+- ✅ Routes events only to the intended bot
+- ✅ Prevents cross-bot event delivery
+- ✅ Supports multi-tenant deployments
+
+**Validation:** Topics are automatically validated by `@agents/shared` package. Invalid patterns will log warnings but still publish.
+
+See [shared/TOPIC_PATTERN.md](../shared/TOPIC_PATTERN.md) for complete documentation.
+
+#### Supported Topics
+
+- **`slack.app_mention.{BOT_USER_ID}`** - Slack @mention events
+- **`discord.mention.{BOT_USER_ID}`** - Discord @mention events
 
 ### Resilience Features
 
@@ -253,12 +278,12 @@ setInterval(async () => {
 **Bot not receiving mentions:**
 1. Check `SLACK_BOT_USER_ID` matches your Slack app's bot user ID
 2. Verify `KADI_NETWORK` includes `slack`
-3. Confirm MCP_Slack_Client is running and publishing events
+3. Confirm mcp-client-slack is running and publishing events
 4. Check KĀDI broker logs for event routing
 
 **Circuit breaker opening frequently:**
 1. Check network connectivity to KĀDI broker
-2. Verify MCP_Slack_Server is running
+2. Verify mcp-server-slack is running
 3. Review timeout settings (`BOT_TOOL_TIMEOUT_MS`)
 4. Check Claude API rate limits
 
