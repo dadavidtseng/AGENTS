@@ -30,6 +30,7 @@ import {
 import { Client, GatewayIntentBits, Message, Partials } from 'discord.js';
 import { z } from 'zod';
 import * as dotenv from 'dotenv';
+import { KadiEventPublisher } from './kadi-publisher.js';
 
 // Load environment variables
 dotenv.config();
@@ -41,16 +42,26 @@ dotenv.config();
 const ConfigSchema = z.object({
   DISCORD_TOKEN: z.string().min(1, 'DISCORD_TOKEN is required'),
   DISCORD_GUILD_ID: z.string().optional(),
+  KADI_BROKER_URL: z
+    .string()
+    .url('KADI_BROKER_URL must be a valid WebSocket URL')
+    .describe('KĀDI broker WebSocket URL'),
+  DISCORD_BOT_USER_ID: z
+    .string()
+    .regex(/^[0-9]+$/, 'DISCORD_BOT_USER_ID must be a valid Discord user ID (numeric)')
+    .describe('Discord bot user ID for event routing'),
   MCP_LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });
 
-type Config = z.infer<typeof ConfigSchema>;
+export type Config = z.infer<typeof ConfigSchema>;
 
 function loadConfig(): Config {
   try {
     return ConfigSchema.parse({
       DISCORD_TOKEN: process.env.DISCORD_TOKEN,
       DISCORD_GUILD_ID: process.env.DISCORD_GUILD_ID,
+      KADI_BROKER_URL: process.env.KADI_BROKER_URL,
+      DISCORD_BOT_USER_ID: process.env.DISCORD_BOT_USER_ID,
       MCP_LOG_LEVEL: process.env.MCP_LOG_LEVEL || 'info',
     });
   } catch (error) {
@@ -144,11 +155,15 @@ class MentionQueue {
 class DiscordManager {
   private client: Client | null = null;
   private mentionQueue: MentionQueue;
+  private publisher: KadiEventPublisher | null = null;
   private enabled: boolean = false;
   private botUserId: string | null = null;
+  private config: Config;
 
-  constructor(config: Config, mentionQueue: MentionQueue) {
+  constructor(config: Config, mentionQueue: MentionQueue, publisher: KadiEventPublisher | null = null) {
     this.mentionQueue = mentionQueue;
+    this.publisher = publisher;
+    this.config = config;
 
     // Check if token looks valid (not placeholder)
     const hasValidToken =
@@ -227,8 +242,16 @@ class DiscordManager {
         ts: message.createdAt.toISOString(),
       };
 
-      // Queue for processing
+      // Queue for processing (backward compatibility)
       this.mentionQueue.add(mention);
+
+      // Publish to KĀDI event bus (non-blocking)
+      if (this.publisher && this.config.DISCORD_BOT_USER_ID) {
+        this.publisher.publishMention(mention, this.config.DISCORD_BOT_USER_ID).catch((error) => {
+          console.error('[KĀDI] Failed to publish mention event:', error);
+          // Don't block Discord processing on publish failure
+        });
+      }
 
       console.log(`💬 Received mention: "${cleanText}" from @${message.author.username}`);
     } catch (error) {
@@ -271,12 +294,14 @@ class DiscordClientMCPServer {
   private server: Server;
   private discordManager: DiscordManager;
   private mentionQueue: MentionQueue;
+  private publisher: KadiEventPublisher;
   private config: Config;
 
   constructor() {
     this.config = loadConfig();
     this.mentionQueue = new MentionQueue();
-    this.discordManager = new DiscordManager(this.config, this.mentionQueue);
+    this.publisher = new KadiEventPublisher(this.config);
+    this.discordManager = new DiscordManager(this.config, this.mentionQueue, this.publisher);
 
     // Create MCP server
     this.server = new Server(
@@ -377,10 +402,14 @@ class DiscordClientMCPServer {
     console.log('🚀 Starting MCP_Discord_Client...');
     console.log('📋 Configuration:');
     console.log(`   - Log Level: ${this.config.MCP_LOG_LEVEL}`);
+    console.log(`   - Broker: ${this.config.KADI_BROKER_URL}`);
     console.log(`   - Queue Max Size: 100`);
 
     // Start Discord Gateway
     await this.discordManager.start();
+
+    // Connect to KĀDI broker
+    await this.publisher.connect();
 
     // Start MCP server with stdio transport
     const transport = new StdioServerTransport();
@@ -388,6 +417,7 @@ class DiscordClientMCPServer {
 
     console.log('✅ MCP_Discord_Client ready');
     console.log('🎧 Listening for Discord @mentions...');
+    console.log('📤 Publishing events to KĀDI broker');
   }
 }
 
