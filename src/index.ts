@@ -1,5 +1,5 @@
 /**
- * MCP_Slack_Server - Slack Message Sending Service
+ * mcp-server-slack - Slack Message Sending Service
  * =================================================
  *
  * This MCP server provides Slack message sending capabilities for Claude Desktop
