@@ -1,6 +1,6 @@
-# MCP_Slack_Client
+# mcp-client-slack
 
-MCP Server that listens for Slack @mentions and publishes them as events to the KĀDI event bus for real-time processing by Agent_TypeScript.
+MCP Server that listens for Slack @mentions and publishes them as events to the KĀDI event bus for real-time processing by template-agent-typescript.
 
 ## Overview
 
@@ -8,7 +8,7 @@ This server is part of the KĀDI Slack bot architecture. It:
 1. Connects to Slack via Socket Mode to receive real-time @mention events
 2. Validates and publishes events to KĀDI broker using topic-based routing
 3. Enables event-driven architecture with <100ms latency
-4. Works in conjunction with MCP_Slack_Server (for sending replies)
+4. Works in conjunction with mcp-server-slack (for sending replies)
 
 ## Architecture
 
@@ -19,21 +19,21 @@ Slack @mention → Socket Mode → Event Validation → KĀDI Event Bus
                                                       ↓
                                              Agent_TypeScript
                                                       ↓
-                                          Claude API + Reply via MCP_Slack_Server
+                                          Claude API + Reply via mcp-server-slack
 ```
 
 ### Event-Driven Architecture
 
 This server implements a **publish-subscribe pattern** using KĀDI's RabbitMQ infrastructure:
 
-- **Publisher**: MCP_Slack_Client publishes `SlackMentionEvent` to topic `slack.app_mention.{BOT_USER_ID}`
+- **Publisher**: mcp-client-slack publishes `SlackMentionEvent` to topic `slack.app_mention.{BOT_USER_ID}`
 - **Subscriber**: Agent_TypeScript subscribes to the same topic for real-time event delivery
 - **Benefits**: Real-time processing (<100ms), no polling overhead, scalable architecture
 
 ## Installation
 
 ```bash
-cd C:\p4\Personal\SD\MCP_Slack_Client
+cd C:\p4\Personal\SD\mcp-client-slack
 npm install
 ```
 
@@ -71,7 +71,7 @@ SLACK_BOT_USER_ID=U01234ABCD
 ### Required Slack Scopes
 
 - `app_mentions:read` - Listen for @mentions
-- `chat:write` - (handled by MCP_Slack_Server)
+- `chat:write` - (handled by mcp-server-slack)
 
 ## Usage
 
@@ -99,7 +99,7 @@ Add to `kadi-broker/mcp-upstreams.json`:
   "networks": ["slack"],
   "stdio": {
     "command": "node",
-    "args": ["C:/p4/Personal/SD/MCP_Slack_Client/dist/index.js"],
+    "args": ["C:/p4/Personal/SD/mcp-client-slack/dist/index.js"],
     "env": {
       "SLACK_BOT_TOKEN": "xoxb-...",
       "SLACK_APP_TOKEN": "xapp-...",
@@ -128,6 +128,24 @@ Add to `kadi-broker/mcp-upstreams.json`:
 ---
 
 ## Event Topics
+
+### Topic Pattern Standard
+
+All KĀDI events follow the standardized topic pattern: **`{platform}.{event_type}.{bot_id}`**
+
+- **`{platform}`**: Platform identifier (`slack`, `discord`, etc.)
+- **`{event_type}`**: Event type (`app_mention`, `mention`, etc.)
+- **`{bot_id}`**: Bot unique identifier (critical for multi-bot deployments)
+
+**Why bot_id is required:**
+- ✅ Enables multiple bot instances in the same workspace
+- ✅ Routes events only to the intended bot
+- ✅ Prevents cross-bot event delivery
+- ✅ Supports multi-tenant deployments
+
+**Validation:** Topics are automatically validated by `@agents/shared` package. Invalid patterns will log warnings but still publish.
+
+See [TOPIC_PATTERN.md](../shared/TOPIC_PATTERN.md) for complete documentation.
 
 ### `slack.app_mention.{BOT_USER_ID}`
 
@@ -185,7 +203,7 @@ client.subscribeToEvent(`slack.app_mention.${botUserId}`, async (event: unknown)
   const mention = validationResult.data;
 
   // Process mention with Claude API
-  // Reply using MCP_Slack_Server tools
+  // Reply using mcp-server-slack tools
 });
 ```
 
@@ -255,7 +273,7 @@ npm install zod
 **Step 4: Test Event Flow**
 
 1. Start KĀDI broker
-2. Start MCP_Slack_Client (publisher)
+2. Start mcp-client-slack (publisher)
 3. Start Agent_TypeScript (subscriber)
 4. Send test @mention in Slack
 5. Verify event received in <100ms

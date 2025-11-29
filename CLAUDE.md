@@ -1,4 +1,4 @@
-# MCP_Slack_Client
+# mcp-client-slack
 
 **MCP Server for Slack Event Listening with Claude-Powered Responses**
 
@@ -15,7 +15,7 @@
 
 ## Project Vision
 
-MCP_Slack_Client is a Model Context Protocol (MCP) server that bridges Slack workspace mentions with AI-powered autonomous responses. It operates as part of the KADI broker architecture, listening for Slack @mentions in real-time via Socket Mode, queuing them in memory, and exposing them through an MCP tool interface for consumption by Agent_TypeScript.
+mcp-client-slack is a Model Context Protocol (MCP) server that bridges Slack workspace mentions with AI-powered autonomous responses. It operates as part of the KĀDI broker architecture, listening for Slack @mentions in real-time via Socket Mode, queuing them in memory, and exposing them through an MCP tool interface for consumption by template-agent-typescript.
 
 The server enables asynchronous, event-driven AI conversation flows where Slack users can mention a bot and receive intelligent Claude-powered responses without manual intervention.
 
@@ -30,8 +30,8 @@ graph LR
     C --> D[MentionQueue]
     D --> E[MCP Server]
     E -->|get_slack_mentions tool| F[KADI Broker]
-    F --> G[Agent_TypeScript]
-    G -->|processes with Claude API| H[MCP_Slack_Server]
+    F --> G[template-agent-typescript]
+    G -->|processes with Claude API| H[mcp-server-slack]
     H -->|posts reply| A
 ```
 
@@ -58,7 +58,7 @@ graph LR
 
 ```mermaid
 graph TD
-    A["(Root) MCP_Slack_Client"] --> B["src/"];
+    A["(Root) mcp-client-slack"] --> B["src/"];
     B --> C["index.ts (main entry)"];
 
     click C "#/src/module" "View src module documentation"
@@ -129,7 +129,7 @@ Add to `kadi-broker/mcp-upstreams.json`:
   "networks": ["slack"],
   "stdio": {
     "command": "node",
-    "args": ["C:/p4/Personal/SD/MCP_Slack_Client/dist/index.js"],
+    "args": ["C:/p4/Personal/SD/mcp-client-slack/dist/index.js"],
     "env": {
       "SLACK_BOT_TOKEN": "xoxb-...",
       "SLACK_APP_TOKEN": "xapp-...",
@@ -202,8 +202,8 @@ Add to `kadi-broker/mcp-upstreams.json`:
 ### Integration Points to Consider
 
 - **KADI Broker**: This server is typically spawned as child process via stdio
-- **MCP_Slack_Server**: Companion server for posting replies (separate repository)
-- **Agent_TypeScript**: Downstream consumer that polls `get_slack_mentions` tool
+- **mcp-server-slack**: Companion server for posting replies (separate repository)
+- **template-agent-typescript**: Downstream consumer that polls `get_slack_mentions` tool
 - **Claude API**: Used by agents, not directly by this server
 
 ### Common Modification Scenarios
@@ -236,7 +236,7 @@ Add to `kadi-broker/mcp-upstreams.json`:
 - [Slack Bolt Framework](https://slack.dev/bolt-js/)
 - [Slack Socket Mode Guide](https://api.slack.com/apis/connections/socket)
 - KADI Broker Documentation (internal, see KADI repository)
-- MCP_Slack_Server Repository (companion for posting replies)
+- mcp-server-slack Repository (companion for posting replies)
 
 ---
 
