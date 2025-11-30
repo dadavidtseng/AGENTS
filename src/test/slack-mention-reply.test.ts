@@ -9,8 +9,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { SlackBot } from '../src/slack-bot.js';
-import type { KadiClient } from '@kadi.build/core';
+import { SlackBot } from '../bot/slack-bot.js';
+import type { KadiClient } from '../kadi/kadi-core/src';
 
 // ============================================================================
 // Mock Setup
@@ -253,7 +253,7 @@ describe('SlackBot - Mention Reply Functionality', () => {
     // Verify count_words tool was called
     expect(mockProtocol.invokeTool).toHaveBeenCalledWith(
       expect.objectContaining({
-        targetAgent: 'text-processor',
+        targetAgent: 'template-agent-typescript',
         toolName: 'count_words',
         toolInput: {
           text: 'Count words in this message'

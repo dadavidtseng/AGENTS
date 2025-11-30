@@ -152,8 +152,8 @@ export class DiscordBot extends BaseBot {
      */
     private async processMention(mention: DiscordMention): Promise<void> {
         try {
-            // Get list of available KADI tools
-            const availableTools = this.getAvailableTools();
+            // Get list of available KADI tools (dynamically from client and broker)
+            const availableTools = await this.getAvailableTools();
 
             // Call Claude API
             let response = await this.anthropic.messages.create({
@@ -275,6 +275,9 @@ export class DiscordBot extends BaseBot {
 
     /**
      * Send reply to Discord via MCP_Discord_Server
+     *
+     * Handles Discord's 2,000 character limit by splitting long messages
+     * into multiple sequential replies.
      */
     private async sendDiscordReply(
         channel: string,
@@ -286,161 +289,188 @@ export class DiscordBot extends BaseBot {
             return;
         }
 
+        const MAX_DISCORD_MESSAGE_LENGTH = 2000;
+
+        // If message fits in one reply, send directly
+        if (text.length <= MAX_DISCORD_MESSAGE_LENGTH) {
+            await this.invokeToolWithRetry({
+                targetAgent: 'mcp-server-discord',
+                toolName: 'discord_server_send_reply',
+                toolInput: {
+                    channel,
+                    message_id,
+                    text,
+                },
+                timeout: parseInt(process.env.BOT_TOOL_TIMEOUT_MS || '10000'),
+            });
+            return;
+        }
+
+        // Split long message into chunks
+        console.log(`📄 Message too long (${text.length} chars), splitting into chunks...`);
+
+        const chunks = this.splitMessage(text, MAX_DISCORD_MESSAGE_LENGTH);
+
+        console.log(`📤 Sending ${chunks.length} message chunks to Discord`);
+
+        // Send first chunk as a reply to the original message
         await this.invokeToolWithRetry({
             targetAgent: 'mcp-server-discord',
             toolName: 'discord_server_send_reply',
             toolInput: {
                 channel,
                 message_id,
-                text,
+                text: chunks[0],
             },
             timeout: parseInt(process.env.BOT_TOOL_TIMEOUT_MS || '10000'),
         });
+
+        // Send remaining chunks as regular messages (not replies)
+        for (let i = 1; i < chunks.length; i++) {
+            await this.invokeToolWithRetry({
+                targetAgent: 'mcp-server-discord',
+                toolName: 'discord_server_send_message',
+                toolInput: {
+                    channel,
+                    text: chunks[i],
+                },
+                timeout: parseInt(process.env.BOT_TOOL_TIMEOUT_MS || '10000'),
+            });
+
+            // Small delay between messages to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+    }
+
+    /**
+     * Split message into chunks that respect Discord's character limit
+     *
+     * Tries to split on newlines to keep formatting intact.
+     *
+     * @param text - Full message text
+     * @param maxLength - Maximum length per chunk (default: 2000)
+     * @returns Array of message chunks
+     */
+    private splitMessage(text: string, maxLength: number = 2000): string[] {
+        const chunks: string[] = [];
+        let currentChunk = '';
+
+        // Split by lines to preserve formatting
+        const lines = text.split('\n');
+
+        for (const line of lines) {
+            // If single line exceeds limit, force-split it
+            if (line.length > maxLength) {
+                // Save current chunk if not empty
+                if (currentChunk) {
+                    chunks.push(currentChunk);
+                    currentChunk = '';
+                }
+
+                // Force-split the long line
+                let remainingLine = line;
+                while (remainingLine.length > maxLength) {
+                    chunks.push(remainingLine.substring(0, maxLength));
+                    remainingLine = remainingLine.substring(maxLength);
+                }
+                currentChunk = remainingLine + '\n';
+                continue;
+            }
+
+            // Check if adding this line would exceed limit
+            if (currentChunk.length + line.length + 1 > maxLength) {
+                // Save current chunk and start new one
+                chunks.push(currentChunk.trim());
+                currentChunk = line + '\n';
+            } else {
+                // Add line to current chunk
+                currentChunk += line + '\n';
+            }
+        }
+
+        // Add final chunk if not empty
+        if (currentChunk.trim()) {
+            chunks.push(currentChunk.trim());
+        }
+
+        return chunks;
+    }
+
+    /**
+     * Query broker for tools available on connected networks
+     *
+     * Uses KĀDI broker's kadi.ability.list API to discover tools available
+     * on the networks this agent is connected to (global, text, git, slack, discord).
+     *
+     * @returns Array of network tools in Anthropic format
+     */
+    private async queryNetworkTools(): Promise<Anthropic.Tool[]> {
+        try {
+            const networks = this.client.config.networks || [];
+
+            // Get broker protocol to access connection
+            const protocol = this.client.getBrokerProtocol();
+
+            // Query broker for tools on connected networks
+            const result = await (protocol as any).connection.sendRequest({
+                jsonrpc: '2.0',
+                method: 'kadi.ability.list',
+                params: {
+                    networks,
+                    includeProviders: false  // We don't need provider info for Claude
+                },
+                id: `tools_${Date.now()}`
+            }) as {
+                tools: Array<{
+                    name: string;
+                    description?: string;
+                    inputSchema?: any;
+                }>;
+            };
+
+            console.log(`🔍 Discovered ${result.tools.length} network tools from broker`);
+
+            // Convert to Anthropic format
+            return result.tools.map((tool: any) => ({
+                name: tool.name,
+                description: tool.description || '',
+                input_schema: (tool.inputSchema || { type: 'object' }) as Anthropic.Tool.InputSchema
+            }));
+        } catch (error) {
+            console.error('❌ Failed to query network tools from broker:', error);
+            return [];  // Fallback to empty array on error
+        }
     }
 
     /**
      * Get available KADI tools formatted for Claude API
+     *
+     * Combines tools from two sources:
+     * 1. Local tools: Registered directly on this agent via client.registerTool()
+     * 2. Network tools: Available via broker on connected networks
+     *
+     * This enables dynamic discovery - when broker tools change, they're
+     * automatically available to Claude without code changes.
      */
-    private getAvailableTools(): Anthropic.Tool[] {
-        // Hardcoded list of available tools
-        // TODO: Dynamically fetch from broker via kadi.tools.list
-        return [
-            {
-                name: 'format_text',
-                description: 'Format text to uppercase, lowercase, capitalize, or title case. Use this when user asks to convert text case or format text in different styles.',
-                input_schema: {
-                    type: 'object',
-                    properties: {
-                        text: {type: 'string', description: 'Text to format'},
-                        style: {
-                            type: 'string',
-                            enum: ['uppercase', 'lowercase', 'capitalize', 'title'],
-                            description: 'Formatting style: uppercase (ALL CAPS), lowercase (all lowercase), capitalize (First letter), title (Each Word Capitalized)',
-                        },
-                    },
-                    required: ['text', 'style'],
-                },
-            },
-            {
-                name: 'reverse_text',
-                description: 'Reverse the character order in text. Use this when user asks to reverse, flip, or mirror text.',
-                input_schema: {
-                    type: 'object',
-                    properties: {
-                        text: {type: 'string', description: 'Text to reverse'},
-                    },
-                    required: ['text'],
-                },
-            },
-            {
-                name: 'count_words',
-                description: 'Count words, characters, and lines in text. Use this when user asks how many words, characters, or lines are in text.',
-                input_schema: {
-                    type: 'object',
-                    properties: {
-                        text: {type: 'string', description: 'Text to count words in'},
-                    },
-                    required: ['text'],
-                },
-            },
-            {
-                name: 'trim_text',
-                description: 'Remove whitespace from text. Use this when user asks to trim, remove spaces, or clean up whitespace.',
-                input_schema: {
-                    type: 'object',
-                    properties: {
-                        text: {type: 'string', description: 'Text to trim'},
-                        mode: {
-                            type: 'string',
-                            enum: ['both', 'start', 'end'],
-                            description: 'Trimming mode: both (trim both sides), start (trim beginning only), end (trim ending only)',
-                        },
-                    },
-                    required: ['text', 'mode'],
-                },
-            },
-            {
-                name: 'validate_json',
-                description: 'Validate and parse JSON strings. Use this when user asks to validate JSON, check if JSON is valid, or parse JSON.',
-                input_schema: {
-                    type: 'object',
-                    properties: {
-                        json_string: {type: 'string', description: 'JSON string to validate and parse'},
-                    },
-                    required: ['json_string'],
-                },
-            },
-            {
-                name: 'git_git_status',
-                description: 'Get current git repository status showing branch, staged/unstaged changes, untracked files, and conflicts. Use when user asks about git status, current changes, or repository state. Returns structured status information.',
-                input_schema: {
-                    type: 'object',
-                    properties: {},
-                    required: [],
-                },
-            },
-            {
-                name: 'git_git_log',
-                description: 'Show git commit history. Use this when user asks about recent commits, commit history, or git log.',
-                input_schema: {
-                    type: 'object',
-                    properties: {
-                        maxCount: {
-                            type: 'number',
-                            description: 'Maximum number of commits to show (default: 10)',
-                        },
-                    },
-                    required: [],
-                },
-            },
-            {
-                name: 'git_git_diff',
-                description: 'Show differences between working directory and last commit, or between commits. Use when user asks what changed, show diff, or compare versions.',
-                input_schema: {
-                    type: 'object',
-                    properties: {
-                        target: {
-                            type: 'string',
-                            description: 'Optional: commit hash, branch name, or file path to diff',
-                        },
-                    },
-                    required: [],
-                },
-            },
-            {
-                name: 'git_git_branch',
-                description: 'List, create, or delete git branches. Use when user asks about branches, create branch, or delete branch.',
-                input_schema: {
-                    type: 'object',
-                    properties: {
-                        action: {
-                            type: 'string',
-                            enum: ['list', 'create', 'delete'],
-                            description: 'Action to perform: list (show all branches), create (new branch), delete (remove branch)',
-                        },
-                        branchName: {
-                            type: 'string',
-                            description: 'Branch name (required for create/delete actions)',
-                        },
-                    },
-                    required: ['action'],
-                },
-            },
-            {
-                name: 'git_git_set_working_dir',
-                description: 'Set the working directory for subsequent git operations. Use this BEFORE other git commands when user specifies a directory path. This persists the directory across tool calls in the same session.',
-                input_schema: {
-                    type: 'object',
-                    properties: {
-                        path: {
-                            type: 'string',
-                            description: 'Absolute path to the git repository directory (e.g., "C:\\\\p4\\\\Personal\\\\SD\\\\template-agent-typescript")',
-                        },
-                    },
-                    required: ['path'],
-                },
-            },
-        ];
+    private async getAvailableTools(): Promise<Anthropic.Tool[]> {
+        // 1. Get locally registered tools (tools on THIS agent)
+        const localTools = this.client.getAllRegisteredTools().map(tool => ({
+            name: tool.definition.name,
+            description: tool.definition.description || '',
+            input_schema: tool.definition.inputSchema as Anthropic.Tool.InputSchema
+        }));
+
+        // 2. Query broker for tools available on connected networks
+        const networkTools = await this.queryNetworkTools();
+
+        // 3. Deduplicate: prefer local tools over network tools (local tools are authoritative)
+        const localToolNames = new Set(localTools.map(t => t.name));
+        const uniqueNetworkTools = networkTools.filter(t => !localToolNames.has(t.name));
+
+        // 4. Combine and return (local tools first, then unique network tools)
+        console.log(`📋 Available tools: ${localTools.length} local + ${uniqueNetworkTools.length} network (${networkTools.length - uniqueNetworkTools.length} duplicates removed) = ${localTools.length + uniqueNetworkTools.length} total`);
+
+        return [...localTools, ...uniqueNetworkTools];
     }
 
     /**
@@ -448,8 +478,8 @@ export class DiscordBot extends BaseBot {
      */
     private resolveTargetAgent(toolName: string): string {
         // Simple prefix-based routing
-        if (toolName.startsWith('format_') || toolName.startsWith('count_') || toolName.startsWith('validate_') || toolName.startsWith('reverse_') || toolName.startsWith('trim_')) {
-            return 'text-processor'; // Agent_TypeScript's own name
+        if (toolName.startsWith('format_') || toolName.startsWith('count_') || toolName.startsWith('validate_') || toolName.startsWith('reverse_') || toolName.startsWith('trim_') || toolName.startsWith('echo')) {
+            return 'template-agent-typescript'; // This agent's own tools
         }
         if (toolName.startsWith('discord_')) {
             return 'discord-server';
@@ -458,7 +488,7 @@ export class DiscordBot extends BaseBot {
             return 'git';
         }
 
-        // Default: assume it's a global tool
-        return 'text-processor';
+        // Default: assume it's a tool on this agent
+        return 'template-agent-typescript';
     }
 }
