@@ -3,7 +3,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     // Test file patterns
-    include: ['tests/**/*.test.ts'],
+    include: ['test/**/*.test.ts'],
 
     // Environment
     environment: 'node',
@@ -20,7 +20,7 @@ export default defineConfig({
         'dist/**',
         '**/*.test.ts',
         'vitest.config.ts',
-        'tests/**'
+        'test/**'
       ]
     },
 
