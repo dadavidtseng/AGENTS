@@ -75,19 +75,26 @@ The architecture follows a clean separation between event publishers (MCP client
 
 ```mermaid
 graph TB
-    subgraph "MCP Clients (Publishers)"
-        MCP_S[mcp-client-slack<br/>SlackManager + KadiEventPublisher]
-        MCP_D[mcp-client-discord<br/>DiscordManager + KadiEventPublisher]
+    subgraph MCP_Clients["MCP Clients (Publishers)"]
+        MCP_S["mcp-client-slack
+SlackManager + KadiEventPublisher"]
+        MCP_D["mcp-client-discord
+DiscordManager + KadiEventPublisher"]
     end
 
-    subgraph "KĀDI Broker"
-        BROKER[Event Bus<br/>Topics: slack.app_mention.{botId}<br/>discord.mention.{botId}]
+    subgraph KADI_Broker["KĀDI Broker"]
+        BROKER["Event Bus
+Topics: slack.app_mention.botId
+discord.mention.botId"]
     end
 
-    subgraph "template-agent-typescript (Subscribers)"
-        BASE[BaseBot<br/>Circuit Breaker, Retry, Metrics, Claude API]
-        SLACK[SlackBot<br/>extends BaseBot]
-        DISCORD[DiscordBot<br/>extends BaseBot]
+    subgraph Agent_Subscribers["template-agent-typescript (Subscribers)"]
+        BASE["BaseBot
+Circuit Breaker, Retry, Metrics, Claude API"]
+        SLACK["SlackBot
+extends BaseBot"]
+        DISCORD["DiscordBot
+extends BaseBot"]
     end
 
     MCP_S -->|publishEvent| BROKER
@@ -102,52 +109,70 @@ graph TB
 
 ```mermaid
 classDiagram
+    BaseBot <|-- SlackBot
+    BaseBot <|-- DiscordBot
+
     class BaseBot {
-        <<abstract>>
-        #client: KadiClient
-        #anthropic: Anthropic
-        #protocol: BrokerProtocol
-        #failureCount: number
-        #isCircuitOpen: boolean
-        #totalRequests: number
-        +start(): void
-        +stop(): void
-        #recordFailure(error): void
-        #recordSuccess(): void
-        #logMetrics(): void
-        #invokeToolWithRetry(params, retryCount): Promise~any~
-        #processMessage(text, context): Promise~string~*
-        #handleEvent(event): Promise~void~*
+        &lt;&lt;abstract&gt;&gt;
+        -client
+        -anthropic
+        -protocol
+        -failureCount
+        -isCircuitOpen
+        -totalRequests
+        +start()
+        +stop()
+        +recordFailure()
+        +recordSuccess()
+        +logMetrics()
+        +invokeToolWithRetry()
+        +processMessage()*
+        +handleEvent()*
     }
 
     class SlackBot {
-        -botUserId: string
-        -eventTopic: string
-        +start(): void
-        #handleEvent(event): Promise~void~
-        -subscribeToMentions(): void
+        -botUserId
+        -eventTopic
+        +start()
+        +handleEvent()
+        +subscribeToMentions()
     }
 
     class DiscordBot {
-        -botUserId: string
-        -eventTopic: string
-        +start(): void
-        #handleEvent(event): Promise~void~
-        -subscribeToMentions(): void
+        -botUserId
+        -eventTopic
+        +start()
+        +handleEvent()
+        +subscribeToMentions()
     }
 
     class KadiEventPublisher {
-        -client: KadiClient
-        -enabled: boolean
-        -brokerUrl: string
-        +connect(): Promise~void~
-        +publishEvent(topic, event): Promise~void~
-        +disconnect(): Promise~void~
+        -client
+        -enabled
+        -brokerUrl
+        +connect()
+        +publishEvent()
+        +disconnect()
     }
-
-    BaseBot <|-- SlackBot : extends
-    BaseBot <|-- DiscordBot : extends
 ```
+
+**Class Details:**
+
+- **BaseBot (Abstract)**:
+  - Properties: `client: KadiClient`, `anthropic: Anthropic`, `protocol: BrokerProtocol`, `failureCount: number`, `isCircuitOpen: boolean`, `totalRequests: number`
+  - Methods: `start(): void`, `stop(): void`, `recordFailure(error): void`, `recordSuccess(): void`, `logMetrics(): void`, `invokeToolWithRetry(params, retryCount): Promise<any>`, `processMessage(text, context)*: Promise<string>` (abstract), `handleEvent(event)*: Promise<void>` (abstract)
+
+- **SlackBot**:
+  - Properties: `botUserId: string`, `eventTopic: string`
+  - Methods: `start(): void`, `handleEvent(event): Promise<void>`, `subscribeToMentions(): void`
+
+- **DiscordBot**:
+  - Properties: `botUserId: string`, `eventTopic: string`
+  - Methods: `start(): void`, `handleEvent(event): Promise<void>`, `subscribeToMentions(): void`
+
+- **KadiEventPublisher**:
+  - Properties: `client: KadiClient`, `enabled: boolean`, `brokerUrl: string`
+  - Methods: `connect(): Promise<void>`, `publishEvent(topic, event): Promise<void>`, `disconnect(): Promise<void>`
 
 ### Modular Design Principles
 
@@ -550,62 +575,90 @@ sequenceDiagram
 
 ## Migration Strategy
 
-### Phase 1: Extract Shared Publisher (Requirement 4)
+**Priority:** Ensure Discord bot works with event pub/sub (matching Slack bot functionality) BEFORE proceeding with code refactoring and abstractions.
 
-**Files Modified:**
-- `mcp-client-slack/src/kadi-publisher.ts` - Parameterize for reuse
-- `mcp-client-discord/src/kadi-publisher.ts` - Copy and adapt
+### Phase 1: Discord Bot Event Pub/Sub Implementation (Requirements 2 & 1)
 
-**Validation:**
-- mcp-client-slack still publishes Slack events correctly
-- Both publishers share identical connection/retry logic
-
-### Phase 2: Add Discord Event Publishing (Requirement 2)
+**Goal:** Get Discord bot working with event-driven architecture, achieving feature parity with Slack bot's pub/sub pattern.
 
 **Files Created:**
-- `template-agent-typescript/src/types/discord-events.ts`
-- `mcp-client-discord/src/kadi-publisher.ts`
+- `template-agent-typescript/src/types/discord-events.ts` - DiscordMentionEventSchema
+- `mcp-client-discord/src/kadi-publisher.ts` - Copy from mcp-client-slack
 
 **Files Modified:**
-- `mcp-client-discord/src/index.ts` - Integrate KadiEventPublisher
+- `mcp-client-discord/src/index.ts` - Integrate KadiEventPublisher for Discord mentions
+- `template-agent-typescript/src/discord-bot.ts` - Remove polling, add event subscription
 
-**Validation:**
-- Discord mentions published to `discord.mention.{botId}` topic
-- Existing `get_discord_mentions` tool still works (queue fallback)
+**Implementation Steps:**
+1. Create DiscordMentionEventSchema mirroring SlackMentionEventSchema structure
+2. Copy KadiEventPublisher from mcp-client-slack to mcp-client-discord (parameterize client name and networks)
+3. Integrate publisher in mcp-client-discord to publish `discord.mention.{botId}` events
+4. Remove polling logic from discord-bot.ts (delete setInterval and pollForMentions method)
+5. Add event subscription to discord-bot.ts matching slack-bot.ts pattern
+6. Subscribe to `discord.mention.{botId}` topic using KadiClient
 
-### Phase 3: Convert Discord Bot to Event-Driven (Requirement 1)
+**Validation (Critical - Must Pass Before Phase 2):**
+- ✅ Discord mentions published to `discord.mention.{botId}` topic
+- ✅ DiscordBot receives events from KĀDI broker in real-time
+- ✅ DiscordBot responds to @mentions with same functionality as before (Claude API integration works)
+- ✅ DiscordBot no longer polls every 10 seconds (verify CPU usage reduction)
+- ✅ Event subscription failures trigger circuit breaker (no fallback to polling)
+- ✅ Existing `get_discord_mentions` MCP tool still works via queue (fallback mechanism intact)
+- ✅ Discord bot behavior matches Slack bot behavior (event-driven, same latency, same error handling)
 
-**Files Modified:**
-- `template-agent-typescript/src/discord-bot.ts` - Remove polling, add subscription
+**Success Criteria:** Discord bot is fully functional with event pub/sub and performs identically to Slack bot.
 
-**Validation:**
-- DiscordBot receives events from KĀDI broker
-- DiscordBot no longer polls every 10 seconds
-- Event subscription failures trigger circuit breaker (no fallback to polling)
+---
 
-### Phase 4: Extract BaseBot (Requirement 3)
+### Phase 2: Extract Shared Publisher Logic (Requirement 4)
+
+**Goal:** DRY - Eliminate code duplication between mcp-client-discord and mcp-client-slack publishers.
 
 **Files Created:**
-- `template-agent-typescript/src/base-bot.ts`
+- `shared/kadi-event-publisher.ts` - Shared publisher utility (optional: could be npm package)
 
 **Files Modified:**
-- `template-agent-typescript/src/slack-bot.ts` - Extend BaseBot
-- `template-agent-typescript/src/discord-bot.ts` - Extend BaseBot
+- `mcp-client-slack/src/kadi-publisher.ts` - Extract common logic, keep Slack-specific config
+- `mcp-client-discord/src/kadi-publisher.ts` - Extract common logic, keep Discord-specific config
 
 **Validation:**
-- Both bots share circuit breaker and retry logic
-- Both bots maintain independent state
-- Code duplication eliminated (DRY principle verified)
+- Both MCP clients use shared publisher code
+- Both clients still publish events correctly to their respective topics
+- No behavioral changes to Discord or Slack bots
 
-### Phase 5: Platform-Specific Topics (Requirement 5)
+---
+
+### Phase 3: Extract BaseBot Abstraction (Requirement 3)
+
+**Goal:** Consolidate shared bot logic (circuit breaker, retry, metrics, Claude API) into abstract base class.
+
+**Files Created:**
+- `template-agent-typescript/src/base-bot.ts` - Abstract base with shared logic
 
 **Files Modified:**
-- All bots and publishers use `{platform}.{event_type}.{bot_id}` pattern
+- `template-agent-typescript/src/slack-bot.ts` - Extend BaseBot, remove duplicated code
+- `template-agent-typescript/src/discord-bot.ts` - Extend BaseBot, remove duplicated code
 
 **Validation:**
-- Multiple bots on same platform have unique topics
+- Both bots extend BaseBot and share circuit breaker/retry logic
+- Both bots maintain independent state and metrics
+- Code duplication eliminated (verify DRY principle)
+- No behavioral changes to either bot
+
+---
+
+### Phase 4: Standardize Topic Patterns (Requirement 5)
+
+**Goal:** Ensure all bots and publishers use consistent `{platform}.{event_type}.{bot_id}` topic pattern.
+
+**Files Modified:**
+- All bots and publishers validate topic pattern
+- Documentation updated in README files
+
+**Validation:**
+- Multiple bots on same platform have unique topics based on bot ID
 - No event cross-talk between different bot instances
-- Topic pattern documented in README files
+- Topic pattern documented and followed consistently
 
 ## Performance Considerations
 

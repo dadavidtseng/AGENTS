@@ -1,0 +1,54 @@
+{
+  "filePath": ".spec-workflow/specs/discord-slack-event-unification/design.md",
+  "currentVersion": 6,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-29T01:44:44.548Z",
+      "trigger": "initial",
+      "approvalId": "approval_1764380684540_frcy372jv",
+      "approvalTitle": "Design Document - Discord/Slack Event-Based Unification"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-11-29T02:44:52.329Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1764380684540_frcy372jv",
+      "approvalTitle": "Design Document - Discord/Slack Event-Based Unification"
+    },
+    {
+      "version": 3,
+      "filename": "snapshot-003.json",
+      "timestamp": "2025-11-29T03:10:44.453Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1764384901503_2jt7njh7a",
+      "approvalTitle": "Design Document - Discord/Slack Event-Based Unification (Revised)"
+    },
+    {
+      "version": 4,
+      "filename": "snapshot-004.json",
+      "timestamp": "2025-11-29T03:12:30.089Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1764385894473_be1lvalla",
+      "approvalTitle": "Design Document - Discord/Slack Event-Based Unification (Mermaid Fixed)"
+    },
+    {
+      "version": 5,
+      "filename": "snapshot-005.json",
+      "timestamp": "2025-11-29T03:16:21.265Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1764385988836_lsnobpid7",
+      "approvalTitle": "Design Document - Discord/Slack Event-Based Unification (Mermaid v3)"
+    },
+    {
+      "version": 6,
+      "filename": "snapshot-006.json",
+      "timestamp": "2025-11-29T03:20:26.586Z",
+      "trigger": "approved",
+      "approvalId": "approval_1764386219611_xk74aa4zf",
+      "approvalTitle": "Design Document - Discord/Slack Event-Based Unification (Simplified Diagram)"
+    }
+  ]
+}
