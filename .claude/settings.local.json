@@ -1,11 +1,16 @@
 {
+  "permissions": {
+    "allow": [
+      "mcp__spec-workflow-AGENTS__approvals",
+      "mcp__shrimp-AGENTS__split_tasks",
+      "mcp__shrimp-AGENTS__list_tasks",
+      "mcp__shrimp-AGENTS__execute_task",
+      "mcp__shrimp-AGENTS__verify_task",
+      "mcp__shrimp-AGENTS__clear_all_tasks"
+    ]
+  },
   "enabledMcpjsonServers": [
     "shrimp-AGENTS",
     "spec-workflow-AGENTS"
-  ],
-  "permissions": {
-    "allow": [
-      "mcp__spec-workflow-AGENTS__approvals"
-    ]
-  }
+  ]
 }
