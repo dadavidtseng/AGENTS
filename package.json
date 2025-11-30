@@ -1,7 +1,7 @@
 {
-  "name": "calculator-agent",
+  "name": "template-agent-typescript",
   "version": "1.0.0",
-  "description": "KĀDI calculator agent example for ProtogameJS3D - TypeScript implementation",
+  "description": "KĀDI agent template - TypeScript implementation for building custom agents",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -15,12 +15,11 @@
   "keywords": [
     "kadi",
     "agent",
-    "calculator",
-    "game-engine",
+    "template",
     "multi-agent",
-    "prototypejs3d"
+    "typescript"
   ],
-  "author": "ProtogameJS3D Team",
+  "author": "Yu-Wei Tseng",
   "license": "MIT",
   "dependencies": {
     "@agents/shared": "file:../AGENTS/shared",
