@@ -6,9 +6,9 @@
  * This file serves as a template for creating new KĀDI agents in TypeScript.
  * Follow these steps to customize:
  *
- * 1. Replace tool definitions (lines 35-95) with your own Zod schemas
- * 2. Update agent metadata in KadiClient config (lines 110-116)
- * 3. Replace tool handlers (lines 122-293) with your business logic
+ * 1. Replace the echo tool with your own tool definitions
+ * 2. Update agent metadata in KadiClient config
+ * 3. Replace tool handler with your business logic
  * 4. Update event topics and payloads to match your domain
  * 5. Modify networks array to join appropriate KĀDI networks
  * 6. Update documentation comments with your agent's purpose
@@ -21,7 +21,7 @@
  * - Broker handles all tool routing and network isolation
  *
  * Built-in tools (customize these):
- * - Text processing (format, validate, count, reverse, trim)
+ * - Echo (placeholder - replace with your own tools)
  *
  * Broker-provided tools (access via client.load()):
  * - Git operations (from broker's git-mcp-server on 'git' network)
@@ -41,7 +41,7 @@
  *     KADI_BROKER_URL: WebSocket URL for KĀDI broker (default: ws://localhost:8080)
  *     KADI_NETWORK: Networks to join, comma-separated (default: global,text,git,slack,discord)
  *
- * @module typescript-agent-template
+ * @module template-agent-typescript
  * @version 2.0.0
  * @license MIT
  */
@@ -62,88 +62,37 @@ import { registerAllTools } from './tools/index.js';
 // 4. Infer TypeScript types using z.infer<typeof schema>
 // 5. Use inferred types in tool handler function signatures
 //
-// TODO: Replace these example schemas with your agent's tool schemas
+// TODO: Replace the echo tool schema with your agent's tool schemas
 // ============================================================================
 
 /**
- * Input schema for format_text tool
+ * Input schema for echo tool
  *
  * @example
  * ```typescript
- * const input: FormatTextInput = {
- *   text: 'hello world',
- *   style: 'uppercase'
+ * const input: EchoInput = {
+ *   text: 'hello world'
  * };
  * ```
  */
-const formatTextInputSchema = z.object({
-  text: z.string().describe('Text to format'),
-  style: z.enum(['uppercase', 'lowercase', 'capitalize', 'title']).describe('Formatting style to apply')
+const echoInputSchema = z.object({
+  text: z.string().describe('Text to echo back')
 });
 
 /**
- * Output schema for format_text tool
+ * Output schema for echo tool
  *
  * @example
  * ```typescript
- * const output: FormatTextOutput = {
- *   result: 'HELLO WORLD',
- *   original_length: 11,
- *   formatted_length: 11
+ * const output: EchoOutput = {
+ *   echo: 'hello world',
+ *   length: 11
  * };
  * ```
  */
-const formatTextOutputSchema = z.object({
-  result: z.string().describe('Formatted text'),
-  original_length: z.number().describe('Length of original text'),
-  formatted_length: z.number().describe('Length of formatted text')
-});
-
-/** Input schema for validate_json tool */
-const validateJsonInputSchema = z.object({
-  json_string: z.string().describe('JSON string to validate')
-});
-
-/** Output schema for validate_json tool */
-const validateJsonOutputSchema = z.object({
-  valid: z.boolean().describe('Whether the JSON is valid'),
-  parsed: z.any().optional().describe('Parsed JSON object if valid'),
-  error: z.string().optional().describe('Error message if invalid')
-});
-
-/** Input schema for count_words tool */
-const countWordsInputSchema = z.object({
-  text: z.string().describe('Text to analyze')
-});
-
-/** Output schema for count_words tool */
-const countWordsOutputSchema = z.object({
-  words: z.number().describe('Number of words'),
-  characters: z.number().describe('Number of characters'),
-  lines: z.number().describe('Number of lines')
-});
-
-/** Input schema for reverse_text tool */
-const reverseTextInputSchema = z.object({
-  text: z.string().describe('Text to reverse')
-});
-
-/** Output schema for reverse_text tool */
-const reverseTextOutputSchema = z.object({
-  result: z.string().describe('Reversed text'),
+const echoOutputSchema = z.object({
+  echo: z.string().describe('Echoed text'),
   length: z.number().describe('Length of text')
-});
-
-/** Input schema for trim_text tool */
-const trimTextInputSchema = z.object({
-  text: z.string().describe('Text to trim'),
-  mode: z.enum(['both', 'start', 'end']).describe('Trimming mode')
-});
-
-/** Output schema for trim_text tool */
-const trimTextOutputSchema = z.object({
-  result: z.string().describe('Trimmed text'),
-  removed_chars: z.number().describe('Number of characters removed')
 });
 
 // ============================================================================
@@ -161,96 +110,35 @@ const trimTextOutputSchema = z.object({
 // TODO: Add type inference for your custom schemas
 // ============================================================================
 
-/** Inferred TypeScript type for format_text input */
-type FormatTextInput = z.infer<typeof formatTextInputSchema>;
+/** Inferred TypeScript type for echo input */
+type EchoInput = z.infer<typeof echoInputSchema>;
 
-/** Inferred TypeScript type for format_text output */
-type FormatTextOutput = z.infer<typeof formatTextOutputSchema>;
+/** Inferred TypeScript type for echo output */
+type EchoOutput = z.infer<typeof echoOutputSchema>;
 
-/** Inferred TypeScript type for validate_json input */
-type ValidateJsonInput = z.infer<typeof validateJsonInputSchema>;
-
-/** Inferred TypeScript type for validate_json output */
-type ValidateJsonOutput = z.infer<typeof validateJsonOutputSchema>;
-
-/** Inferred TypeScript type for count_words input */
-type CountWordsInput = z.infer<typeof countWordsInputSchema>;
-
-/** Inferred TypeScript type for count_words output */
-type CountWordsOutput = z.infer<typeof countWordsOutputSchema>;
-
-/** Inferred TypeScript type for reverse_text input */
-type ReverseTextInput = z.infer<typeof reverseTextInputSchema>;
-
-/** Inferred TypeScript type for reverse_text output */
-type ReverseTextOutput = z.infer<typeof reverseTextOutputSchema>;
-
-/** Inferred TypeScript type for trim_text input */
-type TrimTextInput = z.infer<typeof trimTextInputSchema>;
-
-/** Inferred TypeScript type for trim_text output */
-type TrimTextOutput = z.infer<typeof trimTextOutputSchema>;
+// ============================================================================
+// List Tools Schemas
+// ============================================================================
 
 /**
- * Input schema for create_file tool
- *
- * @example
- * ```typescript
- * const input: CreateFileInput = {
- *   filename: 'placeholder.txt',
- *   content: 'This is placeholder content'
- * };
- * ```
+ * Input schema for list_tools utility
+ * No parameters needed - just lists all available tools
  */
-const createFileInputSchema = z.object({
-  filename: z.string().describe('Name of the file to create'),
-  content: z.string().describe('Content to write to the file')
-});
+const listToolsInputSchema = z.object({});
 
 /**
- * Output schema for create_file tool
- *
- * @example
- * ```typescript
- * const output: CreateFileOutput = {
- *   success: true,
- *   filepath: '/path/to/placeholder.txt',
- *   bytes_written: 27
- * };
- * ```
+ * Output schema for list_tools utility
  */
-const createFileOutputSchema = z.object({
-  success: z.boolean().describe('Whether file was created successfully'),
-  filepath: z.string().describe('Absolute path to created file'),
-  bytes_written: z.number().describe('Number of bytes written to file')
+const listToolsOutputSchema = z.object({
+  summary: z.string().describe('Human-readable markdown summary of all tools'),
+  tools: z.array(z.object({
+    name: z.string().describe('Tool name'),
+    description: z.string().describe('Tool description')
+  })).describe('Array of all available tools')
 });
 
-/** Inferred TypeScript type for create_file input */
-type CreateFileInput = z.infer<typeof createFileInputSchema>;
-
-/** Inferred TypeScript type for create_file output */
-type CreateFileOutput = z.infer<typeof createFileOutputSchema>;
-
-/**
- * Input schema for agent_send_slack_message tool
- */
-const agentSendSlackMessageInputSchema = z.object({
-  channel: z.string().describe('Slack channel ID (e.g., C09T6RU41HP)'),
-  text: z.string().describe('Message text to send'),
-  thread_ts: z.string().optional().describe('Optional thread timestamp')
-});
-
-/**
- * Output schema for agent_send_slack_message tool
- */
-const agentSendSlackMessageOutputSchema = z.object({
-  success: z.boolean().describe('Whether message was sent successfully'),
-  message: z.string().describe('Result message from Slack'),
-  timestamp: z.string().optional().describe('Slack message timestamp')
-});
-
-type AgentSendSlackMessageInput = z.infer<typeof agentSendSlackMessageInputSchema>;
-type AgentSendSlackMessageOutput = z.infer<typeof agentSendSlackMessageOutputSchema>;
+/** Inferred TypeScript type for list_tools output */
+type ListToolsOutput = z.infer<typeof listToolsOutputSchema>;
 
 // ============================================================================
 // Configuration
@@ -266,6 +154,7 @@ type AgentSendSlackMessageOutput = z.infer<typeof agentSendSlackMessageOutputSch
 // - 'global': All agents can see tools on this network
 // - 'text': Domain-specific network for text processing
 // - 'git': Domain-specific network for git operations
+// - 'slack': Domain-specific network for Slack bot operations
 // - 'discord': Domain-specific network for Discord bot operations
 // ============================================================================
 
@@ -311,7 +200,7 @@ const config = {
  * - Network isolation
  */
 const client = new KadiClient({
-  name: process.env.AGENT_NAME || 'typescript-agent',
+  name: process.env.AGENT_NAME || 'template-agent-typescript',
   version: process.env.AGENT_VERSION || '1.0.0',
   role: 'agent',
   broker: config.brokerUrl,
@@ -337,395 +226,153 @@ const client = new KadiClient({
 // - Return structured data matching output schema
 // - Use try/catch for operations that might fail
 //
-// TODO: Replace these example tools with your agent's tools
+// TODO: Replace the echo tool with your agent's tools
+// ============================================================================
+
+// TODO: Replace this echo tool with your own domain-specific tools
+// The echo tool is a minimal placeholder - it simply returns the input text with its length.
+//
+// Example of adding a new tool:
+// 1. Define input/output schemas using Zod (see lines 78-96)
+// 2. Register tool with client.registerTool() (see below)
+// 3. Implement your business logic in the handler function
+// 4. Publish events for tracking (optional but recommended)
+//
+// For more examples, see docs/TEMPLATE_USAGE.md
+
+/**
+ * Echo Tool (Placeholder)
+ *
+ * This is a simple placeholder tool that echoes back the input text
+ * along with its length. Replace this with your own tools.
+ *
+ * @param params - Input parameters matching EchoInput schema
+ * @returns Echoed text with length metadata
+ *
+ * @example
+ * ```typescript
+ * const result = await client.invokeTool('echo', {
+ *   text: 'hello world'
+ * });
+ * // Returns: { echo: 'hello world', length: 11 }
+ * ```
+ */
+client.registerTool({
+  name: 'echo',
+  description: 'Echo back the input text with its length (placeholder tool - replace with your own)',
+  input: echoInputSchema,
+  output: echoOutputSchema
+}, async (params: EchoInput): Promise<EchoOutput> => {
+  console.log(`🔁 Echoing text: "${params.text}"`);
+
+  const result = {
+    echo: params.text,
+    length: params.text.length
+  };
+
+  // TEMPLATE PATTERN: Publish event for operation
+  // TODO: Replace 'echo.processed' with your domain-specific event topic
+  // TODO: Replace 'template-agent-typescript' with your agent name
+  client.publishEvent('echo.processed', {
+    operation: 'echo',
+    text_length: result.length,
+    agent: 'template-agent-typescript'
+  });
+
+  return result;
+});
+
+// ============================================================================
+// List Tools Utility
 // ============================================================================
 
 /**
- * Tool 1: Format Text
+ * List Tools Utility
  *
- * Formats text with different styling options: uppercase, lowercase,
- * capitalize (first letter), or title case (all words).
+ * Provides a human-readable formatted list of all available tools (local + network).
+ * This solves the UX problem where raw JSON tool schemas are unreadable in Slack.
  *
- * @param params - Input parameters matching FormatTextInput schema
- * @returns Formatted text with length metadata
- *
- * @example
- * ```typescript
- * const result = await client.invokeTool('format_text', {
- *   text: 'hello world',
- *   style: 'uppercase'
- * });
- * // Returns: { result: 'HELLO WORLD', original_length: 11, formatted_length: 11 }
- * ```
- */
-client.registerTool({
-  name: 'format_text',
-  description: 'Format text with different styles (uppercase, lowercase, capitalize, title case)',
-  input: formatTextInputSchema,
-  output: formatTextOutputSchema
-}, async (params: FormatTextInput): Promise<FormatTextOutput> => {
-  console.log(`📝 Formatting text with style: ${params.style}`);
-
-  let result: string;
-  const originalLength = params.text.length;
-
-  switch (params.style) {
-    case 'uppercase':
-      result = params.text.toUpperCase();
-      break;
-    case 'lowercase':
-      result = params.text.toLowerCase();
-      break;
-    case 'capitalize':
-      result = params.text.charAt(0).toUpperCase() + params.text.slice(1).toLowerCase();
-      break;
-    case 'title':
-      result = params.text.replace(/\b\w/g, char => char.toUpperCase());
-      break;
-  }
-
-  const formattedLength = result.length;
-
-  // TEMPLATE PATTERN: Publish event for successful operation
-  // TODO: Replace 'text.processing' with your domain-specific event topic
-  // TODO: Replace 'text-processor-typescript' with your agent name
-  client.publishEvent('text.processing', {
-    operation: 'format_text',
-    style: params.style,
-    original_length: originalLength,
-    formatted_length: formattedLength,
-    agent: 'text-processor-typescript'  // TODO: Replace with your agent name
-  });
-
-  return {
-    result,
-    original_length: originalLength,
-    formatted_length: formattedLength
-  };
-});
-
-/**
- * Tool 2: Validate JSON
- *
- * Validates and parses JSON strings, returning either the parsed object
- * or an error message if invalid.
- *
- * @param params - Input parameters with json_string to validate
- * @returns Validation result with parsed data or error message
+ * @returns Formatted markdown list of tools with names and descriptions
  *
  * @example
  * ```typescript
- * const result = await client.invokeTool('validate_json', {
- *   json_string: '{"name": "Alice", "age": 30}'
- * });
- * // Returns: { valid: true, parsed: { name: 'Alice', age: 30 } }
+ * const result = await client.invokeTool('list_tools', {});
+ * // Returns:
+ * // {
+ * //   summary: "I have 43 tools available:\n\n• *echo*: Echo text...\n• *git_add*: Stage files...",
+ * //   tools: [{ name: 'echo', description: '...' }, ...]
+ * // }
  * ```
  */
 client.registerTool({
-  name: 'validate_json',
-  description: 'Validate and parse JSON strings',
-  input: validateJsonInputSchema,
-  output: validateJsonOutputSchema
-}, async (params: ValidateJsonInput): Promise<ValidateJsonOutput> => {
-  console.log('🔍 Validating JSON string');
-
-  // TEMPLATE PATTERN: Use try/catch for operations that might fail
-  try {
-    const parsed = JSON.parse(params.json_string);
-
-    client.publishEvent('text.processing', {
-      operation: 'validate_json',
-      valid: true,
-      agent: 'text-processor-typescript'  // TODO: Replace
-    });
-
-    return {
-      valid: true,
-      parsed
-    };
-  } catch (error: any) {
-    // TEMPLATE PATTERN: Type guard for Error instances
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-
-    // TEMPLATE PATTERN: Publish error events to separate topic
-    // TODO: Replace 'text.error' with your domain-specific error topic
-    client.publishEvent('text.error', {
-      operation: 'validate_json',
-      error: errorMsg,
-      agent: 'text-processor-typescript'  // TODO: Replace
-    });
-
-    // TEMPLATE PATTERN: Return structured error (don't throw)
-    return {
-      valid: false,
-      error: errorMsg
-    };
-  }
-});
-
-/**
- * Tool 3: Count Words
- *
- * Analyzes text to count words, characters, and lines.
- *
- * @param params - Input parameters with text to analyze
- * @returns Word count, character count, and line count
- */
-client.registerTool({
-  name: 'count_words',
-  description: 'Count words, characters, and lines in text',
-  input: countWordsInputSchema,
-  output: countWordsOutputSchema
-}, async (params: CountWordsInput): Promise<CountWordsOutput> => {
-  console.log('🔢 Counting words in text');
-
-  const words = params.text.trim() ? params.text.trim().split(/\s+/).length : 0;
-  const characters = params.text.length;
-  const lines = params.text.split('\n').length;
-
-  client.publishEvent('text.processing', {
-    operation: 'count_words',
-    words,
-    characters,
-    lines,
-    agent: 'text-processor-typescript'  // TODO: Replace
-  });
-
-  return {
-    words,
-    characters,
-    lines
-  };
-});
-
-/**
- * Tool 4: Reverse Text
- *
- * Reverses the order of characters in the input text.
- *
- * @param params - Input parameters with text to reverse
- * @returns Reversed text with length metadata
- */
-client.registerTool({
-  name: 'reverse_text',
-  description: 'Reverse the order of characters in text',
-  input: reverseTextInputSchema,
-  output: reverseTextOutputSchema
-}, async (params: ReverseTextInput): Promise<ReverseTextOutput> => {
-  console.log('🔄 Reversing text');
-
-  const result = params.text.split('').reverse().join('');
-  const length = result.length;
-
-  client.publishEvent('text.processing', {
-    operation: 'reverse_text',
-    length,
-    agent: 'text-processor-typescript'  // TODO: Replace
-  });
-
-  return {
-    result,
-    length
-  };
-});
-
-/**
- * Tool 5: Trim Text
- *
- * Trims whitespace from text with configurable mode:
- * - 'both': Trim from both ends (default trim())
- * - 'start': Trim from start only (trimStart())
- * - 'end': Trim from end only (trimEnd())
- *
- * @param params - Input parameters with text and mode
- * @returns Trimmed text with count of removed characters
- */
-client.registerTool({
-  name: 'trim_text',
-  description: 'Trim whitespace from text (both ends, start only, or end only)',
-  input: trimTextInputSchema,
-  output: trimTextOutputSchema
-}, async (params: TrimTextInput): Promise<TrimTextOutput> => {
-  console.log(`✂️  Trimming text (mode: ${params.mode})`);
-
-  const originalLength = params.text.length;
-  let result: string;
-
-  switch (params.mode) {
-    case 'both':
-      result = params.text.trim();
-      break;
-    case 'start':
-      result = params.text.trimStart();
-      break;
-    case 'end':
-      result = params.text.trimEnd();
-      break;
-  }
-
-  const removedChars = originalLength - result.length;
-
-  client.publishEvent('text.processing', {
-    operation: 'trim_text',
-    mode: params.mode,
-    removed_chars: removedChars,
-    agent: 'text-processor-typescript'  // TODO: Replace
-  });
-
-  return {
-    result,
-    removed_chars: removedChars
-  };
-});
-
-/**
- * Tool 6: Create File
- *
- * Creates a new file with specified content in the current directory.
- * This demonstrates file I/O operations in a KĀDI agent.
- *
- * @param params - Input parameters with filename and content
- * @returns File creation result with path and bytes written
- *
- * @example
- * ```typescript
- * const result = await client.invokeTool('create_file', {
- *   filename: 'placeholder.txt',
- *   content: 'This is placeholder content'
- * });
- * // Returns: { success: true, filepath: '/path/to/placeholder.txt', bytes_written: 27 }
- * ```
- */
-client.registerTool({
-  name: 'create_file',
-  description: 'Create a new file with specified content',
-  input: createFileInputSchema,
-  output: createFileOutputSchema
-}, async (params: CreateFileInput): Promise<CreateFileOutput> => {
-  console.log(`📄 Creating file: ${params.filename}`);
-
-  // Import Node.js filesystem module
-  const fs = await import('fs/promises');
-  const path = await import('path');
+  name: 'list_tools',
+  description: 'List all available tools in human-readable format (better UX than raw JSON)',
+  input: listToolsInputSchema,
+  output: listToolsOutputSchema
+}, async (): Promise<ListToolsOutput> => {
+  console.log('📋 Listing all available tools...');
 
   try {
-    // Get absolute path
-    const filepath = path.resolve(process.cwd(), params.filename);
+    // 1. Get local tools (registered on this agent)
+    const localTools = client.getAllRegisteredTools();
 
-    // Write file to disk
-    await fs.writeFile(filepath, params.content, 'utf-8');
-
-    // Get file size
-    const stats = await fs.stat(filepath);
-    const bytesWritten = stats.size;
-
-    console.log(`✅ File created: ${filepath} (${bytesWritten} bytes)`);
-
-    // Publish success event
-    client.publishEvent('file.created', {
-      operation: 'create_file',
-      filename: params.filename,
-      filepath,
-      bytes_written: bytesWritten,
-      agent: 'typescript-agent'
-    });
-
-    return {
-      success: true,
-      filepath,
-      bytes_written: bytesWritten
-    };
-  } catch (error: any) {
-    console.error(`❌ Failed to create file: ${error.message}`);
-
-    // Publish error event
-    client.publishEvent('file.error', {
-      operation: 'create_file',
-      filename: params.filename,
-      error: error.message,
-      agent: 'typescript-agent'
-    });
-
-    return {
-      success: false,
-      filepath: '',
-      bytes_written: 0
-    };
-  }
-});
-
-/**
- * Tool 7: Send Slack Message (via Broker MCP Upstream)
- *
- * Sends a message to Slack by invoking the broker's Slack MCP upstream tool.
- * This demonstrates how a KĀDI agent can call MCP upstream tools.
- *
- * @param params - Input parameters with channel and text
- * @returns Slack send result with success status and timestamp
- */
-client.registerTool({
-  name: 'agent_send_slack_message',
-  description: 'Send a message to Slack channel via broker MCP upstream',
-  input: agentSendSlackMessageInputSchema,
-  output: agentSendSlackMessageOutputSchema
-}, async (params: AgentSendSlackMessageInput): Promise<AgentSendSlackMessageOutput> => {
-  console.log(`💬 Sending Slack message to channel: ${params.channel}`);
-
-  try {
-    // Get broker protocol to invoke MCP upstream tools
+    // 2. Get network tools from broker
     const protocol = client.getBrokerProtocol();
-
-    // Invoke Slack MCP upstream tool
-    // Note: Tool name is double-prefixed (slack_slack_send_message)
-    const result = await protocol.invokeTool({
-      targetAgent: 'slack',
-      toolName: 'slack_slack_send_message',
-      toolInput: {
-        channel: params.channel,
-        text: params.text,
-        thread_ts: params.thread_ts
+    const networkResult = await (protocol as any).connection.sendRequest({
+      jsonrpc: '2.0',
+      method: 'kadi.ability.list',
+      params: {
+        networks: config.networks,
+        includeProviders: false
       },
-      timeout: 30000
-    });
-
-    console.log(`✅ Slack message sent successfully`);
-
-    // Extract timestamp from result
-    const resultStr = String((result as any).result || '');
-    const timestampMatch = resultStr.match(/Timestamp: ([\d.]+)/);
-    const timestamp = timestampMatch ? timestampMatch[1] : undefined;
-
-    // Publish success event
-    client.publishEvent('slack.message_sent', {
-      operation: 'agent_send_slack_message',
-      channel: params.channel,
-      timestamp,
-      agent: 'typescript-agent'
-    });
-
-    return {
-      success: true,
-      message: resultStr,
-      timestamp
+      id: `list_tools_${Date.now()}`
+    }) as {
+      tools: Array<{
+        name: string;
+        description?: string;
+      }>;
     };
+
+    // 3. Deduplicate: prefer local tools over network tools
+    const localNames = new Set(localTools.map(t => t.definition.name));
+    const uniqueNetworkTools = networkResult.tools.filter(t => !localNames.has(t.name));
+
+    // 4. Combine all tools
+    const allTools = [
+      ...localTools.map(t => ({
+        name: t.definition.name,
+        description: t.definition.description || 'No description'
+      })),
+      ...uniqueNetworkTools.map(t => ({
+        name: t.name,
+        description: t.description || 'No description'
+      }))
+    ];
+
+    // 5. Format as Slack-friendly markdown
+    const summary = `I have ${allTools.length} tools available:\n\n` +
+      allTools.map(t => `• *${t.name}*: ${t.description}`).join('\n');
+
+    console.log(`✅ Listed ${allTools.length} tools (${localTools.length} local + ${uniqueNetworkTools.length} network)`);
+
+    return { summary, tools: allTools };
   } catch (error: any) {
-    console.error(`❌ Failed to send Slack message: ${error.message}`);
+    console.error('❌ Error listing tools:', error);
 
-    // Publish error event
-    client.publishEvent('slack.error', {
-      operation: 'agent_send_slack_message',
-      channel: params.channel,
-      error: error.message,
-      agent: 'typescript-agent'
-    });
+    // Fallback: return only local tools if broker query fails
+    const localTools = client.getAllRegisteredTools();
+    const tools = localTools.map(t => ({
+      name: t.definition.name,
+      description: t.definition.description || 'No description'
+    }));
 
-    return {
-      success: false,
-      message: `Error: ${error.message}`,
-      timestamp: undefined
-    };
+    const summary = `⚠️ Partial list (broker unavailable): ${tools.length} local tools:\n\n` +
+      tools.map(t => `• *${t.name}*: ${t.description}`).join('\n');
+
+    return { summary, tools };
   }
 });
+
 
 // ============================================================================
 // Custom Tool Registry
@@ -774,7 +421,7 @@ registerAllTools(client);
  */
 async function main() {
   console.log('='.repeat(60));
-  console.log('🚀 Starting TypeScript Text Processing Agent');  // TODO: Update agent name
+  console.log('🚀 Starting Template Agent (TypeScript)');
   console.log('='.repeat(60));
   console.log(`Broker URL: ${config.brokerUrl}`);
   console.log(`Networks: ${config.networks.join(', ')}`);
@@ -787,18 +434,16 @@ async function main() {
     // TEMPLATE PATTERN: Print tool information BEFORE blocking serve() call
     // TODO: Update this list to match your registered tools
     console.log('Available Tools:');
-    console.log('  Built-in Text Tools:');
-    console.log('    • format_text(text, style) - Format text with styles');
-    console.log('    • validate_json(json_string) - Validate and parse JSON');
-    console.log('    • count_words(text) - Count words, characters, lines');
-    console.log('    • reverse_text(text) - Reverse text characters');
-    console.log('    • trim_text(text, mode) - Trim whitespace');
+    console.log('  Placeholder Tools:');
+    console.log('    • echo(text) - Echo text back with length (REPLACE THIS WITH YOUR TOOLS)');
     console.log();
-    console.log('  File Operations:');
-    console.log('    • create_file(filename, content) - Create a new file');
+    console.log('  Bot Tools (if enabled):');
+    console.log('    • Slack bot tools (when ENABLE_SLACK_BOT=true)');
+    console.log('    • Discord bot tools (when ENABLE_DISCORD_BOT=true)');
     console.log();
-    console.log('  Git Tools (via broker on \'git\' network):');
-    console.log('    • git_* tools provided by kadi-broker\'s git-mcp-server');
+    console.log('  Broker-provided Tools (via client.load()):');
+    console.log('    • git_* tools (on \'git\' network)');
+    console.log('    • fs_* tools (on \'global\' network)');
     console.log();
     console.log('Press Ctrl+C to stop the agent...');
     console.log('='.repeat(60));
@@ -819,7 +464,7 @@ async function main() {
       // Give serve() a moment to establish connection, then start Slack bot
       setTimeout(async () => {
         try {
-          const { SlackBot } = await import('./slack-bot.js');
+          const { SlackBot } = await import('./bot/slack-bot.js');
           const slackBot = new SlackBot({
             client,
             anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
@@ -851,7 +496,7 @@ async function main() {
       // Give serve() a moment to establish connection, then start Discord bot
       setTimeout(async () => {
         try {
-          const { DiscordBot } = await import('./discord-bot.js');
+          const { DiscordBot } = await import('./bot/discord-bot.js');
           const discordBot = new DiscordBot({
             client,
             anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
