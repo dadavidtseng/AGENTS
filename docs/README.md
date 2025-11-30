@@ -52,33 +52,31 @@ See **[TEMPLATE_SETUP.md](./TEMPLATE_SETUP.md)** for detailed customization guid
 
 ### Example Tools
 
-The template includes 5 text processing tools as examples:
+The template includes a minimal placeholder tool to demonstrate the pattern:
 
 | Tool | Description | Input | Output |
 |------|-------------|-------|--------|
-| `format_text` | Format text with styles (uppercase, lowercase, capitalize, title) | `{text, style}` | `{result, original_length, formatted_length}` |
-| `validate_json` | Validate and parse JSON strings | `{json_string}` | `{valid, parsed?, error?}` |
-| `count_words` | Count words, characters, and lines | `{text}` | `{words, characters, lines}` |
-| `reverse_text` | Reverse character order | `{text}` | `{result, length}` |
-| `trim_text` | Trim whitespace (both/start/end) | `{text, mode}` | `{result, removed_chars}` |
+| `echo` | Echo back input text with its length (placeholder only) | `{text}` | `{echo, length}` |
 
-**Replace these with your own domain-specific tools** - see [TEMPLATE_SETUP.md](./TEMPLATE_SETUP.md#step-3-define-your-tool-schemas).
+**⚠️ Important: The echo tool is a minimal placeholder meant to be replaced.**
+
+Replace this with your own domain-specific tools - see [TEMPLATE_USAGE.md](./TEMPLATE_USAGE.md) for step-by-step guide.
 
 ### Documentation
 
-- **[README.md](./README.md)** - This file, project overview
+- **[README.md](README.md)** - This file, project overview
 - **[TEMPLATE_SETUP.md](./TEMPLATE_SETUP.md)** - Complete customization guide
 - **[examples/](./examples/)** - Working examples with detailed comments
   - `basic-tool-call.ts` - Calling agent tools from another agent
   - `broker-tool-loading.ts` - Using broker's git tools
   - `autonomous-workflow.ts` - Complete multi-tool workflow
   - `README.md` - Examples documentation and troubleshooting
-- **[CLAUDE.md](./CLAUDE.md)** - AI context for this project
-- **[src/CLAUDE.md](./src/CLAUDE.md)** - Module-level documentation
+- **[CLAUDE.md](../CLAUDE.md)** - AI context for this project
+- **[src/CLAUDE.md](../src/CLAUDE.md)** - Module-level documentation
 
 ### Source Code
 
-- **[src/index.ts](./src/index.ts)** - Main agent implementation with comprehensive JSDoc comments
+- **[src/index.ts](../src/index.ts)** - Main agent implementation with comprehensive JSDoc comments
   - Template patterns marked with `// TEMPLATE PATTERN:`
   - Customization points marked with `// TODO: Replace...`
   - Production-ready error handling
@@ -99,7 +97,7 @@ npm run type-check
 # Lint code
 npm run lint
 
-# Run tests
+# Run test
 npm test
 ```
 
@@ -416,32 +414,34 @@ const client = new KadiClient({
 await client.connect();
 
 // Load this agent
-const textProcessor = await client.load('typescript-agent', 'broker');
+const templateAgent = await client.load('template-agent-typescript', 'broker');
 
-// Call tools
-const formatted = await textProcessor.format_text({
-  text: 'hello world',
-  style: 'uppercase'
+// Call the echo tool (placeholder - replace with your own tools)
+const result = await templateAgent.echo({
+  text: 'hello world'
 });
-console.log(formatted.result); // "HELLO WORLD"
+console.log(result.echo);   // "hello world"
+console.log(result.length); // 11
 ```
 
 ### Autonomous Workflow
 
 ```typescript
-// 1. Process text with agent's tools
-const trimmed = await textProcessor.trim_text({ text: '  hello  ', mode: 'both' });
-const formatted = await textProcessor.format_text({ text: trimmed.result, style: 'uppercase' });
+// Example: Build your own workflow with custom tools
+
+// 1. Replace echo with your domain tools
+const templateAgent = await client.load('template-agent-typescript', 'broker');
+const data = await templateAgent.your_custom_tool({ input: 'data' });
 
 // 2. Get user approval
-const approved = await getUserApproval(formatted.result);
+const approved = await getUserApproval(data.result);
 
 // 3. Commit using broker's git tools
 if (approved) {
   const gitTools = await client.load('kadi-local', 'broker');
   await gitTools.git_commit({
     repo_path: '/path/to/repo',
-    message: 'chore: automated text processing',
+    message: 'chore: automated processing',
     add_files: ['output.txt']
   });
 }
@@ -515,19 +515,21 @@ client = KadiClient({
 await client.connect()
 
 # Load TypeScript agent
-processor = await client.load('typescript-agent', 'broker')
+processor = await client.load('template-agent-typescript', 'broker')
 
 # Call TypeScript tool from Python
-result = await processor.format_text({'text': 'hello', 'style': 'uppercase'})
-print(result['result'])  # "HELLO"
+result = await processor.echo({'text': 'hello world'})
+print(result['echo'])    # "hello world"
+print(result['length'])  # 11
 ```
 
 ### From Another TypeScript Agent
 
 ```typescript
-const textProcessor = await client.load('typescript-agent', 'broker');
-const result = await textProcessor.count_words({ text: 'hello world' });
-console.log(result.words); // 2
+const templateAgent = await client.load('template-agent-typescript', 'broker');
+const result = await templateAgent.echo({ text: 'hello world' });
+console.log(result.echo);   // "hello world"
+console.log(result.length); // 11
 ```
 
 ## 🛠️ Troubleshooting
@@ -603,7 +605,7 @@ MIT License - See package.json for details
 ## 🔗 Related Projects
 
 - [KĀDI Protocol](https://gitlab.com/humin-game-lab/kadi)
-- [KĀDI Broker](../kadi/kadi-broker)
+- [KĀDI Broker](../../kadi/kadi-broker)
 - [KĀDI Core](../kadi-core)
 
 ## 🙏 Acknowledgments

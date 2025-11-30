@@ -112,6 +112,10 @@ Networks determine which tools your agent can access via the KĀDI broker.
 
 ## 🔧 Adding Custom Tools
 
+**⚠️ Important: Replace the echo placeholder tool with your own domain-specific tools.**
+
+The template includes only a minimal `echo` tool as a starting point. This tool simply echoes back input text with its length - it's meant to be replaced with your actual business logic.
+
 ### Method 1: Using Tool Registry (Recommended)
 
 **Step 1**: Create your tool file in `src/tools/`
@@ -121,14 +125,17 @@ Networks determine which tools your agent can access via the KĀDI broker.
 import { z } from 'zod';
 import type { KadiClient } from '@kadi.build/core';
 
+// Define input schema
 export const myToolInputSchema = z.object({
   input: z.string().describe('Input parameter'),
 });
 
+// Define output schema
 export const myToolOutputSchema = z.object({
   result: z.string().describe('Output result'),
 });
 
+// Register tool function
 export function registerMyTool(client: KadiClient) {
   client.registerTool(
     {
@@ -326,8 +333,8 @@ FROM node:18-alpine
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --production
-COPY dist ./dist
-COPY .env .env
+COPY ../dist ./dist
+COPY ../.env .env
 
 CMD ["node", "dist/index.js"]
 ```
