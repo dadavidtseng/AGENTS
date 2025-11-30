@@ -20,7 +20,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { KadiClient } from '@kadi.build/core';
 import { BaseBot } from '@agents/shared';
-import { SlackMentionEventSchema } from './types/slack-events.js';
+import { SlackMentionEventSchema } from '../types/slack-events.js';
 
 // ============================================================================
 // Types

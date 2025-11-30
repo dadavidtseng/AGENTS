@@ -10,7 +10,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SlackBot } from '../bot/slack-bot.js';
-import type { KadiClient } from '../kadi/kadi-core/src';
+import type { KadiClient } from '@kadi.build/core';
 
 // ============================================================================
 // Mock Setup
@@ -66,11 +66,11 @@ describe('SlackBot - Mention Reply Functionality', () => {
     mockClient = new MockKadiClient();
     mockProtocol = mockClient.getBrokerProtocol();
 
-    // Create SlackBot instance
+    // Create SlackBot instance (event-driven, no pollIntervalMs)
     slackBot = new SlackBot({
       client: mockClient as unknown as KadiClient,
       anthropicApiKey: 'test-api-key',
-      pollIntervalMs: 100, // Short interval for testing
+      botUserId: 'U01234ABCD',
     });
   });
 

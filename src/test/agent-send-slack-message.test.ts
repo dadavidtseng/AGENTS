@@ -14,8 +14,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { KadiClient } from '../kadi/kadi-core/src';
-import type { BrokerProtocol } from '../kadi/kadi-core/src';
+import { KadiClient } from '@kadi.build/core';
 
 // ============================================================================
 // Mock Setup
@@ -26,7 +25,7 @@ const mockToolHandlers = new Map<string, Function>();
 
 // Mock BrokerProtocol
 class MockBrokerProtocol {
-  async invokeTool(params: any): Promise<any> {
+  async invokeTool(_params: any): Promise<any> {
     // This will be mocked per test
     return Promise.resolve({ success: true, result: 'Mock result' });
   }
@@ -43,22 +42,23 @@ class MockKadiClient extends KadiClient {
   }
 
   // Override registerTool to capture tool handlers
-  registerTool(toolDef: any, handler: Function): void {
+  registerTool(toolDef: any, handler: Function): this {
     mockToolHandlers.set(toolDef.name, handler);
+    return this;
   }
 
   // Override getBrokerProtocol
-  getBrokerProtocol(): BrokerProtocol {
-    return this.mockProtocol as unknown as BrokerProtocol;
+  getBrokerProtocol(): any {
+    return this.mockProtocol;
   }
 
   // Override connect to avoid actual connection
-  async connect(): Promise<void> {
-    return Promise.resolve();
+  async connect(): Promise<string | undefined> {
+    return Promise.resolve(undefined);
   }
 
   // Override serve to avoid blocking
-  async serve(broker: string): Promise<void> {
+  async serve(_broker: string): Promise<void> {
     return Promise.resolve();
   }
 }
@@ -85,7 +85,7 @@ describe('Agent_TypeScript - agent_send_slack_message Tool', () => {
 
     // Simulate agent registering the agent_send_slack_message tool
     // This mimics what happens in src/index.ts
-    const { z } = await import('../kadi/kadi-core/src');
+    const { z } = await import('@kadi.build/core');
 
     const agentSendSlackMessageInputSchema = z.object({
       channel: z.string().describe('Slack channel ID (e.g., C09T6RU41HP)'),

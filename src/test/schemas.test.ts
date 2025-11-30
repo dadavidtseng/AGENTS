@@ -5,12 +5,12 @@
  * This file demonstrates how to test Zod schemas for your KĀDI agent tools.
  *
  * Testing Strategies:
- * 1. Positive tests - Valid inputs pass validation
- * 2. Negative tests - Invalid inputs throw errors
+ * 1. Positive test - Valid inputs pass validation
+ * 2. Negative test - Invalid inputs throw errors
  * 3. Type inference - Ensure types are correctly inferred
  * 4. Edge cases - Test boundary conditions
  *
- * TODO: Replace these example tests with tests for your agent's schemas
+ * TODO: Replace these example test with test for your agent's schemas
  */
 
 import { describe, it, expect } from 'vitest';
@@ -344,7 +344,7 @@ describe('Edge Cases', () => {
 // Template for Your Own Tests
 // ============================================================================
 
-describe('YOUR TOOL NAME schema tests', () => {
+describe('YOUR TOOL NAME schema test', () => {
   // TODO: Define your schema here
   // @ts-expect-error - Template schema not used yet
   const yourToolInputSchema = z.object({
