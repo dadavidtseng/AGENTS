@@ -1,0 +1,48 @@
+{
+  "name": "shadow-agent-artist",
+  "version": "1.0.0",
+  "description": "Shadow agent for artist backup and monitoring",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest"
+  },
+  "keywords": [
+    "kadi",
+    "agent",
+    "template",
+    "multi-agent",
+    "typescript"
+  ],
+  "author": "Yu-Wei Tseng",
+  "license": "MIT",
+  "dependencies": {
+    "@agents/shared": "file:../AGENTS/shared",
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@kadi.build/core": "file:../kadi/kadi-core",
+    "@modelcontextprotocol/sdk": "^1.21.1",
+    "@types/chokidar": "^1.7.5",
+    "chokidar": "^5.0.0",
+    "dotenv": "^16.4.5",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "@vitest/coverage-v8": "^1.6.1",
+    "eslint": "^8.56.0",
+    "patch-package": "^8.0.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
