@@ -1,0 +1,38 @@
+{
+  "filePath": ".spec-workflow/specs/simple-multi-agents-orchestration/tasks.md",
+  "currentVersion": 4,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-30T13:26:31.305Z",
+      "trigger": "initial",
+      "approvalId": "approval_1764509191288_evxjacq8z",
+      "approvalTitle": "Tasks Document - 32 Atomic Implementation Tasks"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-11-30T14:02:44.147Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1764509191288_evxjacq8z",
+      "approvalTitle": "Tasks Document - 32 Atomic Implementation Tasks"
+    },
+    {
+      "version": 3,
+      "filename": "snapshot-003.json",
+      "timestamp": "2025-11-30T14:14:16.111Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1764511669824_2ybt16nzo",
+      "approvalTitle": "Tasks Document (Revised) - 31 Atomic Implementation Tasks"
+    },
+    {
+      "version": 4,
+      "filename": "snapshot-004.json",
+      "timestamp": "2025-11-30T14:27:09.228Z",
+      "trigger": "approved",
+      "approvalId": "approval_1764512438867_58tontd7p",
+      "approvalTitle": "Tasks Document (Bot Files Updated) - 31 Atomic Implementation Tasks"
+    }
+  ]
+}

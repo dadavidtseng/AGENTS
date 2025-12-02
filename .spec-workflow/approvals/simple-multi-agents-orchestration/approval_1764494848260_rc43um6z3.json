@@ -1,0 +1,27 @@
+{
+  "id": "approval_1764494848260_rc43um6z3",
+  "title": "Requirements Document - Simple Multi-Agent Orchestration",
+  "filePath": ".spec-workflow/specs/simple-multi-agents-orchestration/requirements.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-11-30T09:27:28.261Z",
+  "category": "spec",
+  "categoryName": "simple-multi-agents-orchestration",
+  "response": "Feedback Summary (2 comments):\n\nGeneral Comments:\n1. Should I create other agents project, such as agent-artist, agent-programmer, agent-designer for you?\n2. shrimp-AGENTS mcp server should be in kadi-broker's C:\\p4\\Personal\\SD\\kadi\\kadi-broker\\config\\mcp-upstreams.json. Actually, that should probably be shrimp-agent-playground since we're already using shrimp-AGENTS for \"C:\\p4\\Personal\\SD\\AGENTS\" and agents can be doing their stuff in \"C:\\p4\\Personal\\SD\\agent-playground\". By the way, I forgot to mention, when agents working together, they should be using gitworktree, they should create their working directory at \"C:\\p4\\Personal\\SD\\agent-playground-artist\", \"C:\\p4\\Personal\\SD\\agent-playground-designer\", \"C:\\p4\\Personal\\SD\\agent-playground-programmer\", so that they can work concurrently\n\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"general\",\n      \"comment\": \"Should I create other agents project, such as agent-artist, agent-programmer, agent-designer for you?\",\n      \"timestamp\": \"2025-11-30T09:55:06.533Z\",\n      \"id\": \"comment_1764496506533_om2auapjj\"\n    },\n    {\n      \"type\": \"general\",\n      \"comment\": \"shrimp-AGENTS mcp server should be in kadi-broker's C:\\\\p4\\\\Personal\\\\SD\\\\kadi\\\\kadi-broker\\\\config\\\\mcp-upstreams.json. Actually, that should probably be shrimp-agent-playground since we're already using shrimp-AGENTS for \\\"C:\\\\p4\\\\Personal\\\\SD\\\\AGENTS\\\" and agents can be doing their stuff in \\\"C:\\\\p4\\\\Personal\\\\SD\\\\agent-playground\\\". By the way, I forgot to mention, when agents working together, they should be using gitworktree, they should create their working directory at \\\"C:\\\\p4\\\\Personal\\\\SD\\\\agent-playground-artist\\\", \\\"C:\\\\p4\\\\Personal\\\\SD\\\\agent-playground-designer\\\", \\\"C:\\\\p4\\\\Personal\\\\SD\\\\agent-playground-programmer\\\", so that they can work concurrently\",\n      \"timestamp\": \"2025-11-30T10:00:46.385Z\",\n      \"id\": \"comment_1764496846385_2v34s58e4\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (2 comments):\\n\\nGeneral Comments:\\n1. Should I create other agents project, such as agent-artist, agent-programmer, agent-designer for you?\\n2. shrimp-AGENTS mcp server should be in kadi-broker's C:\\\\p4\\\\Personal\\\\SD\\\\kadi\\\\kadi-broker\\\\config\\\\mcp-upstreams.json. Actually, that should probably be shrimp-agent-playground since we're already using shrimp-AGENTS for \\\"C:\\\\p4\\\\Personal\\\\SD\\\\AGENTS\\\" and agents can be doing their stuff in \\\"C:\\\\p4\\\\Personal\\\\SD\\\\agent-playground\\\". By the way, I forgot to mention, when agents working together, they should be using gitworktree, they should create their working directory at \\\"C:\\\\p4\\\\Personal\\\\SD\\\\agent-playground-artist\\\", \\\"C:\\\\p4\\\\Personal\\\\SD\\\\agent-playground-designer\\\", \\\"C:\\\\p4\\\\Personal\\\\SD\\\\agent-playground-programmer\\\", so that they can work concurrently\\n\\n\",\n  \"timestamp\": \"2025-11-30T10:00:51.422Z\"\n}",
+  "respondedAt": "2025-11-30T10:00:51.456Z",
+  "comments": [
+    {
+      "type": "general",
+      "comment": "Should I create other agents project, such as agent-artist, agent-programmer, agent-designer for you?",
+      "timestamp": "2025-11-30T09:55:06.533Z",
+      "id": "comment_1764496506533_om2auapjj"
+    },
+    {
+      "type": "general",
+      "comment": "shrimp-AGENTS mcp server should be in kadi-broker's C:\\p4\\Personal\\SD\\kadi\\kadi-broker\\config\\mcp-upstreams.json. Actually, that should probably be shrimp-agent-playground since we're already using shrimp-AGENTS for \"C:\\p4\\Personal\\SD\\AGENTS\" and agents can be doing their stuff in \"C:\\p4\\Personal\\SD\\agent-playground\". By the way, I forgot to mention, when agents working together, they should be using gitworktree, they should create their working directory at \"C:\\p4\\Personal\\SD\\agent-playground-artist\", \"C:\\p4\\Personal\\SD\\agent-playground-designer\", \"C:\\p4\\Personal\\SD\\agent-playground-programmer\", so that they can work concurrently",
+      "timestamp": "2025-11-30T10:00:46.385Z",
+      "id": "comment_1764496846385_2v34s58e4"
+    }
+  ]
+}

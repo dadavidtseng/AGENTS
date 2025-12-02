@@ -1,0 +1,87 @@
+{
+  "id": "approval_1764498637884_jaszruh1w",
+  "title": "Requirements V2 Addendum - Architectural Corrections (Supersedes Original)",
+  "filePath": ".spec-workflow/specs/simple-multi-agents-orchestration/requirements-v2-addendum.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-11-30T10:30:37.884Z",
+  "category": "spec",
+  "categoryName": "simple-multi-agents-orchestration",
+  "response": "Feedback Summary (6 comments):\n\nSpecific Text Comments:\n1. \"- Creates isolated git worktrees for each worker a...\": agent-producer shouldn't be creating git worktree, only agent-artist, agent-designer, and agent-programmer should create git worktree.\n2. \"- ❌ agent-producer does NOT publish custom KĀDI ev...\": Noted that agent-producer should be able to event pub/sub through kadi-broker, so that agent-artist, agent-designer, agent-programmer can receive event and then execute the tasks\n3. \"\"args\": [\"C:/p4/Personal/SD/shrimp-agent-playgroun...\": This should be \"C:\\GitHub\\mcp-shrimp-task-manager\", please go read C:\\p4\\Personal\\SD\\kadi\\kadi-broker\\config\\mcp-upstreams.json to better understand what you should do.\n4. \"**After Successful Completion:**\": After successful completion means the user should verify the tasks is complete, and then agent-producer should push to remote github repo, and then agent-designer, agent-artist, agent-programmer should then remove the git worktree\n5. \"### 2.3 BaseBot Inheritance Pattern\": I don't think agent-producer should extend the BaseBot again because it already has discord-bot.ts and slack-bot.ts inside agent-producer project. Pleaes go read \"C:\\p4\\Personal\\SD\\agent-producer\" again.\n6. \"development\": This should be programmer\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"selection\",\n      \"comment\": \"agent-producer shouldn't be creating git worktree, only agent-artist, agent-designer, and agent-programmer should create git worktree.\",\n      \"timestamp\": \"2025-11-30T10:57:29.692Z\",\n      \"selectedText\": \"- Creates isolated git worktrees for each worker agent before task assignment\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1764500249692_x9bkvrqgo\"\n    },\n    {\n      \"type\": \"selection\",\n      \"comment\": \"Noted that agent-producer should be able to event pub/sub through kadi-broker, so that agent-artist, agent-designer, agent-programmer can receive event and then execute the tasks\",\n      \"timestamp\": \"2025-11-30T10:59:23.891Z\",\n      \"selectedText\": \"- ❌ agent-producer does NOT publish custom KĀDI events\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1764500363891_mer8693kl\"\n    },\n    {\n      \"type\": \"selection\",\n      \"comment\": \"This should be \\\"C:\\\\GitHub\\\\mcp-shrimp-task-manager\\\", please go read C:\\\\p4\\\\Personal\\\\SD\\\\kadi\\\\kadi-broker\\\\config\\\\mcp-upstreams.json to better understand what you should do.\",\n      \"timestamp\": \"2025-11-30T11:01:22.936Z\",\n      \"selectedText\": \"\\\"args\\\": [\\\"C:/p4/Personal/SD/shrimp-agent-playground/dist/index.js\\\"],\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1764500482936_4x3fxg3lg\"\n    },\n    {\n      \"type\": \"selection\",\n      \"comment\": \"After successful completion means the user should verify the tasks is complete, and then agent-producer should push to remote github repo, and then agent-designer, agent-artist, agent-programmer should then remove the git worktree\",\n      \"timestamp\": \"2025-11-30T11:03:27.814Z\",\n      \"selectedText\": \"**After Successful Completion:**\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1764500607814_yadtlfl3o\"\n    },\n    {\n      \"type\": \"selection\",\n      \"comment\": \"I don't think agent-producer should extend the BaseBot again because it already has discord-bot.ts and slack-bot.ts inside agent-producer project. Pleaes go read \\\"C:\\\\p4\\\\Personal\\\\SD\\\\agent-producer\\\" again.\",\n      \"timestamp\": \"2025-11-30T11:04:51.371Z\",\n      \"selectedText\": \"### 2.3 BaseBot Inheritance Pattern\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1764500691371_76vnsdc9s\"\n    },\n    {\n      \"type\": \"selection\",\n      \"comment\": \"This should be programmer\",\n      \"timestamp\": \"2025-11-30T11:05:33.857Z\",\n      \"selectedText\": \"development\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1764500733857_6ighwfcsz\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (6 comments):\\n\\nSpecific Text Comments:\\n1. \\\"- Creates isolated git worktrees for each worker a...\\\": agent-producer shouldn't be creating git worktree, only agent-artist, agent-designer, and agent-programmer should create git worktree.\\n2. \\\"- ❌ agent-producer does NOT publish custom KĀDI ev...\\\": Noted that agent-producer should be able to event pub/sub through kadi-broker, so that agent-artist, agent-designer, agent-programmer can receive event and then execute the tasks\\n3. \\\"\\\"args\\\": [\\\"C:/p4/Personal/SD/shrimp-agent-playgroun...\\\": This should be \\\"C:\\\\GitHub\\\\mcp-shrimp-task-manager\\\", please go read C:\\\\p4\\\\Personal\\\\SD\\\\kadi\\\\kadi-broker\\\\config\\\\mcp-upstreams.json to better understand what you should do.\\n4. \\\"**After Successful Completion:**\\\": After successful completion means the user should verify the tasks is complete, and then agent-producer should push to remote github repo, and then agent-designer, agent-artist, agent-programmer should then remove the git worktree\\n5. \\\"### 2.3 BaseBot Inheritance Pattern\\\": I don't think agent-producer should extend the BaseBot again because it already has discord-bot.ts and slack-bot.ts inside agent-producer project. Pleaes go read \\\"C:\\\\p4\\\\Personal\\\\SD\\\\agent-producer\\\" again.\\n6. \\\"development\\\": This should be programmer\\n\",\n  \"timestamp\": \"2025-11-30T11:05:50.786Z\"\n}",
+  "respondedAt": "2025-11-30T11:05:50.831Z",
+  "comments": [
+    {
+      "type": "selection",
+      "comment": "agent-producer shouldn't be creating git worktree, only agent-artist, agent-designer, and agent-programmer should create git worktree.",
+      "timestamp": "2025-11-30T10:57:29.692Z",
+      "selectedText": "- Creates isolated git worktrees for each worker agent before task assignment",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1764500249692_x9bkvrqgo"
+    },
+    {
+      "type": "selection",
+      "comment": "Noted that agent-producer should be able to event pub/sub through kadi-broker, so that agent-artist, agent-designer, agent-programmer can receive event and then execute the tasks",
+      "timestamp": "2025-11-30T10:59:23.891Z",
+      "selectedText": "- ❌ agent-producer does NOT publish custom KĀDI events",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1764500363891_mer8693kl"
+    },
+    {
+      "type": "selection",
+      "comment": "This should be \"C:\\GitHub\\mcp-shrimp-task-manager\", please go read C:\\p4\\Personal\\SD\\kadi\\kadi-broker\\config\\mcp-upstreams.json to better understand what you should do.",
+      "timestamp": "2025-11-30T11:01:22.936Z",
+      "selectedText": "\"args\": [\"C:/p4/Personal/SD/shrimp-agent-playground/dist/index.js\"],",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1764500482936_4x3fxg3lg"
+    },
+    {
+      "type": "selection",
+      "comment": "After successful completion means the user should verify the tasks is complete, and then agent-producer should push to remote github repo, and then agent-designer, agent-artist, agent-programmer should then remove the git worktree",
+      "timestamp": "2025-11-30T11:03:27.814Z",
+      "selectedText": "**After Successful Completion:**",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1764500607814_yadtlfl3o"
+    },
+    {
+      "type": "selection",
+      "comment": "I don't think agent-producer should extend the BaseBot again because it already has discord-bot.ts and slack-bot.ts inside agent-producer project. Pleaes go read \"C:\\p4\\Personal\\SD\\agent-producer\" again.",
+      "timestamp": "2025-11-30T11:04:51.371Z",
+      "selectedText": "### 2.3 BaseBot Inheritance Pattern",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1764500691371_76vnsdc9s"
+    },
+    {
+      "type": "selection",
+      "comment": "This should be programmer",
+      "timestamp": "2025-11-30T11:05:33.857Z",
+      "selectedText": "development",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1764500733857_6ighwfcsz"
+    }
+  ]
+}
