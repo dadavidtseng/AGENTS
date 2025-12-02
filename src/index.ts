@@ -1,192 +1,94 @@
 /**
- * TypeScript Agent Template for KĀDI Protocol
- * ===========================================
+ * agent-producer - KĀDI Agent for Multi-Agent Orchestration
+ * ===========================================================
  *
- * TEMPLATE USAGE:
- * This file serves as a template for creating new KĀDI agents in TypeScript.
- * Follow these steps to customize:
+ * Purpose:
+ * Agent orchestrator that coordinates worker agents (artist, designer, programmer)
+ * via KĀDI event-driven protocol. Provides tools accessible from Claude Code/Desktop
+ * and Slack/Discord channels through KĀDI broker.
  *
- * 1. Replace the echo tool with your own tool definitions
- * 2. Update agent metadata in KadiClient config
- * 3. Replace tool handler with your business logic
- * 4. Update event topics and payloads to match your domain
- * 5. Modify networks array to join appropriate KĀDI networks
- * 6. Update documentation comments with your agent's purpose
+ * Architecture:
+ * - KĀDI Agent: Registers tools with broker via kadiClient.registerTool()
+ * - MCP Upstream: Forwards task management to mcp-shrimp-task-manager via kadiClient.load()
+ * - Event Publisher: Publishes task assignment events to worker agents
  *
- * ARCHITECTURE:
- * This agent demonstrates broker-centralized architecture where:
- * - Agent registers its own tools with the KĀDI broker
- * - Agent can call broker's tools via client.load() (see examples/)
- * - No MCP server spawning in agent code
- * - Broker handles all tool routing and network isolation
+ * Tools:
+ * - plan_task: Create and assign tasks to worker agents
+ * - list_active_tasks: Query current task status
+ * - get_task_status: Get detailed task information
+ * - assign_task: Assign validated tasks to worker agents
+ * - approve_completion: Approve task completion and trigger git merge
  *
- * Built-in tools (customize these):
- * - Echo (placeholder - replace with your own tools)
+ * Event Flow:
+ * 1. User calls tool (via Claude Code/Desktop or Slack/Discord)
+ * 2. agent-producer validates and forwards to mcp-shrimp-task-manager
+ * 3. agent-producer publishes '{role}.task.assigned' event via KĀDI
+ * 4. Worker agent receives event, executes task, commits to playground
+ * 5. Worker agent publishes '{role}.task.completed' event
+ * 6. agent-producer receives completion, awaits user approval
  *
- * Broker-provided tools (access via client.load()):
- * - Git operations (from broker's git-mcp-server on 'git' network)
- * - Filesystem operations (from broker's fs-mcp-server on 'global' network)
- *
- * Dependencies:
- * - @kadi.build/core: KĀDI protocol client library with KadiClient and Zod
- * - dotenv: Environment variable loading
- *
- * Usage:
- *     npm start              # Production mode
- *     npm run dev            # Development mode with hot-reload
- *     npm run build          # Compile TypeScript
- *     npm test               # Run test suite
- *
- * Environment Variables:
- *     KADI_BROKER_URL: WebSocket URL for KĀDI broker (default: ws://localhost:8080)
- *     KADI_NETWORK: Networks to join, comma-separated (default: global,text,git,slack,discord)
- *
- * @module template-agent-typescript
- * @version 2.0.0
+ * @module agent-producer
+ * @version 1.0.0
  * @license MIT
  */
 
 import 'dotenv/config';
 import { KadiClient, z } from '@kadi.build/core';
-import { registerAllTools } from './tools/index.js';
+import { ClaudeOrchestrator } from './helpers/claude-orchestrator.js';
+import { createPlanTaskHandler, planTaskInputSchema, planTaskOutputSchema } from './tools/plan-task.js';
+import { createListActiveTasksHandler, listActiveTasksInputSchema, listActiveTasksOutputSchema } from './tools/list-tasks.js';
+import { createGetTaskStatusHandler, getTaskStatusInputSchema, getTaskStatusOutputSchema } from './tools/task-status.js';
+import { createAssignTaskHandler, assignTaskInputSchema, assignTaskOutputSchema } from './tools/assign-task.js';
+import { setupTaskCompletionNotifier } from './handlers/task-completion-notifier.js';
 
 // ============================================================================
-// Tool Schemas (Zod Schemas)
+// Tool Schemas (Imported from tool modules)
 // ============================================================================
-//
-// TEMPLATE PATTERN: Define input/output schemas using Zod
-//
-// 1. Define input schema with z.object()
-// 2. Define output schema with z.object()
-// 3. Use .describe() on all fields for auto-generated documentation
-// 4. Infer TypeScript types using z.infer<typeof schema>
-// 5. Use inferred types in tool handler function signatures
-//
-// TODO: Replace the echo tool schema with your agent's tool schemas
-// ============================================================================
+
+// planTaskInputSchema, planTaskOutputSchema - imported from ./tools/plan-task.js
+// listActiveTasksInputSchema, listActiveTasksOutputSchema - imported from ./tools/list-tasks.js
+// getTaskStatusInputSchema, getTaskStatusOutputSchema - imported from ./tools/task-status.js
+// assignTaskInputSchema, assignTaskOutputSchema - imported from ./tools/assign-task.js
 
 /**
- * Input schema for echo tool
- *
- * @example
- * ```typescript
- * const input: EchoInput = {
- *   text: 'hello world'
- * };
- * ```
+ * Input schema for approve_completion tool
  */
-const echoInputSchema = z.object({
-  text: z.string().describe('Text to echo back')
+const approveCompletionInputSchema = z.object({
+  taskId: z.string().describe('Task ID to approve'),
+  summary: z.string().describe('Summary of completion verification and approval'),
+  score: z.number().min(0).max(100).describe('Quality score (0-100)')
 });
 
 /**
- * Output schema for echo tool
- *
- * @example
- * ```typescript
- * const output: EchoOutput = {
- *   echo: 'hello world',
- *   length: 11
- * };
- * ```
+ * Output schema for approve_completion tool
  */
-const echoOutputSchema = z.object({
-  echo: z.string().describe('Echoed text'),
-  length: z.number().describe('Length of text')
+const approveCompletionOutputSchema = z.object({
+  taskId: z.string(),
+  status: z.string(),
+  message: z.string().describe('Approval confirmation message')
 });
 
 // ============================================================================
 // Type Inference from Schemas
 // ============================================================================
-//
-// TEMPLATE PATTERN: Use z.infer to derive TypeScript types from Zod schemas
-//
-// Benefits:
-// - Single source of truth (schema defines both validation and types)
-// - Automatic type safety in tool handlers
-// - No manual type duplication
-// - Changes to schemas automatically update types
-//
-// TODO: Add type inference for your custom schemas
-// ============================================================================
 
-/** Inferred TypeScript type for echo input */
-type EchoInput = z.infer<typeof echoInputSchema>;
-
-/** Inferred TypeScript type for echo output */
-type EchoOutput = z.infer<typeof echoOutputSchema>;
-
-// ============================================================================
-// List Tools Schemas
-// ============================================================================
-
-/**
- * Input schema for list_tools utility
- * No parameters needed - just lists all available tools
- */
-const listToolsInputSchema = z.object({});
-
-/**
- * Output schema for list_tools utility
- */
-const listToolsOutputSchema = z.object({
-  summary: z.string().describe('Human-readable markdown summary of all tools'),
-  tools: z.array(z.object({
-    name: z.string().describe('Tool name'),
-    description: z.string().describe('Tool description')
-  })).describe('Array of all available tools')
-});
-
-/** Inferred TypeScript type for list_tools output */
-type ListToolsOutput = z.infer<typeof listToolsOutputSchema>;
+// PlanTaskInput, PlanTaskOutput - imported from ./tools/plan-task.js
+// ListActiveTasksInput, ListActiveTasksOutput - imported from ./tools/list-tasks.js
+// GetTaskStatusInput, GetTaskStatusOutput - imported from ./tools/task-status.js
+type ApproveCompletionInput = z.infer<typeof approveCompletionInputSchema>;
+type ApproveCompletionOutput = z.infer<typeof approveCompletionOutputSchema>;
 
 // ============================================================================
 // Configuration
 // ============================================================================
-//
-// TEMPLATE PATTERN: Load configuration from environment variables
-//
-// TODO: Customize these defaults for your agent
-// - brokerUrl: Change if using different broker
-// - networks: Update to match your agent's network requirements
-//
-// Common KĀDI networks:
-// - 'global': All agents can see tools on this network
-// - 'text': Domain-specific network for text processing
-// - 'git': Domain-specific network for git operations
-// - 'slack': Domain-specific network for Slack bot operations
-// - 'discord': Domain-specific network for Discord bot operations
-// ============================================================================
 
-/**
- * Agent configuration loaded from environment variables
- */
 const config = {
-  /** WebSocket URL for KĀDI broker */
   brokerUrl: process.env.KADI_BROKER_URL || 'ws://localhost:8080',
-
-  /** Networks to join (comma-separated in env var) */
-  networks: (process.env.KADI_NETWORK || 'global,text,git,slack,discord').split(',')
+  networks: ['global', 'slack', 'discord', 'utility']
 };
 
 // ============================================================================
 // KĀDI Client
-// ============================================================================
-//
-// TEMPLATE PATTERN: Initialize KadiClient with agent metadata
-//
-// TODO: Update these fields for your agent
-// - name: Unique agent identifier (kebab-case recommended)
-// - version: Semantic version of your agent
-// - role: Always 'agent' for agent processes
-// - broker: Broker WebSocket URL from config
-// - networks: Array of network names to join
-//
-// The client instance is used to:
-// 1. Register tools (client.registerTool)
-// 2. Publish events (client.publishEvent)
-// 3. Load broker tools (client.load)
-// 4. Connect and serve (client.serve)
 // ============================================================================
 
 /**
@@ -194,259 +96,382 @@ const config = {
  *
  * This client handles:
  * - WebSocket connection to broker
- * - Ed25519 authentication
- * - Tool registration and invocation
- * - Event pub/sub
- * - Network isolation
+ * - Tool registration with broker
+ * - Event publishing to worker agents
+ * - MCP upstream calls to mcp-shrimp-task-manager
  */
 const client = new KadiClient({
-  name: process.env.AGENT_NAME || 'template-agent-typescript',
-  version: process.env.AGENT_VERSION || '1.0.0',
+  name: 'agent-producer',
+  version: '1.0.0',
   role: 'agent',
   broker: config.brokerUrl,
   networks: config.networks
 });
 
+// Add error handler to prevent crashes from subscription timeouts
+client.on('error', (error: Error) => {
+  console.error('⚠️  KĀDI Client Error (non-fatal):', error.message);
+  // Log but don't crash - these are often transient issues
+});
+
+// ============================================================================
+// Channel Context Tracking
+// ============================================================================
+
+/**
+ * Maps task IDs to their originating channel context
+ * Used to send notifications back to the channel where the task was assigned
+ */
+export const taskChannelMap = new Map<string, {
+  type: 'slack' | 'discord' | 'desktop';
+  channelId?: string;
+  userId?: string;
+  threadTs?: string; // Slack thread timestamp for replying in thread
+}>();
+
+// ============================================================================
+// Claude Orchestrator (for Option C workflow)
+// ============================================================================
+
+/**
+ * Claude API orchestrator for intelligent task planning
+ *
+ * Provides AI-driven task refinement by orchestrating the complete shrimp workflow:
+ * plan → analyze → reflect → split
+ */
+let orchestrator: ClaudeOrchestrator | null = null;
+
+// Initialize orchestrator if ANTHROPIC_API_KEY is available
+if (process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'YOUR_ANTHROPIC_API_KEY_HERE') {
+  orchestrator = new ClaudeOrchestrator({
+    client,
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+  });
+  console.log('✅ Claude orchestrator initialized for Option C workflow');
+} else {
+  console.log('⏭️  Claude orchestrator disabled (set ANTHROPIC_API_KEY to enable Option C workflow)');
+}
+
 // ============================================================================
 // Tool Definitions
 // ============================================================================
-//
-// TEMPLATE PATTERN: Register tools with client.registerTool()
-//
-// Structure:
-// 1. client.registerTool({ metadata }, handler)
-// 2. Metadata: name, description, input schema, output schema
-// 3. Handler: async function with typed params and return value
-// 4. Handler should: validate, execute logic, publish events, return result
-//
-// Best Practices:
-// - Use emoji in console.log for visual distinction (📝 ✅ ❌ 🔍 etc.)
-// - Publish events for significant operations (success and error)
-// - Include agent name in event payloads for traceability
-// - Return structured data matching output schema
-// - Use try/catch for operations that might fail
-//
-// TODO: Replace the echo tool with your agent's tools
-// ============================================================================
-
-// TODO: Replace this echo tool with your own domain-specific tools
-// The echo tool is a minimal placeholder - it simply returns the input text with its length.
-//
-// Example of adding a new tool:
-// 1. Define input/output schemas using Zod (see lines 78-96)
-// 2. Register tool with client.registerTool() (see below)
-// 3. Implement your business logic in the handler function
-// 4. Publish events for tracking (optional but recommended)
-//
-// For more examples, see docs/TEMPLATE_USAGE.md
 
 /**
- * Echo Tool (Placeholder)
+ * Plan Task Tool Registration
  *
- * This is a simple placeholder tool that echoes back the input text
- * along with its length. Replace this with your own tools.
- *
- * @param params - Input parameters matching EchoInput schema
- * @returns Echoed text with length metadata
- *
- * @example
- * ```typescript
- * const result = await client.invokeTool('echo', {
- *   text: 'hello world'
- * });
- * // Returns: { echo: 'hello world', length: 11 }
- * ```
+ * Note: Tool registration uses imported schemas and handler factory
  */
+const planTaskHandler = await createPlanTaskHandler(client, orchestrator);
 client.registerTool({
-  name: 'echo',
-  description: 'Echo back the input text with its length (placeholder tool - replace with your own)',
-  input: echoInputSchema,
-  output: echoOutputSchema
-}, async (params: EchoInput): Promise<EchoOutput> => {
-  console.log(`🔁 Echoing text: "${params.text}"`);
-
-  const result = {
-    echo: params.text,
-    length: params.text.length
-  };
-
-  // TEMPLATE PATTERN: Publish event for operation
-  // TODO: Replace 'echo.processed' with your domain-specific event topic
-  // TODO: Replace 'template-agent-typescript' with your agent name
-  client.publishEvent('echo.processed', {
-    operation: 'echo',
-    text_length: result.length,
-    agent: 'template-agent-typescript'
-  });
-
-  return result;
-});
-
-// ============================================================================
-// List Tools Utility
-// ============================================================================
+  name: 'plan_task',
+  description: 'Create and assign a task to worker agents (artist, designer, or programmer). Uses AI-driven workflow orchestration for intelligent task planning with Claude API refinement.',
+  input: planTaskInputSchema,
+  output: planTaskOutputSchema
+}, planTaskHandler);
 
 /**
- * List Tools Utility
+ * List Active Tasks Tool Registration
  *
- * Provides a human-readable formatted list of all available tools (local + network).
- * This solves the UX problem where raw JSON tool schemas are unreadable in Slack.
+ * Note: Tool registration uses imported schemas and handler factory
+ */
+const listActiveTasksHandler = await createListActiveTasksHandler(client);
+client.registerTool({
+  name: 'list_active_tasks',
+  description: `List all active tasks across all worker agents with optional status filtering. Queries mcp-shrimp-task-manager for current task state.
+
+IMPORTANT OUTPUT FORMAT:
+When presenting results to users, ALWAYS format the task list as follows:
+1. Display tasks in numerical order (sorted by task ID)
+2. Use this exact format for each task:
+   [Task ID] - [Task Name]
+3. Include a header showing the total count
+4. Example format:
+
+   Active Tasks (Total: 3):
+   1. 08532952-04c1-4afb-93bd-ed674446bfd8 - Implement Monitoring and Auditing
+   2. 14bc4c95-fd88-4680-957f-5185ad522501 - Create placeholder task for testing purposes
+   3. 5166ce3c-fdc6-42f6-a1e6-d9975ba38bdc - Placeholder Task for Testing
+
+Do NOT summarize or paraphrase - show the complete numbered list with IDs and names.`,
+  input: listActiveTasksInputSchema,
+  output: listActiveTasksOutputSchema
+}, listActiveTasksHandler);
+
+/**
+ * Get Task Status Tool Registration
  *
- * @returns Formatted markdown list of tools with names and descriptions
+ * Note: Tool registration uses imported schemas and handler factory
+ */
+const getTaskStatusHandler = await createGetTaskStatusHandler(client);
+client.registerTool({
+  name: 'get_task_status',
+  description: 'Get detailed status of a specific task including worker agent progress, file operations, and error logs. Queries mcp-shrimp-task-manager for task details.',
+  input: getTaskStatusInputSchema,
+  output: getTaskStatusOutputSchema
+}, getTaskStatusHandler);
+
+/**
+ * Assign Task Tool Registration
  *
- * @example
- * ```typescript
- * const result = await client.invokeTool('list_tools', {});
- * // Returns:
- * // {
- * //   summary: "I have 43 tools available:\n\n• *echo*: Echo text...\n• *git_add*: Stage files...",
- * //   tools: [{ name: 'echo', description: '...' }, ...]
- * // }
- * ```
+ * Note: Tool registration uses imported schemas and handler factory
+ */
+const assignTaskHandler = await createAssignTaskHandler(client);
+client.registerTool({
+  name: 'assign_task',
+  description: 'Assign a task to a worker agent (artist, designer, or programmer). Validates task existence and publishes KĀDI event for worker agent to receive and execute. Supports explicit role assignment or auto-detection from task metadata.',
+  input: assignTaskInputSchema,
+  output: assignTaskOutputSchema
+}, assignTaskHandler);
+
+/**
+ * Approve Completion Tool
+ *
+ * Approves task completion and triggers final verification via mcp-shrimp-task-manager.
+ * Publishes approval notification event.
+ *
+ * @param params - Task ID to approve with completion summary and score
+ * @returns Approval confirmation
  */
 client.registerTool({
-  name: 'list_tools',
-  description: 'List all available tools in human-readable format (better UX than raw JSON)',
-  input: listToolsInputSchema,
-  output: listToolsOutputSchema
-}, async (): Promise<ListToolsOutput> => {
-  console.log('📋 Listing all available tools...');
+  name: 'approve_completion',
+  description: 'Approve task completion and trigger final git merge. Validates completion criteria via mcp-shrimp-task-manager and publishes approval notification.',
+  input: approveCompletionInputSchema,
+  output: approveCompletionOutputSchema
+}, async (params: ApproveCompletionInput): Promise<ApproveCompletionOutput> => {
+  console.log(`✅ Approving task completion: ${params.taskId} (score: ${params.score})`);
+  console.log(`🔍 [DEBUG] approve_completion params:`, JSON.stringify(params, null, 2));
 
   try {
-    // 1. Get local tools (registered on this agent)
-    const localTools = client.getAllRegisteredTools();
-
-    // 2. Get network tools from broker
+    // Get broker protocol for direct tool invocation
     const protocol = client.getBrokerProtocol();
-    const networkResult = await (protocol as any).connection.sendRequest({
-      jsonrpc: '2.0',
-      method: 'kadi.ability.list',
-      params: {
-        networks: config.networks,
-        includeProviders: false
-      },
-      id: `list_tools_${Date.now()}`
-    }) as {
-      tools: Array<{
-        name: string;
-        description?: string;
-      }>;
+
+    const toolInput = {
+      taskId: params.taskId,
+      summary: params.summary,
+      score: params.score
     };
+    console.log(`🔍 [DEBUG] Calling shrimp_verify_task with:`, JSON.stringify(toolInput, null, 2));
 
-    // 3. Deduplicate: prefer local tools over network tools
-    const localNames = new Set(localTools.map(t => t.definition.name));
-    const uniqueNetworkTools = networkResult.tools.filter(t => !localNames.has(t.name));
+    // Forward to shrimp_verify_task via broker protocol
+    const result: any = await protocol.invokeTool({
+      targetAgent: 'mcp-server-shrimp-agent-playground',
+      toolName: 'shrimp_verify_task',
+      toolInput: toolInput,
+      timeout: 30000
+    });
 
-    // 4. Combine all tools
-    const allTools = [
-      ...localTools.map(t => ({
-        name: t.definition.name,
-        description: t.definition.description || 'No description'
-      })),
-      ...uniqueNetworkTools.map(t => ({
-        name: t.name,
-        description: t.description || 'No description'
-      }))
-    ];
+    console.log(`🔍 [DEBUG] shrimp_verify_task result:`, JSON.stringify(result, null, 2));
 
-    // 5. Format as Slack-friendly markdown
-    const summary = `I have ${allTools.length} tools available:\n\n` +
-      allTools.map(t => `• *${t.name}*: ${t.description}`).join('\n');
+    // Check if shrimp returned an error
+    if (result.isError) {
+      const errorText = Array.isArray(result.content)
+        ? result.content.filter((item: any) => item.type === 'text').map((item: any) => item.text).join('\n')
+        : String(result.content || result);
 
-    console.log(`✅ Listed ${allTools.length} tools (${localTools.length} local + ${uniqueNetworkTools.length} network)`);
+      console.error(`❌ Shrimp verification failed: ${errorText}`);
 
-    return { summary, tools: allTools };
-  } catch (error: any) {
-    console.error('❌ Error listing tools:', error);
+      // Publish failure event
+      client.publishEvent('task.approval.failed', {
+        taskId: params.taskId,
+        error: errorText,
+        agent: 'agent-producer'
+      });
 
-    // Fallback: return only local tools if broker query fails
-    const localTools = client.getAllRegisteredTools();
-    const tools = localTools.map(t => ({
-      name: t.definition.name,
-      description: t.definition.description || 'No description'
-    }));
+      throw new Error(`Task verification failed: ${errorText}`);
+    }
 
-    const summary = `⚠️ Partial list (broker unavailable): ${tools.length} local tools:\n\n` +
-      tools.map(t => `• *${t.name}*: ${t.description}`).join('\n');
+    console.log(`✅ Task ${params.taskId} approved successfully`);
 
-    return { summary, tools };
+    // Publish approval event
+    client.publishEvent('task.approved', {
+      taskId: params.taskId,
+      score: params.score,
+      agent: 'agent-producer'
+    });
+    console.log(`📤 Published task.approved event`);
+
+    return {
+      taskId: params.taskId,
+      status: result.status || 'approved',
+      message: `Task ${params.taskId} approved with score ${params.score}`
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`❌ Failed to approve task: ${errorMsg}`);
+
+    // Publish error event
+    client.publishEvent('task.approval.failed', {
+      taskId: params.taskId,
+      error: errorMsg,
+      agent: 'agent-producer'
+    });
+
+    throw new Error(`Failed to approve task: ${errorMsg}`);
   }
 });
 
-
 // ============================================================================
-// Custom Tool Registry
-// ============================================================================
-//
-// TEMPLATE PATTERN: Pluggable tool system
-//
-// Add custom tools by creating files in src/tools/ directory.
-// Tools are automatically loaded from the registry.
-//
-// See src/tools/index.ts for more information.
-//
-registerAllTools(client);
-
-// ============================================================================
-// Main Function
-// ============================================================================
-//
-// TEMPLATE PATTERN: Entry point for agent startup
-//
-// Responsibilities:
-// 1. Print startup banner with configuration
-// 2. List all registered tools (for debugging/monitoring)
-// 3. Connect to broker with client.serve('broker')
-// 4. Handle connection errors gracefully
-//
-// IMPORTANT: client.serve() is a BLOCKING call that:
-// - Connects to broker via WebSocket
-// - Authenticates with Ed25519 key
-// - Registers all tools with broker
-// - Enters event loop (never returns)
-//
-// All informational logs MUST come BEFORE serve() call
-// Code after serve() never executes
-//
-// TODO: Update tool listings to match your agent's tools
+// Task Completion Event Handlers
 // ============================================================================
 
 /**
- * Main entry point for the KĀDI agent
- *
- * Connects to broker and starts serving tool invocation requests.
- * This function blocks indefinitely once serve() is called.
- *
- * @throws {Error} If broker connection fails
+ * Setup event handlers for task completion notifications
+ * Subscribes to {role}.task.completed events from worker agents
+ */
+async function setupTaskCompletionHandlers(client: KadiClient): Promise<void> {
+  const roles = ['artist', 'designer', 'programmer'];
+  for (const role of roles) {
+    const topic = `${role}.task.completed`;
+    await client.subscribeToEvent(topic, async (event: any) => {
+      await handleTaskCompletion(event, role, client);
+    });
+    console.log(`✅ Subscribed to ${topic}`);
+  }
+}
+
+/**
+ * Handle task completion event from worker agent
+ * Validates completion criteria and publishes ready-for-approval event
+ */
+async function handleTaskCompletion(event: any, role: string, client: KadiClient): Promise<void> {
+  try {
+    const { taskId, filesCreated, filesModified, commitSha } = event.data || {};
+
+    console.log(`📥 Received ${role}.task.completed event`, {
+      taskId,
+      filesCreated: filesCreated?.length || 0,
+      filesModified: filesModified?.length || 0,
+      commitSha: commitSha?.substring(0, 7)
+    });
+
+    // Validate task exists and get current status
+    // Use mcp-shrimp-task-manager directly to avoid circular calls
+    const protocol = client.getBrokerProtocol();
+    const taskStatusRaw: any = await protocol.invokeTool({
+      targetAgent: 'mcp-server-shrimp-agent-playground',
+      toolName: 'shrimp_get_task_detail',
+      toolInput: { taskId },
+      timeout: 30000
+    });
+
+    console.log(`🔍 [DEBUG] Task status raw result:`, JSON.stringify(taskStatusRaw, null, 2));
+
+    // Parse task details from markdown format
+    const detailContent = Array.isArray(taskStatusRaw.content)
+      ? taskStatusRaw.content.filter((item: any) => item.type === 'text').map((item: any) => item.text).join('\n')
+      : String(taskStatusRaw);
+
+    const nameMatch = detailContent.match(/###\s+([^\n]+)/);
+    const statusMatch = detailContent.match(/\*\*Status:\*\*\s*(\w+)/i);
+
+    if (!nameMatch || !statusMatch) {
+      console.error(`❌ Failed to parse task status for ${taskId}`);
+      client.publishEvent('task.completion.processing.failed', {
+        taskId,
+        role,
+        error: 'Task status parsing failed',
+        agent: 'agent-producer'
+      });
+      return;
+    }
+
+    const taskStatus = {
+      taskId,
+      description: nameMatch[1].trim(),
+      status: statusMatch[1].toLowerCase()
+    };
+
+    // Validate completion criteria
+    const isValid = validateTaskCompletion({
+      taskId,
+      commitSha,
+      filesCreated,
+      filesModified,
+      taskStatus
+    });
+
+    if (isValid) {
+      // Get channel context from map (if available)
+      const channelContext = taskChannelMap.get(taskId);
+
+      // Publish ready for approval event with channel context
+      client.publishEvent('task.ready_for_approval', {
+        taskId,
+        role,
+        taskName: taskStatus.description,
+        message: `✅ ${taskStatus.description} completed by ${role} agent`,
+        completionDetails: {
+          filesCreated: filesCreated || [],
+          filesModified: filesModified || [],
+          commitSha,
+          completedAt: new Date().toISOString()
+        },
+        channel: channelContext || { type: 'desktop' }, // Default to desktop if no context
+        agent: 'agent-producer'
+      });
+      console.log(`✅ Task ${taskId} ready for user approval${channelContext ? ` (notifying via ${channelContext.type})` : ' (desktop notification)'}`);
+    } else {
+      // Publish review failed event
+      client.publishEvent('task.review.failed', {
+        taskId,
+        role,
+        reason: 'Completion criteria not met',
+        agent: 'agent-producer'
+      });
+      console.error(`❌ Task ${taskId} failed automated review`);
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`❌ Failed to process ${role}.task.completed event:`, errorMsg);
+
+    client.publishEvent('task.completion.processing.failed', {
+      taskId: event.data?.taskId,
+      role,
+      error: errorMsg,
+      agent: 'agent-producer'
+    });
+  }
+}
+
+/**
+ * Validate task completion data meets requirements
+ * Checks for commit SHA, file changes, and task status
+ */
+function validateTaskCompletion(data: any): boolean {
+  const checks = {
+    hasCommit: !!data.commitSha,
+    hasFileChanges: (data.filesCreated?.length > 0) || (data.filesModified?.length > 0),
+    statusValid: data.taskStatus?.status !== 'completed'
+  };
+
+  const passed = Object.values(checks).every(check => check);
+
+  if (!passed) {
+    console.warn(`⚠️  Task completion validation failed:`, checks);
+  }
+
+  return passed;
+}
+
+// ============================================================================
+// Main Application Entry Point
+// ============================================================================
+
+/**
+ * Main application entry point
+ * Connects to KĀDI broker and starts serving tools
  */
 async function main() {
-  console.log('='.repeat(60));
-  console.log('🚀 Starting Template Agent (TypeScript)');
-  console.log('='.repeat(60));
-  console.log(`Broker URL: ${config.brokerUrl}`);
-  console.log(`Networks: ${config.networks.join(', ')}`);
-  console.log();
-
   try {
-    console.log('⏳ Connecting to broker...');
-    console.log();
-
-    // TEMPLATE PATTERN: Print tool information BEFORE blocking serve() call
-    // TODO: Update this list to match your registered tools
-    console.log('Available Tools:');
-    console.log('  Placeholder Tools:');
-    console.log('    • echo(text) - Echo text back with length (REPLACE THIS WITH YOUR TOOLS)');
-    console.log();
-    console.log('  Bot Tools (if enabled):');
-    console.log('    • Slack bot tools (when ENABLE_SLACK_BOT=true)');
-    console.log('    • Discord bot tools (when ENABLE_DISCORD_BOT=true)');
-    console.log();
-    console.log('  Broker-provided Tools (via client.load()):');
-    console.log('    • git_* tools (on \'git\' network)');
-    console.log('    • fs_* tools (on \'global\' network)');
-    console.log();
-    console.log('Press Ctrl+C to stop the agent...');
-    console.log('='.repeat(60));
+    console.log('[agent-producer] Connecting to KĀDI broker...');
+    console.log(`[agent-producer] Broker URL: ${config.brokerUrl}`);
+    console.log(`[agent-producer] Networks: ${config.networks.join(', ')}`);
+    console.log('[agent-producer] Registered tools:');
+    console.log('  - plan_task: Create and assign tasks to worker agents');
+    console.log('  - list_active_tasks: List all active tasks');
+    console.log('  - get_task_status: Get detailed task status');
+    console.log('  - assign_task: Assign tasks to worker agents');
+    console.log('  - approve_completion: Approve task completion');
     console.log();
 
     // CRITICAL: serve() is blocking - all logs must come BEFORE this line
@@ -477,19 +502,15 @@ async function main() {
         }
       }, 2000); // Wait 2 seconds for broker connection
     } else {
-      console.log('ℹ️  Slack bot disabled (ENABLE_SLACK_BOT=false or ANTHROPIC_API_KEY not configured)');
+      console.log('⏭️  Slack bot disabled (set ENABLE_SLACK_BOT=true and configure ANTHROPIC_API_KEY to enable)');
       console.log();
     }
 
-    // Start Discord bot if enabled via feature flag and API key is configured
+    // Start Discord Bot after connection is established (async after serve starts)
     const shouldEnableDiscordBot = (process.env.ENABLE_DISCORD_BOT === 'true' || process.env.ENABLE_DISCORD_BOT === undefined) &&
                                     process.env.ANTHROPIC_API_KEY &&
                                     process.env.ANTHROPIC_API_KEY !== 'YOUR_ANTHROPIC_API_KEY_HERE';
     if (shouldEnableDiscordBot) {
-      console.log('🤖 Discord Bot Configuration:');
-      console.log('   - Anthropic API Key: Configured ✓');
-      console.log('   - Bot User ID:', process.env.DISCORD_BOT_USER_ID || 'Not configured');
-      console.log('   - Mode: Event-driven (KĀDI subscriptions)');
       console.log('🔄 Discord bot will start after broker connection...');
       console.log();
 
@@ -507,112 +528,39 @@ async function main() {
         } catch (error) {
           console.error('❌ Failed to start Discord bot:', error);
         }
-      }, 2500); // Wait 2.5 seconds for broker connection (slightly after Slack)
+      }, 2000); // Wait 2 seconds for broker connection
     } else {
-      console.log('ℹ️  Discord bot disabled (ENABLE_DISCORD_BOT=false or ANTHROPIC_API_KEY not configured)');
+      console.log('⏭️  Discord bot disabled (set ENABLE_DISCORD_BOT=true and configure ANTHROPIC_API_KEY to enable)');
       console.log();
     }
 
-    await client.serve('broker');
+    // Setup task completion event handlers after bots are initialized
+    setTimeout(async () => {
+      try {
+        await setupTaskCompletionHandlers(client);
+        console.log('✅ Task completion event handlers registered');
+      } catch (error) {
+        console.error('❌ Failed to setup task completion handlers:', error);
+      }
+    }, 2000);
 
-    // IMPORTANT: This code never executes because serve() blocks indefinitely
-    // Connection success is visible when tools start being invoked
-    // Connection events and tool listings are printed above
-  } catch (error: any) {
-    console.error('❌ Failed to start agent:', error.message || error);
-    if (error.stack) {
-      console.error('Stack trace:', error.stack);
-    }
+    // Setup task completion notifier for user notifications
+    setTimeout(async () => {
+      try {
+        await setupTaskCompletionNotifier(client);
+        console.log('✅ Task completion notifier registered');
+      } catch (error) {
+        console.error('❌ Failed to setup task completion notifier:', error);
+      }
+    }, 2000);
+
+    // Connect to KĀDI broker and start serving (BLOCKING - never returns)
+    await client.serve('broker');
+  } catch (error) {
+    console.error('[agent-producer] ❌ Fatal error:', error);
     process.exit(1);
   }
 }
 
-// ============================================================================
-// Graceful Shutdown
-// ============================================================================
-//
-// TEMPLATE PATTERN: Handle process termination signals
-//
-// SIGINT: Ctrl+C in terminal (user-initiated shutdown)
-// SIGTERM: System termination request (Docker/systemd stop)
-//
-// Both handlers:
-// 1. Disconnect from broker cleanly
-// 2. Log shutdown status
-// 3. Exit with appropriate code (0 for success, 1 for error)
-//
-// This ensures:
-// - Broker knows agent is offline
-// - No orphaned connections
-// - Clean logs for debugging
-//
-// TODO: Add cleanup for any additional resources (databases, files, etc.)
-// ============================================================================
-
-/**
- * Handle Ctrl+C (SIGINT) for graceful shutdown
- *
- * Disconnects from broker and exits cleanly when user presses Ctrl+C
- */
-process.on('SIGINT', async () => {
-  console.log('\n⏳ Shutting down gracefully...');
-
-  try {
-    // TEMPLATE PATTERN: Disconnect from broker before exiting
-    await client.disconnect();
-    console.log('✅ Disconnected from broker');
-
-    // TODO: Add cleanup for any resources your agent owns
-    // Example: await database.close()
-    // Example: await fileHandle.close()
-
-    process.exit(0);
-  } catch (error: any) {
-    console.error('❌ Error during shutdown:', error.message);
-    process.exit(1);
-  }
-});
-
-/**
- * Handle SIGTERM for graceful shutdown
- *
- * Disconnects from broker and exits cleanly when system requests termination
- * (e.g., Docker stop, systemd stop, kill command)
- */
-process.on('SIGTERM', async () => {
-  console.log('\n⏳ Shutting down gracefully...');
-
-  try {
-    await client.disconnect();
-    console.log('✅ Disconnected from broker');
-
-    // TODO: Add cleanup for any resources your agent owns
-
-    process.exit(0);
-  } catch (error: any) {
-    console.error('❌ Error during shutdown:', error.message);
-    process.exit(1);
-  }
-});
-
-// ============================================================================
-// Start Agent
-// ============================================================================
-//
-// TEMPLATE PATTERN: Execute main function and handle fatal errors
-//
-// This is the last line of the file - starts the agent immediately when
-// the module is loaded.
-//
-// Fatal errors (thrown before serve() connects) are caught here and logged
-// ============================================================================
-
-/**
- * Start the agent and handle fatal startup errors
- *
- * This executes immediately when the module loads
- */
-main().catch((error) => {
-  console.error('💥 Fatal error:', error);
-  process.exit(1);
-});
+// Start the application
+main().catch(console.error);
