@@ -92,7 +92,7 @@ export class DiscordBot extends BaseBot {
                 const validationResult = DiscordMentionEventSchema.safeParse(eventData);
 
                 if (!validationResult.success) {
-                    const errorDetails = validationResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+                    const errorDetails = validationResult.error.issues.map((e: any) => `${e.path.join('.')}: ${e.message}`).join(', ');
                     console.error(`[KĀDI] Subscriber: Event validation failed {errors: [${errorDetails}]}`);
                     return;
                 }
@@ -160,6 +160,36 @@ export class DiscordBot extends BaseBot {
                 model: process.env.BOT_CLAUDE_MODEL || 'claude-3-haiku-20240307',
                 max_tokens: parseInt(process.env.BOT_CLAUDE_MAX_TOKENS || '4096'),
                 tools: availableTools,
+                system: `You are KADI Bot, an AI assistant that helps manage tasks using the KADI protocol.
+
+CRITICAL: When using the list_active_tasks tool, ALWAYS format the results as follows:
+1. Display tasks in numerical order (sorted by task ID)
+2. Use this exact format for each task:
+   [Task ID] - [Task Name]
+3. Include a header showing the total count
+4. Example format:
+
+   Active Tasks (Total: 3):
+   1. 08532952-04c1-4afb-93bd-ed674446bfd8 - Implement Monitoring and Auditing
+   2. 14bc4c95-fd88-4680-957f-5185ad522501 - Create placeholder task for testing purposes
+   3. 5166ce3c-fdc6-42f6-a1e6-d9975ba38bdc - Placeholder Task for Testing
+
+Do NOT summarize or paraphrase task lists - always show the complete numbered list with IDs and names.
+
+CRITICAL: When approving a task using the approve_completion tool:
+1. Extract the task ID from the user's message
+2. Provide a meaningful summary (e.g., "Task approved by user via Discord")
+3. Provide a score between 0-100 (default to 90 if user doesn't specify)
+4. Example: User says "I approve task abc-123" -> call approve_completion with:
+   - taskId: "abc-123"
+   - summary: "Task approved by user via Discord"
+   - score: 90
+
+CRITICAL: When responding to users after using tools:
+- Be concise and user-friendly
+- For approve_completion: Say "✅ Task [taskId] has been approved!" (not technical details about the function)
+- For assign_task: Say "✅ Task assigned to [role] agent"
+- Avoid mentioning technical details like "the function was used" or internal implementation details`,
                 messages: [
                     {
                         role: 'user',
@@ -172,6 +202,11 @@ export class DiscordBot extends BaseBot {
             let conversationMessages: any[] = [
                 {role: 'user', content: mention.text},
             ];
+
+            // Track if plan_task, list_active_tasks, or get_task_status was called and their results
+            let planTaskResult: any = null;
+            let listTasksResult: any = null;
+            let taskStatusResult: any = null;
 
             while (response.stop_reason === 'tool_use') {
                 // Extract tool calls
@@ -192,6 +227,32 @@ export class DiscordBot extends BaseBot {
                         toolBlock.name,
                         toolBlock.input as Record<string, unknown>
                     );
+
+                    // If this is assign_task, record channel context for notifications
+                    if (toolBlock.name === 'assign_task' && result && typeof result === 'object' && result.taskId) {
+                        const { taskChannelMap } = await import('../index.js');
+                        taskChannelMap.set(result.taskId, {
+                            type: 'discord',
+                            channelId: mention.channel,
+                            userId: mention.user
+                        });
+                        console.log(`📍 Recorded Discord channel context for task ${result.taskId}`);
+                    }
+
+                    // If this is plan_task, save the result
+                    if (toolBlock.name === 'plan_task' && result && typeof result === 'object' && result.message) {
+                        planTaskResult = result;
+                    }
+
+                    // If this is list_active_tasks, save the result and format it
+                    if (toolBlock.name === 'list_active_tasks' && result && typeof result === 'object' && result.tasks) {
+                        listTasksResult = result;
+                    }
+
+                    // If this is get_task_status, save the result and format it
+                    if (toolBlock.name === 'get_task_status' && result && typeof result === 'object' && result.taskId) {
+                        taskStatusResult = result;
+                    }
 
                     toolResults.push({
                         type: 'tool_result',
@@ -215,11 +276,56 @@ export class DiscordBot extends BaseBot {
                 });
             }
 
-            // Extract final text response
-            const finalText = response.content
-                .filter((block) => block.type === 'text')
-                .map((block: any) => block.text)
-                .join('\n');
+            // Determine final response text
+            let finalText: string;
+
+            if (planTaskResult && planTaskResult.message) {
+                // Use the pre-formatted message from plan_task directly
+                finalText = planTaskResult.message;
+            } else if (listTasksResult && listTasksResult.tasks) {
+                // Format list_active_tasks results directly
+                const tasks = listTasksResult.tasks;
+                const total = listTasksResult.total || tasks.length;
+
+                // Sort tasks by ID
+                const sortedTasks = [...tasks].sort((a: any, b: any) => a.id.localeCompare(b.id));
+
+                // Format as numbered list
+                finalText = `Active Tasks (Total: ${total}):\n`;
+                sortedTasks.forEach((task: any, index: number) => {
+                    finalText += `${index + 1}. ${task.id} - ${task.name}\n`;
+                });
+            } else if (taskStatusResult && taskStatusResult.taskId) {
+                // Format get_task_status results directly
+                finalText = `Task Status:\n`;
+                finalText += `ID: ${taskStatusResult.taskId}\n`;
+                finalText += `Name: ${taskStatusResult.description}\n`;
+                finalText += `Status: ${taskStatusResult.status}\n`;
+                if (taskStatusResult.role) {
+                    finalText += `Role: ${taskStatusResult.role}\n`;
+                }
+                if (taskStatusResult.progress) {
+                    finalText += `\nProgress:\n`;
+                    if (taskStatusResult.progress.filesCreated && taskStatusResult.progress.filesCreated.length > 0) {
+                        finalText += `  - Files Created: ${taskStatusResult.progress.filesCreated.join(', ')}\n`;
+                    }
+                    if (taskStatusResult.progress.filesModified && taskStatusResult.progress.filesModified.length > 0) {
+                        finalText += `  - Files Modified: ${taskStatusResult.progress.filesModified.join(', ')}\n`;
+                    }
+                    if (taskStatusResult.progress.commitSha) {
+                        finalText += `  - Commit SHA: ${taskStatusResult.progress.commitSha}\n`;
+                    }
+                    if (taskStatusResult.progress.errorMessage) {
+                        finalText += `  - Error: ${taskStatusResult.progress.errorMessage}\n`;
+                    }
+                }
+            } else {
+                // For other tools, use Claude's response
+                finalText = response.content
+                    .filter((block) => block.type === 'text')
+                    .map((block: any) => block.text)
+                    .join('\n');
+            }
 
             // Reply to Discord
             await this.sendDiscordReply(mention.channel, mention.id, finalText);
@@ -250,26 +356,67 @@ export class DiscordBot extends BaseBot {
 
         try {
             console.log(`🔧 Executing tool: ${toolName}`);
+            console.log(`📝 Tool input: ${JSON.stringify(input).substring(0, 200)}...`);
 
             // Determine target agent based on tool name
             const targetAgent = this.resolveTargetAgent(toolName);
+            console.log(`🎯 Target agent: ${targetAgent}`);
 
-            const result = await this.protocol.invokeTool({
-                targetAgent,
-                toolName,
-                toolInput: input,
-                timeout: 30000,
-            });
+            let result: any;
 
-            // Handle the result - invokeTool may return different structures
-            if (result && typeof result === 'object') {
-                return {success: true, result: result.result || result};
+            // Handle local tools (registered on this agent)
+            if (targetAgent === 'local') {
+                console.log(`🏠 Invoking local tool handler...`);
+                // Get the tool handler from the client's registered tools
+                const toolHandlers = this.client.getAllRegisteredTools();
+                const toolHandler = toolHandlers.find(t => t.definition.name === toolName);
+
+                if (!toolHandler) {
+                    throw new Error(`Local tool ${toolName} not found in registered tools`);
+                }
+
+                // Invoke the tool handler directly
+                result = await toolHandler.handler(input);
+            } else {
+                // Handle network tools via broker protocol
+                result = await this.protocol.invokeTool({
+                    targetAgent,
+                    toolName,
+                    toolInput: input,
+                    timeout: 30000,
+                });
             }
 
-            return {success: true, result};
+            const resultStr = result ? JSON.stringify(result) : 'undefined';
+            console.log(`📤 Tool result received: ${resultStr.substring(0, 300)}...`);
+
+            // Handle MCP tool response format
+            if (result && typeof result === 'object') {
+                // MCP tools return { content: [{ type: 'text', text: '...' }] }
+                if (Array.isArray(result.content)) {
+                    const textContent = result.content
+                        .filter((item: any) => item.type === 'text')
+                        .map((item: any) => item.text)
+                        .join('\n');
+                    return textContent || JSON.stringify(result);
+                }
+
+                // Some tools return { result: { ... } }
+                if (result.result !== undefined) {
+                    return result.result;
+                }
+
+                // Return the whole result object as fallback
+                return result;
+            }
+
+            return result;
         } catch (error: any) {
             console.error(`❌ Tool execution failed (${toolName}):`, error);
-            return {success: false, error: String(error)};
+
+            // Extract useful error message for Claude
+            const errorMessage = error.message || String(error);
+            return `Error executing tool: ${errorMessage}`;
         }
     }
 
@@ -430,12 +577,42 @@ export class DiscordBot extends BaseBot {
 
             console.log(`🔍 Discovered ${result.tools.length} network tools from broker`);
 
-            // Convert to Anthropic format
-            return result.tools.map((tool: any) => ({
-                name: tool.name,
-                description: tool.description || '',
-                input_schema: (tool.inputSchema || { type: 'object' }) as Anthropic.Tool.InputSchema
-            }));
+            // Convert to Anthropic format with schema validation
+            const convertedTools = result.tools.map((tool: any) => {
+                let inputSchema = tool.inputSchema || { type: 'object' };
+
+                // Validate and fix schema for JSON Schema draft 2020-12 compatibility
+                // Anthropic requires schemas to be valid according to draft 2020-12
+                if (inputSchema && typeof inputSchema === 'object') {
+                    // Remove $schema if present (Anthropic adds its own)
+                    delete inputSchema.$schema;
+
+                    // Remove _kadi property (contains circular references from KadiClient)
+                    // This fixes the "[Circular]" error for list_tools and other tools
+                    if (inputSchema.properties && typeof inputSchema.properties === 'object') {
+                        delete (inputSchema.properties as any)._kadi;
+                    }
+
+                    // Ensure type is present
+                    if (!inputSchema.type) {
+                        inputSchema.type = 'object';
+                    }
+
+                    // Ensure properties is an object (not undefined)
+                    if (inputSchema.type === 'object' && !inputSchema.properties) {
+                        inputSchema.properties = {};
+                    }
+                }
+
+                return {
+                    name: tool.name,
+                    description: tool.description || '',
+                    input_schema: inputSchema as Anthropic.Tool.InputSchema
+                };
+            });
+
+            console.log(`✅ Converted ${convertedTools.length} network tools to Anthropic format`);
+            return convertedTools;
         } catch (error) {
             console.error('❌ Failed to query network tools from broker:', error);
             return [];  // Fallback to empty array on error
@@ -477,9 +654,13 @@ export class DiscordBot extends BaseBot {
      * Resolve target agent for a tool name
      */
     private resolveTargetAgent(toolName: string): string {
-        // Simple prefix-based routing
-        if (toolName.startsWith('format_') || toolName.startsWith('count_') || toolName.startsWith('validate_') || toolName.startsWith('reverse_') || toolName.startsWith('trim_') || toolName.startsWith('echo')) {
-            return 'template-agent-typescript'; // This agent's own tools
+        // Local tools on agent-producer (exact matches to avoid conflicts)
+        const localTools = ['plan_task', 'list_active_tasks', 'get_task_status', 'assign_task', 'approve_completion'];
+        if (localTools.includes(toolName)) {
+            return 'local'; // Special marker for local tools on this agent
+        }
+        if (toolName.startsWith('slack_')) {
+            return 'slack-server';
         }
         if (toolName.startsWith('discord_')) {
             return 'discord-server';
@@ -487,8 +668,11 @@ export class DiscordBot extends BaseBot {
         if (toolName.startsWith('git_')) {
             return 'git';
         }
+        if (toolName.startsWith('shrimp_')) {
+            return 'mcp-server-shrimp-agent-playground';
+        }
 
-        // Default: assume it's a tool on this agent
-        return 'template-agent-typescript';
+        // Default: assume it's a network tool
+        return 'unknown';
     }
 }
