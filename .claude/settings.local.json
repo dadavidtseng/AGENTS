@@ -6,7 +6,17 @@
       "mcp__shrimp-AGENTS__list_tasks",
       "mcp__shrimp-AGENTS__execute_task",
       "mcp__shrimp-AGENTS__verify_task",
-      "mcp__shrimp-AGENTS__clear_all_tasks"
+      "mcp__shrimp-AGENTS__clear_all_tasks",
+      "mcp__shrimp-AGENTS__get_task_detail",
+      "mcp__spec-workflow-AGENTS__spec-workflow-guide",
+      "mcp__shrimp-AGENTS__analyze_task",
+      "mcp__shrimp-AGENTS__reflect_task",
+      "mcp__shrimp-AGENTS__plan_task",
+      "mcp__shrimp-AGENTS__update_task",
+      "mcp__shrimp-AGENTS__delete_task",
+      "mcp__kadi-local__spawn_cube",
+      "mcp__kadi-local__get_game_state",
+      "mcp__kadi-local__remove_cube"
     ]
   },
   "enabledMcpjsonServers": [
