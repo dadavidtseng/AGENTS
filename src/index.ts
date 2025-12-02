@@ -1,27 +1,21 @@
 /**
- * TypeScript Agent Template for KĀDI Protocol
- * ===========================================
+ * Artist Agent for KĀDI Protocol
+ * ================================
  *
- * TEMPLATE USAGE:
- * This file serves as a template for creating new KĀDI agents in TypeScript.
- * Follow these steps to customize:
- *
- * 1. Replace the echo tool with your own tool definitions
- * 2. Update agent metadata in KadiClient config
- * 3. Replace tool handler with your business logic
- * 4. Update event topics and payloads to match your domain
- * 5. Modify networks array to join appropriate KĀDI networks
- * 6. Update documentation comments with your agent's purpose
+ * PURPOSE:
+ * Worker agent specialized in creative and artistic tasks. Receives task assignments
+ * from agent-producer via KĀDI events and executes creative work.
  *
  * ARCHITECTURE:
- * This agent demonstrates broker-centralized architecture where:
- * - Agent registers its own tools with the KĀDI broker
- * - Agent can call broker's tools via client.load() (see examples/)
- * - No MCP server spawning in agent code
+ * This agent is part of a multi-agent orchestration system where:
+ * - Agent listens for artist.task.assigned events from agent-producer
+ * - Agent executes artistic tasks in its own git worktree (agent-playground-artist)
+ * - Agent publishes artist.task.completed events when work is done
  * - Broker handles all tool routing and network isolation
  *
- * Built-in tools (customize these):
- * - Echo (placeholder - replace with your own tools)
+ * Built-in tools:
+ * - Echo (placeholder - will be replaced with artist-specific tools)
+ * - list_tools (utility to list all available tools)
  *
  * Broker-provided tools (access via client.load()):
  * - Git operations (from broker's git-mcp-server on 'git' network)
@@ -29,6 +23,7 @@
  *
  * Dependencies:
  * - @kadi.build/core: KĀDI protocol client library with KadiClient and Zod
+ * - @agents/shared: Shared bot infrastructure (slack-bot, discord-bot, BaseBot)
  * - dotenv: Environment variable loading
  *
  * Usage:
@@ -39,16 +34,18 @@
  *
  * Environment Variables:
  *     KADI_BROKER_URL: WebSocket URL for KĀDI broker (default: ws://localhost:8080)
- *     KADI_NETWORK: Networks to join, comma-separated (default: global,text,git,slack,discord)
+ *     KADI_NETWORKS: Networks to join (configured as: global,artist)
+ *     AGENT_NAME: Agent identifier (configured as: agent-artist)
  *
- * @module template-agent-typescript
- * @version 2.0.0
+ * @module agent-artist
+ * @version 1.0.0
  * @license MIT
  */
 
 import 'dotenv/config';
 import { KadiClient, z } from '@kadi.build/core';
 import { registerAllTools } from './tools/index.js';
+import Anthropic from '@anthropic-ai/sdk';
 
 // ============================================================================
 // Tool Schemas (Zod Schemas)
@@ -166,7 +163,7 @@ const config = {
   brokerUrl: process.env.KADI_BROKER_URL || 'ws://localhost:8080',
 
   /** Networks to join (comma-separated in env var) */
-  networks: (process.env.KADI_NETWORK || 'global,text,git,slack,discord').split(',')
+  networks: (process.env.KADI_NETWORKS || 'global,slack,discord').split(',')
 };
 
 // ============================================================================
@@ -388,6 +385,247 @@ client.registerTool({
 registerAllTools(client);
 
 // ============================================================================
+// Task Assignment Event Handler
+// ============================================================================
+//
+// Core agent responsibility: Subscribe to artist.task.assigned events
+// This is independent of bot features and handles task execution directly.
+//
+// Flow:
+// 1. agent-producer publishes artist.task.assigned event
+// 2. This handler receives event and processes task
+// 3. Creates art file in agent-playground-artist worktree
+// 4. Publishes completion/failure events
+// ============================================================================
+
+/**
+ * Subscribe to artist.task.assigned events and handle task execution
+ *
+ * This is a core agent responsibility independent of Slack/Discord bot features.
+ * The agent can receive and execute tasks whether or not bots are enabled.
+ *
+ * @param client - KĀDI client instance for event subscription
+ */
+function subscribeToTaskAssignments(client: KadiClient): void {
+  const topic = 'artist.task.assigned';
+
+  console.log(`🔍 [DEBUG] subscribeToTaskAssignments called at ${new Date().toISOString()}`);
+  console.log(`🔍 [DEBUG] Stack trace:`, new Error().stack);
+  console.log(`[KĀDI] Task Handler: Registering subscription {topic: ${topic}}`);
+
+  try {
+    client.subscribeToEvent(topic, async (event: unknown) => {
+      // Extract event data from KĀDI envelope
+      const eventData = (event as any)?.data || event;
+
+      console.log(`🔍 [DEBUG] Event callback invoked at ${new Date().toISOString()}`);
+      console.log(`[KĀDI] Task Assignment: Event received {taskId: ${eventData.taskId}, role: ${eventData.role}}`);
+
+      // Handle task assignment
+      await handleTaskAssignment(client, eventData);
+    });
+
+    console.log(`[KĀDI] Task Handler: Subscription registered successfully {topic: ${topic}}`);
+  } catch (error: any) {
+    console.error(`[KĀDI] Task Handler: Subscription registration failed {topic: ${topic}, error: ${error.message || 'Unknown error'}}`);
+  }
+}
+
+/**
+ * Use Claude AI to interpret task description and determine filename
+ *
+ * @param taskDescription - Task description from agent-producer
+ * @param taskId - Task ID for fallback naming
+ * @returns Filename to create
+ */
+async function determineFilenameWithAI(taskDescription: string, taskId: string): Promise<string> {
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+
+  if (!anthropicApiKey) {
+    console.warn('⚠️  ANTHROPIC_API_KEY not set, using fallback filename');
+    return `art-${taskId.substring(0, 8)}.txt`;
+  }
+
+  try {
+    console.log('🤖 Using Claude AI to interpret task and determine filename...');
+
+    const anthropic = new Anthropic({ apiKey: anthropicApiKey });
+
+    const response = await anthropic.messages.create({
+      model: 'claude-3-haiku-20240307',
+      max_tokens: 200,
+      messages: [{
+        role: 'user',
+        content: `You are an artist agent. Analyze this task description and determine the appropriate filename:
+
+Task: "${taskDescription}"
+
+Instructions:
+1. If the description explicitly specifies a filename (e.g., "create file named X", "name it Y", "call it Z"), use that EXACT name
+2. Remove any angle brackets, quotes, or other markup (e.g., "<placeholder>" becomes "placeholder")
+3. If no explicit filename is given, extract a meaningful name from the task description
+4. Add .txt extension if no extension is specified
+5. If you cannot determine a good filename, respond with: art-${taskId.substring(0, 8)}.txt
+
+Respond with ONLY the filename, nothing else. No explanations, no markdown, just the filename.`
+      }]
+    });
+
+    const filename = (response.content[0] as any).text.trim();
+
+    // Sanitize filename (remove any remaining special characters except . - _)
+    const sanitized = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+
+    console.log(`✅ AI determined filename: ${sanitized}`);
+    return sanitized;
+
+  } catch (error: any) {
+    console.error('❌ AI filename determination failed:', error.message);
+    console.log('⚠️  Falling back to default filename pattern');
+    return `art-${taskId.substring(0, 8)}.txt`;
+  }
+}
+
+/**
+ * Handle artist task assignment
+ *
+ * Executes artistic task in agent-playground-artist worktree:
+ * 1. Uses AI to interpret task description and determine filename
+ * 2. Validates file paths are within worktree
+ * 3. Performs file operations (create/modify)
+ * 4. Publishes progress events
+ * 5. Makes atomic git commit
+ *
+ * @param client - KĀDI client for event publishing
+ * @param task - Task assignment data from agent-producer
+ */
+async function handleTaskAssignment(client: KadiClient, task: any): Promise<void> {
+  const worktreePath = 'C:/p4/Personal/SD/agent-playground-artist';
+
+  try {
+    console.log(`🎨 Processing artist task: ${task.taskId}`);
+    console.log(`   Description: ${task.description}`);
+
+    // Step 0: Call shrimp_execute_task to mark task as in_progress
+    const protocol = client.getBrokerProtocol();
+    if (!protocol) {
+      throw new Error('Protocol not initialized');
+    }
+
+    console.log(`📋 Marking task as in_progress in shrimp task manager`);
+    try {
+      await protocol.invokeTool({
+        targetAgent: 'mcp-server-shrimp-agent-playground',
+        toolName: 'shrimp_execute_task',
+        toolInput: {
+          taskId: task.taskId
+        },
+        timeout: 30000
+      });
+      console.log(`✅ Task marked as in_progress`);
+    } catch (error) {
+      console.warn(`⚠️  Failed to mark task as in_progress (continuing anyway):`, error);
+      // Continue execution even if shrimp call fails - this is non-critical
+    }
+
+    // Use AI to determine appropriate filename from task description
+    const fileName = await determineFilenameWithAI(task.description, task.taskId);
+    const filePath = `${worktreePath}/${fileName}`;
+
+    // Validate file path is within worktree
+    if (!filePath.startsWith(worktreePath)) {
+      throw new Error(`Invalid file path: must be within worktree ${worktreePath}`);
+    }
+
+    // Publish file creation event
+    client.publishEvent('artist.file.created', {
+      taskId: task.taskId,
+      fileName,
+      filePath,
+      timestamp: new Date().toISOString(),
+      agent: 'agent-artist'
+    });
+
+    // Create art file using filesystem and git MCP servers
+    const artContent = `# Artwork for Task ${task.taskId}\n\nCreated: ${new Date().toISOString()}\nDescription: ${task.description}\n\n[Artistic content would go here]`;
+
+    // Step 1: Write file using filesystem server
+    console.log(`📝 Writing file: ${filePath}`);
+    await protocol.invokeTool({
+      targetAgent: 'fs',
+      toolName: 'fs_write_file',
+      toolInput: {
+        path: filePath,
+        content: artContent
+      },
+      timeout: 30000
+    });
+
+    console.log(`✅ File written: ${fileName}`);
+
+    // Step 2: Set git working directory to worktree
+    console.log(`📂 Setting git working directory: ${worktreePath}`);
+    await protocol.invokeTool({
+      targetAgent: 'git',
+      toolName: 'git_git_set_working_dir',
+      toolInput: {
+        path: worktreePath
+      },
+      timeout: 30000
+    });
+
+    // Step 3: Stage file with git add
+    console.log(`➕ Staging file: ${fileName}`);
+    await protocol.invokeTool({
+      targetAgent: 'git',
+      toolName: 'git_git_add',
+      toolInput: {
+        files: [fileName]
+      },
+      timeout: 30000
+    });
+
+    // Step 4: Commit changes
+    console.log(`💾 Committing changes`);
+    const commitResult: any = await protocol.invokeTool({
+      targetAgent: 'git',
+      toolName: 'git_git_commit',
+      toolInput: {
+        message: `feat: create artwork for task ${task.taskId}`
+      },
+      timeout: 30000
+    });
+
+    console.log(`🔍 [DEBUG] Commit result:`, JSON.stringify(commitResult, null, 2));
+    const commitSha = commitResult?.structuredContent?.commitHash || commitResult?.commitHash || 'unknown';
+    console.log(`✅ Created and committed art file: ${fileName} (commit: ${commitSha.substring(0, 7)})`);
+
+    // Publish task completion event
+    client.publishEvent('artist.task.completed', {
+      taskId: task.taskId,
+      status: 'completed',
+      filesCreated: [fileName],
+      filesModified: [],
+      commitSha: commitSha,
+      timestamp: new Date().toISOString(),
+      agent: 'agent-artist'
+    });
+
+    console.log(`✅ Task ${task.taskId} completed successfully`);
+  } catch (error: any) {
+    console.error(`❌ Failed to process task ${task.taskId}:`, error);
+
+    // Publish failure event
+    client.publishEvent('artist.task.failed', {
+      taskId: task.taskId,
+      error: error.message || String(error),
+      timestamp: new Date().toISOString(),
+      agent: 'agent-artist'
+    });
+  }
+}
+
+// ============================================================================
 // Main Function
 // ============================================================================
 //
@@ -512,6 +750,17 @@ async function main() {
       console.log('ℹ️  Discord bot disabled (ENABLE_DISCORD_BOT=false or ANTHROPIC_API_KEY not configured)');
       console.log();
     }
+
+    // Subscribe to task assignment events (core agent responsibility, independent of bots)
+    console.log('🎨 Subscribing to artist task assignments...');
+    setTimeout(async () => {
+      try {
+        subscribeToTaskAssignments(client);
+        console.log('✅ Subscribed to artist.task.assigned events');
+      } catch (error) {
+        console.error('❌ Failed to subscribe to task assignments:', error);
+      }
+    }, 1000); // Wait 1 second for broker connection
 
     await client.serve('broker');
 

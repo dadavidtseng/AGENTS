@@ -151,6 +151,32 @@ export class DiscordBot extends BaseBot {
      * Process a single Discord mention with Claude API
      */
     private async processMention(mention: DiscordMention): Promise<void> {
+        // Check circuit breaker before processing
+        if (this.checkCircuitBreaker()) {
+            console.warn(`⚡ Circuit breaker OPEN - skipping mention from @${mention.user}`);
+
+            // Publish error event
+            this.client.publishEvent('artist.task.failed', {
+                error: 'Circuit breaker open',
+                errorType: 'circuit_breaker',
+                context: {
+                    mentionId: mention.id,
+                    user: mention.user,
+                    channel: mention.channel,
+                },
+                agent: 'agent-artist',
+                timestamp: new Date().toISOString(),
+            });
+
+            // Send user-friendly error message
+            await this.sendDiscordReply(
+                mention.channel,
+                mention.id,
+                '⚠️ Service temporarily unavailable due to repeated failures. Please try again in a few minutes.'
+            );
+            return;
+        }
+
         try {
             // Get list of available KADI tools (dynamically from client and broker)
             const availableTools = await this.getAvailableTools();
@@ -225,20 +251,92 @@ export class DiscordBot extends BaseBot {
             await this.sendDiscordReply(mention.channel, mention.id, finalText);
 
             console.log(`✅ Replied to @${mention.user}`);
+
+            // Record success for circuit breaker
+            this.recordSuccess();
         } catch (error: any) {
             console.error(`❌ Error processing mention from @${mention.user}:`, error);
 
-            // Send error message to Discord
-            await this.sendDiscordReply(
-                mention.channel,
-                mention.id,
-                'Sorry, I encountered an error processing your message. Please try again later.'
-            );
+            // Classify error type
+            const errorType = this.classifyError(error);
+            const isTransient = errorType === 'network' || errorType === 'timeout' || errorType === 'rate_limit';
+
+            // Record failure for circuit breaker
+            this.recordFailure(error);
+
+            // Publish detailed error event
+            this.client.publishEvent('artist.task.failed', {
+                error: error.message || String(error),
+                errorType,
+                isTransient,
+                stack: error.stack,
+                context: {
+                    mentionId: mention.id,
+                    user: mention.user,
+                    channel: mention.channel,
+                    textPreview: mention.text.substring(0, 100),
+                },
+                agent: 'agent-artist',
+                timestamp: new Date().toISOString(),
+            });
+
+            // Send appropriate error message to Discord
+            const userMessage = isTransient
+                ? 'Sorry, I encountered a temporary issue. Please try again in a moment.'
+                : 'Sorry, I encountered an error processing your message. The issue has been logged.';
+
+            try {
+                await this.sendDiscordReply(mention.channel, mention.id, userMessage);
+            } catch (replyError: any) {
+                console.error(`❌ Failed to send error reply:`, replyError);
+            }
         }
     }
 
     /**
-     * Execute a KADI tool via broker
+     * Classify error type for appropriate handling
+     *
+     * @param error - Error object
+     * @returns Error type classification
+     */
+    private classifyError(error: any): string {
+        const message = error.message?.toLowerCase() || '';
+
+        // Network-related errors (transient)
+        if (message.includes('econnrefused') || message.includes('enotfound') ||
+            message.includes('network') || message.includes('socket')) {
+            return 'network';
+        }
+
+        // Timeout errors (transient)
+        if (message.includes('timeout') || message.includes('timed out')) {
+            return 'timeout';
+        }
+
+        // Rate limiting (transient)
+        if (message.includes('rate limit') || message.includes('429') ||
+            message.includes('too many requests')) {
+            return 'rate_limit';
+        }
+
+        // API errors (non-transient)
+        if (message.includes('api') || message.includes('invalid') ||
+            message.includes('unauthorized') || message.includes('403')) {
+            return 'api_error';
+        }
+
+        // Validation errors (non-transient)
+        if (message.includes('validation') || message.includes('invalid input') ||
+            message.includes('schema')) {
+            return 'validation_error';
+        }
+
+        // Unknown error type
+        return 'unknown';
+    }
+
+    /**
+     * Execute a KADI tool via broker with retry logic
      */
     private async executeKadiTool(
         toolName: string,
@@ -254,7 +352,8 @@ export class DiscordBot extends BaseBot {
             // Determine target agent based on tool name
             const targetAgent = this.resolveTargetAgent(toolName);
 
-            const result = await this.protocol.invokeTool({
+            // Use invokeToolWithRetry for resilient tool execution
+            const result = await this.invokeToolWithRetry({
                 targetAgent,
                 toolName,
                 toolInput: input,
@@ -269,6 +368,25 @@ export class DiscordBot extends BaseBot {
             return {success: true, result};
         } catch (error: any) {
             console.error(`❌ Tool execution failed (${toolName}):`, error);
+
+            // Classify error and publish event
+            const errorType = this.classifyError(error);
+            const isTransient = errorType === 'network' || errorType === 'timeout' || errorType === 'rate_limit';
+
+            this.client.publishEvent('artist.task.failed', {
+                error: error.message || String(error),
+                errorType,
+                isTransient,
+                stack: error.stack,
+                context: {
+                    toolName,
+                    targetAgent: this.resolveTargetAgent(toolName),
+                    input: JSON.stringify(input).substring(0, 200),
+                },
+                agent: 'agent-artist',
+                timestamp: new Date().toISOString(),
+            });
+
             return {success: false, error: String(error)};
         }
     }

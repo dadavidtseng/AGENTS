@@ -1,7 +1,7 @@
 {
-  "name": "template-agent-typescript",
+  "name": "agent-artist",
   "version": "1.0.0",
-  "description": "KĀDI agent template - TypeScript implementation for building custom agents",
+  "description": "Artist agent for creative tasks",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
