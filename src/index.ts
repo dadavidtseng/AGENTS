@@ -23,7 +23,7 @@
  *
  * Dependencies:
  * - @kadi.build/core: KĀDI protocol client library with KadiClient and Zod
- * - @agents/shared: Shared bot infrastructure (slack-bot, discord-bot, BaseBot)
+ * - agents-library: Shared bot infrastructure (slack-bot, discord-bot, BaseBot)
  * - dotenv: Environment variable loading
  *
  * Usage:
@@ -43,99 +43,27 @@
  */
 
 import 'dotenv/config';
-import { KadiClient, z } from '@kadi.build/core';
-import { registerAllTools } from './tools/index.js';
+import { KadiClient } from '@kadi.build/core';
+import { registerAllTools } from './tools';
+import { logger, MODULE_AGENT, timer } from 'agents-library';
 import Anthropic from '@anthropic-ai/sdk';
 
 // ============================================================================
-// Tool Schemas (Zod Schemas)
+// Tool Registration via Registry
 // ============================================================================
 //
-// TEMPLATE PATTERN: Define input/output schemas using Zod
+// TEMPLATE PATTERN: Tools are registered via the toolRegistry pattern
 //
-// 1. Define input schema with z.object()
-// 2. Define output schema with z.object()
-// 3. Use .describe() on all fields for auto-generated documentation
-// 4. Infer TypeScript types using z.infer<typeof schema>
-// 5. Use inferred types in tool handler function signatures
+// Core tools (echo, list_tools) are registered via src/tools/echo.ts
+// and src/tools/list-tools.ts, then added to the toolRegistry in
+// src/tools/index.ts. This provides a clean separation between core
+// template tools and user-defined custom tools.
 //
-// TODO: Replace the echo tool schema with your agent's tool schemas
+// To add new custom tools:
+// 1. Create a new file in src/tools/ (e.g., my-tool.ts)
+// 2. Export a registration function: export function registerMyTool(client: KadiClient)
+// 3. Import and add the function to the toolRegistry array in src/tools/index.ts
 // ============================================================================
-
-/**
- * Input schema for echo tool
- *
- * @example
- * ```typescript
- * const input: EchoInput = {
- *   text: 'hello world'
- * };
- * ```
- */
-const echoInputSchema = z.object({
-  text: z.string().describe('Text to echo back')
-});
-
-/**
- * Output schema for echo tool
- *
- * @example
- * ```typescript
- * const output: EchoOutput = {
- *   echo: 'hello world',
- *   length: 11
- * };
- * ```
- */
-const echoOutputSchema = z.object({
-  echo: z.string().describe('Echoed text'),
-  length: z.number().describe('Length of text')
-});
-
-// ============================================================================
-// Type Inference from Schemas
-// ============================================================================
-//
-// TEMPLATE PATTERN: Use z.infer to derive TypeScript types from Zod schemas
-//
-// Benefits:
-// - Single source of truth (schema defines both validation and types)
-// - Automatic type safety in tool handlers
-// - No manual type duplication
-// - Changes to schemas automatically update types
-//
-// TODO: Add type inference for your custom schemas
-// ============================================================================
-
-/** Inferred TypeScript type for echo input */
-type EchoInput = z.infer<typeof echoInputSchema>;
-
-/** Inferred TypeScript type for echo output */
-type EchoOutput = z.infer<typeof echoOutputSchema>;
-
-// ============================================================================
-// List Tools Schemas
-// ============================================================================
-
-/**
- * Input schema for list_tools utility
- * No parameters needed - just lists all available tools
- */
-const listToolsInputSchema = z.object({});
-
-/**
- * Output schema for list_tools utility
- */
-const listToolsOutputSchema = z.object({
-  summary: z.string().describe('Human-readable markdown summary of all tools'),
-  tools: z.array(z.object({
-    name: z.string().describe('Tool name'),
-    description: z.string().describe('Tool description')
-  })).describe('Array of all available tools')
-});
-
-/** Inferred TypeScript type for list_tools output */
-type ListToolsOutput = z.infer<typeof listToolsOutputSchema>;
 
 // ============================================================================
 // Configuration
@@ -198,189 +126,20 @@ const config = {
  */
 const client = new KadiClient({
   name: process.env.AGENT_NAME || 'template-agent-typescript',
-  version: process.env.AGENT_VERSION || '1.0.0',
+  version: process.env.AGENT_VERSION || '0.0.1',
   role: 'agent',
   broker: config.brokerUrl,
   networks: config.networks
 });
 
 // ============================================================================
-// Tool Definitions
-// ============================================================================
-//
-// TEMPLATE PATTERN: Register tools with client.registerTool()
-//
-// Structure:
-// 1. client.registerTool({ metadata }, handler)
-// 2. Metadata: name, description, input schema, output schema
-// 3. Handler: async function with typed params and return value
-// 4. Handler should: validate, execute logic, publish events, return result
-//
-// Best Practices:
-// - Use emoji in console.log for visual distinction (📝 ✅ ❌ 🔍 etc.)
-// - Publish events for significant operations (success and error)
-// - Include agent name in event payloads for traceability
-// - Return structured data matching output schema
-// - Use try/catch for operations that might fail
-//
-// TODO: Replace the echo tool with your agent's tools
-// ============================================================================
-
-// TODO: Replace this echo tool with your own domain-specific tools
-// The echo tool is a minimal placeholder - it simply returns the input text with its length.
-//
-// Example of adding a new tool:
-// 1. Define input/output schemas using Zod (see lines 78-96)
-// 2. Register tool with client.registerTool() (see below)
-// 3. Implement your business logic in the handler function
-// 4. Publish events for tracking (optional but recommended)
-//
-// For more examples, see docs/TEMPLATE_USAGE.md
-
-/**
- * Echo Tool (Placeholder)
- *
- * This is a simple placeholder tool that echoes back the input text
- * along with its length. Replace this with your own tools.
- *
- * @param params - Input parameters matching EchoInput schema
- * @returns Echoed text with length metadata
- *
- * @example
- * ```typescript
- * const result = await client.invokeTool('echo', {
- *   text: 'hello world'
- * });
- * // Returns: { echo: 'hello world', length: 11 }
- * ```
- */
-client.registerTool({
-  name: 'echo',
-  description: 'Echo back the input text with its length (placeholder tool - replace with your own)',
-  input: echoInputSchema,
-  output: echoOutputSchema
-}, async (params: EchoInput): Promise<EchoOutput> => {
-  console.log(`🔁 Echoing text: "${params.text}"`);
-
-  const result = {
-    echo: params.text,
-    length: params.text.length
-  };
-
-  // TEMPLATE PATTERN: Publish event for operation
-  // TODO: Replace 'echo.processed' with your domain-specific event topic
-  // TODO: Replace 'template-agent-typescript' with your agent name
-  client.publishEvent('echo.processed', {
-    operation: 'echo',
-    text_length: result.length,
-    agent: 'template-agent-typescript'
-  });
-
-  return result;
-});
-
-// ============================================================================
-// List Tools Utility
-// ============================================================================
-
-/**
- * List Tools Utility
- *
- * Provides a human-readable formatted list of all available tools (local + network).
- * This solves the UX problem where raw JSON tool schemas are unreadable in Slack.
- *
- * @returns Formatted markdown list of tools with names and descriptions
- *
- * @example
- * ```typescript
- * const result = await client.invokeTool('list_tools', {});
- * // Returns:
- * // {
- * //   summary: "I have 43 tools available:\n\n• *echo*: Echo text...\n• *git_add*: Stage files...",
- * //   tools: [{ name: 'echo', description: '...' }, ...]
- * // }
- * ```
- */
-client.registerTool({
-  name: 'list_tools',
-  description: 'List all available tools in human-readable format (better UX than raw JSON)',
-  input: listToolsInputSchema,
-  output: listToolsOutputSchema
-}, async (): Promise<ListToolsOutput> => {
-  console.log('📋 Listing all available tools...');
-
-  try {
-    // 1. Get local tools (registered on this agent)
-    const localTools = client.getAllRegisteredTools();
-
-    // 2. Get network tools from broker
-    const protocol = client.getBrokerProtocol();
-    const networkResult = await (protocol as any).connection.sendRequest({
-      jsonrpc: '2.0',
-      method: 'kadi.ability.list',
-      params: {
-        networks: config.networks,
-        includeProviders: false
-      },
-      id: `list_tools_${Date.now()}`
-    }) as {
-      tools: Array<{
-        name: string;
-        description?: string;
-      }>;
-    };
-
-    // 3. Deduplicate: prefer local tools over network tools
-    const localNames = new Set(localTools.map(t => t.definition.name));
-    const uniqueNetworkTools = networkResult.tools.filter(t => !localNames.has(t.name));
-
-    // 4. Combine all tools
-    const allTools = [
-      ...localTools.map(t => ({
-        name: t.definition.name,
-        description: t.definition.description || 'No description'
-      })),
-      ...uniqueNetworkTools.map(t => ({
-        name: t.name,
-        description: t.description || 'No description'
-      }))
-    ];
-
-    // 5. Format as Slack-friendly markdown
-    const summary = `I have ${allTools.length} tools available:\n\n` +
-      allTools.map(t => `• *${t.name}*: ${t.description}`).join('\n');
-
-    console.log(`✅ Listed ${allTools.length} tools (${localTools.length} local + ${uniqueNetworkTools.length} network)`);
-
-    return { summary, tools: allTools };
-  } catch (error: any) {
-    console.error('❌ Error listing tools:', error);
-
-    // Fallback: return only local tools if broker query fails
-    const localTools = client.getAllRegisteredTools();
-    const tools = localTools.map(t => ({
-      name: t.definition.name,
-      description: t.definition.description || 'No description'
-    }));
-
-    const summary = `⚠️ Partial list (broker unavailable): ${tools.length} local tools:\n\n` +
-      tools.map(t => `• *${t.name}*: ${t.description}`).join('\n');
-
-    return { summary, tools };
-  }
-});
-
-
-// ============================================================================
 // Custom Tool Registry
 // ============================================================================
 //
-// TEMPLATE PATTERN: Pluggable tool system
+// Tools are registered via the src/tools/ directory and toolRegistry.
+// See registerAllTools(client) call below.
 //
-// Add custom tools by creating files in src/tools/ directory.
-// Tools are automatically loaded from the registry.
-//
-// See src/tools/index.ts for more information.
+// For more information on adding custom tools, see src/tools/index.ts
 //
 registerAllTools(client);
 
@@ -409,25 +168,22 @@ registerAllTools(client);
 function subscribeToTaskAssignments(client: KadiClient): void {
   const topic = 'artist.task.assigned';
 
-  console.log(`🔍 [DEBUG] subscribeToTaskAssignments called at ${new Date().toISOString()}`);
-  console.log(`🔍 [DEBUG] Stack trace:`, new Error().stack);
-  console.log(`[KĀDI] Task Handler: Registering subscription {topic: ${topic}}`);
+  logger.info(MODULE_AGENT, `Task Handler: Registering subscription {topic: ${topic}}`, timer.elapsed('main'));
 
   try {
     client.subscribeToEvent(topic, async (event: unknown) => {
       // Extract event data from KĀDI envelope
       const eventData = (event as any)?.data || event;
 
-      console.log(`🔍 [DEBUG] Event callback invoked at ${new Date().toISOString()}`);
-      console.log(`[KĀDI] Task Assignment: Event received {taskId: ${eventData.taskId}, role: ${eventData.role}}`);
+      logger.info(MODULE_AGENT, `Task Assignment: Event received {taskId: ${eventData.taskId}, role: ${eventData.role}}`, timer.elapsed('main'));
 
       // Handle task assignment
       await handleTaskAssignment(client, eventData);
     });
 
-    console.log(`[KĀDI] Task Handler: Subscription registered successfully {topic: ${topic}}`);
+    logger.info(MODULE_AGENT, `Task Handler: Subscription registered successfully {topic: ${topic}}`, timer.elapsed('main'));
   } catch (error: any) {
-    console.error(`[KĀDI] Task Handler: Subscription registration failed {topic: ${topic}, error: ${error.message || 'Unknown error'}}`);
+    logger.error(MODULE_AGENT, `Task Handler: Subscription registration failed {topic: ${topic}}`, timer.elapsed('main'), error);
   }
 }
 
@@ -442,12 +198,12 @@ async function determineFilenameWithAI(taskDescription: string, taskId: string):
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
 
   if (!anthropicApiKey) {
-    console.warn('⚠️  ANTHROPIC_API_KEY not set, using fallback filename');
+    logger.warn(MODULE_AGENT, 'ANTHROPIC_API_KEY not set, using fallback filename', timer.elapsed('main'));
     return `art-${taskId.substring(0, 8)}.txt`;
   }
 
   try {
-    console.log('🤖 Using Claude AI to interpret task and determine filename...');
+    logger.info(MODULE_AGENT, 'Using Claude AI to interpret task and determine filename', timer.elapsed('main'));
 
     const anthropic = new Anthropic({ apiKey: anthropicApiKey });
 
@@ -476,12 +232,12 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
     // Sanitize filename (remove any remaining special characters except . - _)
     const sanitized = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
 
-    console.log(`✅ AI determined filename: ${sanitized}`);
+    logger.info(MODULE_AGENT, `AI determined filename: ${sanitized}`, timer.elapsed('main'));
     return sanitized;
 
   } catch (error: any) {
-    console.error('❌ AI filename determination failed:', error.message);
-    console.log('⚠️  Falling back to default filename pattern');
+    logger.error(MODULE_AGENT, 'AI filename determination failed', "+0ms", error);
+    logger.warn(MODULE_AGENT, 'Falling back to default filename pattern', timer.elapsed('main'));
     return `art-${taskId.substring(0, 8)}.txt`;
   }
 }
@@ -503,8 +259,8 @@ async function handleTaskAssignment(client: KadiClient, task: any): Promise<void
   const worktreePath = 'C:/p4/Personal/SD/agent-playground-artist';
 
   try {
-    console.log(`🎨 Processing artist task: ${task.taskId}`);
-    console.log(`   Description: ${task.description}`);
+    logger.info(MODULE_AGENT, `Processing artist task: ${task.taskId}`, timer.elapsed('main'));
+    logger.info(MODULE_AGENT, `   Description: ${task.description}`, timer.elapsed('main'));
 
     // Step 0: Call shrimp_execute_task to mark task as in_progress
     const protocol = client.getBrokerProtocol();
@@ -512,7 +268,7 @@ async function handleTaskAssignment(client: KadiClient, task: any): Promise<void
       throw new Error('Protocol not initialized');
     }
 
-    console.log(`📋 Marking task as in_progress in shrimp task manager`);
+    logger.info(MODULE_AGENT, `Marking task as in_progress in shrimp task manager`, timer.elapsed('main'));
     try {
       await protocol.invokeTool({
         targetAgent: 'mcp-server-shrimp-agent-playground',
@@ -522,9 +278,9 @@ async function handleTaskAssignment(client: KadiClient, task: any): Promise<void
         },
         timeout: 30000
       });
-      console.log(`✅ Task marked as in_progress`);
+      logger.info(MODULE_AGENT, `Task marked as in_progress`, timer.elapsed('main'));
     } catch (error) {
-      console.warn(`⚠️  Failed to mark task as in_progress (continuing anyway):`, error);
+      logger.warn(MODULE_AGENT, `Failed to mark task as in_progress (continuing anyway)`, timer.elapsed('main'), error);
       // Continue execution even if shrimp call fails - this is non-critical
     }
 
@@ -550,7 +306,7 @@ async function handleTaskAssignment(client: KadiClient, task: any): Promise<void
     const artContent = `# Artwork for Task ${task.taskId}\n\nCreated: ${new Date().toISOString()}\nDescription: ${task.description}\n\n[Artistic content would go here]`;
 
     // Step 1: Write file using filesystem server
-    console.log(`📝 Writing file: ${filePath}`);
+    logger.info(MODULE_AGENT, `Writing file: ${filePath}`, timer.elapsed('main'));
     await protocol.invokeTool({
       targetAgent: 'fs',
       toolName: 'fs_write_file',
@@ -561,10 +317,10 @@ async function handleTaskAssignment(client: KadiClient, task: any): Promise<void
       timeout: 30000
     });
 
-    console.log(`✅ File written: ${fileName}`);
+    logger.info(MODULE_AGENT, `File written: ${fileName}`, timer.elapsed('main'));
 
     // Step 2: Set git working directory to worktree
-    console.log(`📂 Setting git working directory: ${worktreePath}`);
+    logger.info(MODULE_AGENT, `Setting git working directory: ${worktreePath}`, timer.elapsed('main'));
     await protocol.invokeTool({
       targetAgent: 'git',
       toolName: 'git_git_set_working_dir',
@@ -575,7 +331,7 @@ async function handleTaskAssignment(client: KadiClient, task: any): Promise<void
     });
 
     // Step 3: Stage file with git add
-    console.log(`➕ Staging file: ${fileName}`);
+    logger.info(MODULE_AGENT, `Staging file: ${fileName}`, timer.elapsed('main'));
     await protocol.invokeTool({
       targetAgent: 'git',
       toolName: 'git_git_add',
@@ -586,7 +342,7 @@ async function handleTaskAssignment(client: KadiClient, task: any): Promise<void
     });
 
     // Step 4: Commit changes
-    console.log(`💾 Committing changes`);
+    logger.info(MODULE_AGENT, `Committing changes`, timer.elapsed('main'));
     const commitResult: any = await protocol.invokeTool({
       targetAgent: 'git',
       toolName: 'git_git_commit',
@@ -596,9 +352,9 @@ async function handleTaskAssignment(client: KadiClient, task: any): Promise<void
       timeout: 30000
     });
 
-    console.log(`🔍 [DEBUG] Commit result:`, JSON.stringify(commitResult, null, 2));
+    logger.debug(MODULE_AGENT, `Commit result:`, JSON.stringify(commitResult, null, 2));
     const commitSha = commitResult?.structuredContent?.commitHash || commitResult?.commitHash || 'unknown';
-    console.log(`✅ Created and committed art file: ${fileName} (commit: ${commitSha.substring(0, 7)})`);
+    logger.info(MODULE_AGENT, `Created and committed art file: ${fileName} (commit: ${commitSha.substring(0, 7)})`, timer.elapsed('main'));
 
     // Publish task completion event
     client.publishEvent('artist.task.completed', {
@@ -611,9 +367,9 @@ async function handleTaskAssignment(client: KadiClient, task: any): Promise<void
       agent: 'agent-artist'
     });
 
-    console.log(`✅ Task ${task.taskId} completed successfully`);
+    logger.info(MODULE_AGENT, `Task ${task.taskId} completed successfully`, timer.elapsed('main'));
   } catch (error: any) {
-    console.error(`❌ Failed to process task ${task.taskId}:`, error);
+    logger.error(MODULE_AGENT, `Failed to process task ${task.taskId}`, "+0ms", error);
 
     // Publish failure event
     client.publishEvent('artist.task.failed', {
@@ -658,34 +414,44 @@ async function handleTaskAssignment(client: KadiClient, task: any): Promise<void
  * @throws {Error} If broker connection fails
  */
 async function main() {
-  console.log('='.repeat(60));
-  console.log('🚀 Starting Template Agent (TypeScript)');
-  console.log('='.repeat(60));
-  console.log(`Broker URL: ${config.brokerUrl}`);
-  console.log(`Networks: ${config.networks.join(', ')}`);
-  console.log();
+  // Start main timer for application lifetime tracking
+  timer.start('main');
+
+  logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('main'));
+  logger.warn(MODULE_AGENT, 'Starting Template Agent (TypeScript)', timer.elapsed('main'));
+  logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('main'));
+  logger.info(MODULE_AGENT, `Broker URL: ${config.brokerUrl}`, timer.elapsed('main'));
+  logger.info(MODULE_AGENT, `Networks: ${config.networks.join(', ')}`, timer.elapsed('main'));
+  logger.info(MODULE_AGENT, '', timer.elapsed('main'));
 
   try {
-    console.log('⏳ Connecting to broker...');
-    console.log();
+    logger.info(MODULE_AGENT, 'Connecting to broker...', timer.elapsed('main'));
+    logger.info(MODULE_AGENT, '', timer.elapsed('main'));
 
     // TEMPLATE PATTERN: Print tool information BEFORE blocking serve() call
-    // TODO: Update this list to match your registered tools
-    console.log('Available Tools:');
-    console.log('  Placeholder Tools:');
-    console.log('    • echo(text) - Echo text back with length (REPLACE THIS WITH YOUR TOOLS)');
-    console.log();
-    console.log('  Bot Tools (if enabled):');
-    console.log('    • Slack bot tools (when ENABLE_SLACK_BOT=true)');
-    console.log('    • Discord bot tools (when ENABLE_DISCORD_BOT=true)');
-    console.log();
-    console.log('  Broker-provided Tools (via client.load()):');
-    console.log('    • git_* tools (on \'git\' network)');
-    console.log('    • fs_* tools (on \'global\' network)');
-    console.log();
-    console.log('Press Ctrl+C to stop the agent...');
-    console.log('='.repeat(60));
-    console.log();
+    // Dynamically list all registered tools
+    const registeredTools = client.getAllRegisteredTools();
+    logger.info(MODULE_AGENT, `Available Tools: ${registeredTools.length} registered`, timer.elapsed('main'));
+
+    if (registeredTools.length > 0) {
+      logger.info(MODULE_AGENT, '  Local Tools:', timer.elapsed('main'));
+      for (const tool of registeredTools) {
+        const description = tool.definition.description || 'No description';
+        logger.info(MODULE_AGENT, `    • ${tool.definition.name} - ${description}`, timer.elapsed('main'));
+      }
+      logger.info(MODULE_AGENT, '', timer.elapsed('main'));
+    }
+
+    logger.info(MODULE_AGENT, '  Bot Tools (if enabled):', timer.elapsed('main'));
+    logger.info(MODULE_AGENT, '    • Slack bot tools (when ENABLE_SLACK_BOT=true)', timer.elapsed('main'));
+    logger.info(MODULE_AGENT, '    • Discord bot tools (when ENABLE_DISCORD_BOT=true)', timer.elapsed('main'));
+    logger.info(MODULE_AGENT, '', timer.elapsed('main'));
+    logger.info(MODULE_AGENT, '  Broker-provided Tools (via client.load()):', timer.elapsed('main'));
+    logger.info(MODULE_AGENT, `    • Tools from '${config.networks.join("', '")}' network(s)`, timer.elapsed('main'));
+    logger.info(MODULE_AGENT, '', timer.elapsed('main'));
+    logger.info(MODULE_AGENT, 'Press Ctrl+C to stop the agent...', timer.elapsed('main'));
+    logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('main'));
+    logger.info(MODULE_AGENT, '', timer.elapsed('main'));
 
     // CRITICAL: serve() is blocking - all logs must come BEFORE this line
     // Connect to broker and start serving tool invocations
@@ -696,8 +462,8 @@ async function main() {
                                   process.env.ANTHROPIC_API_KEY &&
                                   process.env.ANTHROPIC_API_KEY !== 'YOUR_ANTHROPIC_API_KEY_HERE';
     if (shouldEnableSlackBot) {
-      console.log('🔄 Slack bot will start after broker connection...');
-      console.log();
+      logger.info(MODULE_AGENT, 'Slack bot will start after broker connection...', timer.elapsed('main'));
+      logger.info(MODULE_AGENT, '', timer.elapsed('main'));
 
       // Give serve() a moment to establish connection, then start Slack bot
       setTimeout(async () => {
@@ -709,14 +475,14 @@ async function main() {
             botUserId: process.env.SLACK_BOT_USER_ID!,
           });
           slackBot.start();
-          console.log('✅ Slack bot started (subscribed to Slack mention events)');
+          logger.info(MODULE_AGENT, 'Slack bot started (subscribed to Slack mention events)', timer.elapsed('main'));
         } catch (error) {
-          console.error('❌ Failed to start Slack bot:', error);
+          logger.error(MODULE_AGENT, 'Failed to start Slack bot', "+0ms", error as Error | string);
         }
       }, 2000); // Wait 2 seconds for broker connection
     } else {
-      console.log('ℹ️  Slack bot disabled (ENABLE_SLACK_BOT=false or ANTHROPIC_API_KEY not configured)');
-      console.log();
+      logger.info(MODULE_AGENT, 'Slack bot disabled (ENABLE_SLACK_BOT=false or ANTHROPIC_API_KEY not configured)', timer.elapsed('main'));
+      logger.info(MODULE_AGENT, '', timer.elapsed('main'));
     }
 
     // Start Discord bot if enabled via feature flag and API key is configured
@@ -724,12 +490,12 @@ async function main() {
                                     process.env.ANTHROPIC_API_KEY &&
                                     process.env.ANTHROPIC_API_KEY !== 'YOUR_ANTHROPIC_API_KEY_HERE';
     if (shouldEnableDiscordBot) {
-      console.log('🤖 Discord Bot Configuration:');
-      console.log('   - Anthropic API Key: Configured ✓');
-      console.log('   - Bot User ID:', process.env.DISCORD_BOT_USER_ID || 'Not configured');
-      console.log('   - Mode: Event-driven (KĀDI subscriptions)');
-      console.log('🔄 Discord bot will start after broker connection...');
-      console.log();
+      logger.info(MODULE_AGENT, 'Discord Bot Configuration:', timer.elapsed('main'));
+      logger.info(MODULE_AGENT, '   - Anthropic API Key: Configured ✓', timer.elapsed('main'));
+      logger.info(MODULE_AGENT, '   - Bot User ID: ' + (process.env.DISCORD_BOT_USER_ID || 'Not configured'), timer.elapsed('main'));
+      logger.info(MODULE_AGENT, '   - Mode: Event-driven (KĀDI subscriptions)', timer.elapsed('main'));
+      logger.info(MODULE_AGENT, 'Discord bot will start after broker connection...', timer.elapsed('main'));
+      logger.info(MODULE_AGENT, '', timer.elapsed('main'));
 
       // Give serve() a moment to establish connection, then start Discord bot
       setTimeout(async () => {
@@ -741,24 +507,24 @@ async function main() {
             botUserId: process.env.DISCORD_BOT_USER_ID!,
           });
           discordBot.start();
-          console.log('✅ Discord bot started (subscribed to Discord mention events)');
+          logger.info(MODULE_AGENT, 'Discord bot started (subscribed to Discord mention events)', timer.elapsed('main'));
         } catch (error) {
-          console.error('❌ Failed to start Discord bot:', error);
+          logger.error(MODULE_AGENT, 'Failed to start Discord bot', "+0ms", error as Error | string);
         }
       }, 2500); // Wait 2.5 seconds for broker connection (slightly after Slack)
     } else {
-      console.log('ℹ️  Discord bot disabled (ENABLE_DISCORD_BOT=false or ANTHROPIC_API_KEY not configured)');
-      console.log();
+      logger.info(MODULE_AGENT, 'Discord bot disabled (ENABLE_DISCORD_BOT=false or ANTHROPIC_API_KEY not configured)', timer.elapsed('main'));
+      logger.info(MODULE_AGENT, '', timer.elapsed('main'));
     }
 
     // Subscribe to task assignment events (core agent responsibility, independent of bots)
-    console.log('🎨 Subscribing to artist task assignments...');
+    logger.info(MODULE_AGENT, 'Subscribing to artist task assignments...', timer.elapsed('main'));
     setTimeout(async () => {
       try {
         subscribeToTaskAssignments(client);
-        console.log('✅ Subscribed to artist.task.assigned events');
+        logger.info(MODULE_AGENT, 'Subscribed to artist.task.assigned events', timer.elapsed('main'));
       } catch (error) {
-        console.error('❌ Failed to subscribe to task assignments:', error);
+        logger.error(MODULE_AGENT, 'Failed to subscribe to task assignments', "+0ms", error as Error | string);
       }
     }, 1000); // Wait 1 second for broker connection
 
@@ -768,9 +534,9 @@ async function main() {
     // Connection success is visible when tools start being invoked
     // Connection events and tool listings are printed above
   } catch (error: any) {
-    console.error('❌ Failed to start agent:', error.message || error);
+    logger.error(MODULE_AGENT, 'Failed to start agent', "+0ms", error);
     if (error.stack) {
-      console.error('Stack trace:', error.stack);
+      logger.error(MODULE_AGENT, 'Stack trace', "+0ms", error.stack);
     }
     process.exit(1);
   }
@@ -804,12 +570,12 @@ async function main() {
  * Disconnects from broker and exits cleanly when user presses Ctrl+C
  */
 process.on('SIGINT', async () => {
-  console.log('\n⏳ Shutting down gracefully...');
+  logger.info(MODULE_AGENT, 'Shutting down gracefully...', timer.elapsed('main'));
 
   try {
     // TEMPLATE PATTERN: Disconnect from broker before exiting
     await client.disconnect();
-    console.log('✅ Disconnected from broker');
+    logger.info(MODULE_AGENT, 'Disconnected from broker', timer.elapsed('main'));
 
     // TODO: Add cleanup for any resources your agent owns
     // Example: await database.close()
@@ -817,7 +583,7 @@ process.on('SIGINT', async () => {
 
     process.exit(0);
   } catch (error: any) {
-    console.error('❌ Error during shutdown:', error.message);
+    logger.error(MODULE_AGENT, 'Error during shutdown', "+0ms", error);
     process.exit(1);
   }
 });
@@ -829,17 +595,17 @@ process.on('SIGINT', async () => {
  * (e.g., Docker stop, systemd stop, kill command)
  */
 process.on('SIGTERM', async () => {
-  console.log('\n⏳ Shutting down gracefully...');
+  logger.info(MODULE_AGENT, 'Shutting down gracefully...', timer.elapsed('main'));
 
   try {
     await client.disconnect();
-    console.log('✅ Disconnected from broker');
+    logger.info(MODULE_AGENT, 'Disconnected from broker', timer.elapsed('main'));
 
     // TODO: Add cleanup for any resources your agent owns
 
     process.exit(0);
   } catch (error: any) {
-    console.error('❌ Error during shutdown:', error.message);
+    logger.error(MODULE_AGENT, 'Error during shutdown', "+0ms", error);
     process.exit(1);
   }
 });
@@ -862,6 +628,6 @@ process.on('SIGTERM', async () => {
  * This executes immediately when the module loads
  */
 main().catch((error) => {
-  console.error('💥 Fatal error:', error);
+  logger.error(MODULE_AGENT, 'Fatal error', "+0ms", error);
   process.exit(1);
 });

@@ -40,7 +40,10 @@
  * ```
  */
 
-import type { KadiClient } from '@kadi.build/core';
+import type {KadiClient} from '@kadi.build/core';
+import {logger, MODULE_TOOLS, timer} from 'agents-library';
+import {registerEchoTool} from './echo.js';
+import {registerListToolsTool} from './list-tools.js';
 
 /**
  * Tool Registry Array
@@ -49,8 +52,10 @@ import type { KadiClient } from '@kadi.build/core';
  * They will be called automatically during agent initialization.
  */
 export const toolRegistry: Array<(client: KadiClient) => void> = [
-  // Example: registerMyTool,
-  // Add your custom tools here
+    registerEchoTool,
+    registerListToolsTool,
+    // Example: registerMyTool,
+    // Add your custom tools here
 ];
 
 /**
@@ -60,16 +65,18 @@ export const toolRegistry: Array<(client: KadiClient) => void> = [
  * You don't need to modify this function - just add your tools to the array above.
  */
 export function registerAllTools(client: KadiClient): void {
-  console.log(`📦 Registering ${toolRegistry.length} custom tool(s)...`);
+    // Start timer for tool registration tracking
+    timer.start('tools-registry');
 
-  for (const registerTool of toolRegistry) {
-    registerTool(client);
-  }
+    logger.info(MODULE_TOOLS, `Registering ${toolRegistry.length} custom tool(s)...`, timer.elapsed('tools-registry'));
 
-  if (toolRegistry.length > 0) {
-    console.log(`✅ Registered ${toolRegistry.length} custom tool(s)`);
-  } else {
-    console.log('ℹ️  No custom tools registered (add tools to src/tools/ to extend functionality)');
-  }
-  console.log();
+    for (const registerTool of toolRegistry) {
+        registerTool(client);
+    }
+
+    if (toolRegistry.length > 0) {
+        logger.info(MODULE_TOOLS, `Registered ${toolRegistry.length} custom tool(s)`, timer.elapsed('tools-registry'));
+    } else {
+        logger.info(MODULE_TOOLS, 'No custom tools registered (add tools to src/tools/ to extend functionality)', timer.elapsed('tools-registry'));
+    }
 }
