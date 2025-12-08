@@ -19,8 +19,8 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import type { KadiClient } from '@kadi.build/core';
-import { BaseBot } from '@agents/shared';
-import { SlackMentionEventSchema } from '../types/slack-events.js';
+import { BaseBot, logger, MODULE_SLACK_BOT, timer } from 'agents-library';
+import { SlackMentionEventSchema, SlackMentionEvent } from '../types/slack-events.js';
 
 // ============================================================================
 // Types
@@ -56,7 +56,7 @@ export class SlackBot extends BaseBot {
    * Overrides BaseBot.start() to initialize protocol and subscribe to Slack events.
    */
   start(): void {
-    console.log('🤖 Starting Slack bot with event-driven architecture...');
+    logger.info(MODULE_SLACK_BOT, 'Starting Slack bot with event-driven architecture...', timer.elapsed('main'));
 
     // Initialize protocol from BaseBot
     this.initializeProtocol();
@@ -72,7 +72,7 @@ export class SlackBot extends BaseBot {
    */
   stop(): void {
     // Unsubscribe from events if needed
-    console.log('🛑 Slack bot stopped');
+    logger.info(MODULE_SLACK_BOT, 'Slack bot stopped', timer.elapsed('main'));
   }
 
   /**
@@ -103,13 +103,13 @@ export class SlackBot extends BaseBot {
   private subscribeToMentions(): void {
     const topic = `slack.app_mention.${this.botUserId}`;
 
-    console.log(`[KĀDI] Subscriber: Registering subscription {topic: ${topic}, botUserId: ${this.botUserId}}`);
+    logger.info(MODULE_SLACK_BOT, `Subscriber: Registering subscription {topic: ${topic}, botUserId: ${this.botUserId}}`, timer.elapsed('main'));
 
     try {
       this.client.subscribeToEvent(topic, async (event: unknown) => {
         // Check circuit breaker before processing (from BaseBot)
         if (this.checkCircuitBreaker()) {
-          console.warn('[KĀDI] Subscriber: Event processing skipped {reason: circuit breaker OPEN}');
+          logger.warn(MODULE_SLACK_BOT, 'Subscriber: Event processing skipped {reason: circuit breaker OPEN}', timer.elapsed('main'));
           return;
         }
 
@@ -122,26 +122,26 @@ export class SlackBot extends BaseBot {
 
         if (!validationResult.success) {
           const errorDetails = validationResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
-          console.error(`[KĀDI] Subscriber: Event validation failed {errors: [${errorDetails}]}`);
+          logger.error(MODULE_SLACK_BOT, `Subscriber: Event validation failed {errors: [${errorDetails}]}`, timer.elapsed('main'));
           return;
         }
 
-        const mention = validationResult.data;
+        const mention: SlackMentionEvent = validationResult.data;
 
         // Truncate text for logging (don't log full message content)
         const textPreview = mention.text.length > 50
           ? mention.text.substring(0, 50) + '...'
           : mention.text;
 
-        console.log(`[KĀDI] Subscriber: Event received {mentionId: ${mention.id}, user: ${mention.user}, channel: ${mention.channel}, textPreview: "${textPreview}", timestamp: ${mention.timestamp}}`);
+        logger.info(MODULE_SLACK_BOT, `Subscriber: Event received {mentionId: ${mention.id}, user: ${mention.user}, channel: ${mention.channel}, textPreview: "${textPreview}", timestamp: ${mention.timestamp}}`, timer.elapsed('main'));
 
         // Process mention using handleMention
         await this.handleMention(mention);
       });
 
-      console.log(`[KĀDI] Subscriber: Subscription registered successfully {topic: ${topic}}`);
+      logger.info(MODULE_SLACK_BOT, `Subscriber: Subscription registered successfully {topic: ${topic}}`, timer.elapsed('main'));
     } catch (error: any) {
-      console.error(`[KĀDI] Subscriber: Subscription registration failed {topic: ${topic}, error: ${error.message || 'Unknown error'}}`);
+      logger.error(MODULE_SLACK_BOT, `Subscriber: Subscription registration failed {topic: ${topic}}`, timer.elapsed('main'), error);
     }
   }
 
@@ -151,7 +151,7 @@ export class SlackBot extends BaseBot {
   private async processMention(mention: SlackMention): Promise<void> {
     // Check circuit breaker before processing
     if (this.checkCircuitBreaker()) {
-      console.warn(`⚡ Circuit breaker OPEN - skipping mention from @${mention.user}`);
+      logger.warn(MODULE_SLACK_BOT, `Circuit breaker OPEN - skipping mention from @${mention.user}`, timer.elapsed('main'));
 
       // Publish error event
       this.client.publishEvent('artist.task.failed', {
@@ -176,7 +176,7 @@ export class SlackBot extends BaseBot {
     }
 
     try {
-      console.log(`💬 Processing mention from @${mention.user}: "${mention.text}"`);
+      logger.info(MODULE_SLACK_BOT, `Processing mention from @${mention.user}: "${mention.text}"`, timer.elapsed('main'));
 
       // Get list of available KADI tools (dynamically from client and broker)
       const availableTools = await this.getAvailableTools();
@@ -250,12 +250,12 @@ export class SlackBot extends BaseBot {
       // Reply to Slack
       await this.sendSlackReply(mention.channel, mention.thread_ts, finalText);
 
-      console.log(`✅ Replied to @${mention.user}`);
+      logger.info(MODULE_SLACK_BOT, `Replied to @${mention.user}`, timer.elapsed('main'));
 
       // Record success for circuit breaker
       this.recordSuccess();
     } catch (error: any) {
-      console.error(`❌ Error processing mention from @${mention.user}:`, error);
+      logger.error(MODULE_SLACK_BOT, `Error processing mention from @${mention.user}`, timer.elapsed('main'), error);
 
       // Classify error type
       const errorType = this.classifyError(error);
@@ -288,7 +288,7 @@ export class SlackBot extends BaseBot {
       try {
         await this.sendSlackReply(mention.channel, mention.thread_ts, userMessage);
       } catch (replyError: any) {
-        console.error(`❌ Failed to send error reply:`, replyError);
+        logger.error(MODULE_SLACK_BOT, 'Failed to send error reply', timer.elapsed('main'), replyError);
       }
     }
   }
@@ -347,7 +347,7 @@ export class SlackBot extends BaseBot {
     }
 
     try {
-      console.log(`🔧 Executing tool: ${toolName}`);
+      logger.info(MODULE_SLACK_BOT, `Executing tool: ${toolName}`, timer.elapsed('main'));
 
       // Determine target agent based on tool name
       const targetAgent = this.resolveTargetAgent(toolName);
@@ -383,7 +383,7 @@ export class SlackBot extends BaseBot {
 
       return result;
     } catch (error: any) {
-      console.error(`❌ Tool execution failed (${toolName}):`, error);
+      logger.error(MODULE_SLACK_BOT, `Tool execution failed (${toolName})`, timer.elapsed('main'), error);
 
       // Classify error and publish event
       const errorType = this.classifyError(error);
@@ -421,7 +421,7 @@ export class SlackBot extends BaseBot {
     text: string
   ): Promise<void> {
     if (!this.protocol) {
-      console.error('❌ Cannot send Slack reply: protocol not initialized');
+      logger.error(MODULE_SLACK_BOT, 'Cannot send Slack reply: protocol not initialized', timer.elapsed('main'));
       return;
     }
 
@@ -443,11 +443,11 @@ export class SlackBot extends BaseBot {
     }
 
     // Split long message into chunks
-    console.log(`📄 Message too long (${text.length} chars), splitting into chunks...`);
+    logger.info(MODULE_SLACK_BOT, `Message too long (${text.length} chars), splitting into chunks...`, timer.elapsed('main'));
 
     const chunks = this.splitMessage(text, MAX_SLACK_MESSAGE_LENGTH);
 
-    console.log(`📤 Sending ${chunks.length} message chunks to Slack`);
+    logger.info(MODULE_SLACK_BOT, `Sending ${chunks.length} message chunks to Slack`, timer.elapsed('main'));
 
     // Send all chunks as threaded replies
     for (let i = 0; i < chunks.length; i++) {
@@ -555,7 +555,7 @@ export class SlackBot extends BaseBot {
         }>;
       };
 
-      console.log(`🔍 Discovered ${result.tools.length} network tools from broker`);
+      logger.info(MODULE_SLACK_BOT, `Discovered ${result.tools.length} network tools from broker`, timer.elapsed('main'));
 
       // Convert to Anthropic format
       return result.tools.map((tool: any) => ({
@@ -564,7 +564,7 @@ export class SlackBot extends BaseBot {
         input_schema: (tool.inputSchema || { type: 'object' }) as Anthropic.Tool.InputSchema
       }));
     } catch (error) {
-      console.error('❌ Failed to query network tools from broker:', error);
+      logger.error(MODULE_SLACK_BOT, 'Failed to query network tools from broker', timer.elapsed('main'), error as Error | string);
       return [];  // Fallback to empty array on error
     }
   }
@@ -595,7 +595,7 @@ export class SlackBot extends BaseBot {
     const uniqueNetworkTools = networkTools.filter(t => !localToolNames.has(t.name));
 
     // 4. Combine and return (local tools first, then unique network tools)
-    console.log(`📋 Available tools: ${localTools.length} local + ${uniqueNetworkTools.length} network (${networkTools.length - uniqueNetworkTools.length} duplicates removed) = ${localTools.length + uniqueNetworkTools.length} total`);
+    logger.info(MODULE_SLACK_BOT, `Available tools: ${localTools.length} local + ${uniqueNetworkTools.length} network (${networkTools.length - uniqueNetworkTools.length} duplicates removed) = ${localTools.length + uniqueNetworkTools.length} total`, timer.elapsed('main'));
 
     return [...localTools, ...uniqueNetworkTools];
   }

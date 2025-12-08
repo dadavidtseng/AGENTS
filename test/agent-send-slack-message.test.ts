@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { KadiClient } from '@kadi.build/core';
+import { KadiClient } from '../kadi/kadi-core/src';
 
 // ============================================================================
 // Mock Setup
@@ -85,7 +85,7 @@ describe('Agent_TypeScript - agent_send_slack_message Tool', () => {
 
     // Simulate agent registering the agent_send_slack_message tool
     // This mimics what happens in src/index.ts
-    const { z } = await import('@kadi.build/core');
+    const { z } = await import('../kadi/kadi-core/src');
 
     const agentSendSlackMessageInputSchema = z.object({
       channel: z.string().describe('Slack channel ID (e.g., C09T6RU41HP)'),

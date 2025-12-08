@@ -19,8 +19,8 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import {DiscordMentionEventSchema} from '../types/discord-events.js';
-import {BaseBot, BaseBotConfig} from '@agents/shared';
+import {DiscordMentionEvent, DiscordMentionEventSchema} from '../types/discord-events.js';
+import {BaseBot, BaseBotConfig, logger, MODULE_DISCORD_BOT, timer} from 'agents-library';
 
 // ============================================================================
 // Types
@@ -52,7 +52,7 @@ export class DiscordBot extends BaseBot {
      * Start Discord bot - initialize protocol and subscribe to events
      */
     start(): void {
-        console.log('🤖 Starting Discord bot (event-driven mode)...');
+        logger.info(MODULE_DISCORD_BOT, 'Starting Discord bot (event-driven mode)...', timer.elapsed('main'));
 
         // Initialize protocol from BaseBot
         this.initializeProtocol();
@@ -65,7 +65,7 @@ export class DiscordBot extends BaseBot {
      * Stop Discord bot
      */
     stop(): void {
-        console.log('🛑 Discord bot stopped');
+        logger.info(MODULE_DISCORD_BOT, 'Discord bot stopped', timer.elapsed('main'));
     }
 
     /**
@@ -74,13 +74,13 @@ export class DiscordBot extends BaseBot {
     private subscribeToMentions(): void {
         const topic = `discord.mention.${this.botUserId}`;
 
-        console.log(`[KĀDI] Subscriber: Registering subscription {topic: ${topic}, botUserId: ${this.botUserId}}`);
+        logger.info(MODULE_DISCORD_BOT, `Subscriber: Registering subscription {topic: ${topic}, botUserId: ${this.botUserId}}`, timer.elapsed('main'));
 
         try {
             this.client.subscribeToEvent(topic, async (event: unknown) => {
                 // Check circuit breaker before processing
                 if (this.checkCircuitBreaker()) {
-                    console.warn('[KĀDI] Subscriber: Event processing skipped {reason: circuit breaker OPEN}');
+                    logger.warn(MODULE_DISCORD_BOT, 'Subscriber: Event processing skipped {reason: circuit breaker OPEN}', timer.elapsed('main'));
                     return;
                 }
 
@@ -93,18 +93,18 @@ export class DiscordBot extends BaseBot {
 
                 if (!validationResult.success) {
                     const errorDetails = validationResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
-                    console.error(`[KĀDI] Subscriber: Event validation failed {errors: [${errorDetails}]}`);
+                    logger.error(MODULE_DISCORD_BOT, `Subscriber: Event validation failed {errors: [${errorDetails}]}`, timer.elapsed('main'));
                     return;
                 }
 
-                const mention = validationResult.data;
+                const mention: DiscordMentionEvent = validationResult.data;
 
                 // Truncate text for logging (don't log full message content)
                 const textPreview = mention.text.length > 50
                     ? mention.text.substring(0, 50) + '...'
                     : mention.text;
 
-                console.log(`[KĀDI] Subscriber: Event received {mentionId: ${mention.id}, user: ${mention.username}, channel: ${mention.channelName}, guild: ${mention.guild}, textPreview: "${textPreview}", timestamp: ${mention.timestamp}}`);
+                logger.info(MODULE_DISCORD_BOT, `Subscriber: Event received {mentionId: ${mention.id}, user: ${mention.username}, channel: ${mention.channelName}, guild: ${mention.guild}, textPreview: "${textPreview}", timestamp: ${mention.timestamp}}`, timer.elapsed('main'));
 
                 // Convert to DiscordMention format for existing processing logic
                 const discordMention: DiscordMention = {
@@ -120,9 +120,9 @@ export class DiscordBot extends BaseBot {
                 await this.handleMention(discordMention);
             });
 
-            console.log(`[KĀDI] Subscriber: Subscription registered successfully {topic: ${topic}}`);
+            logger.info(MODULE_DISCORD_BOT, `Subscriber: Subscription registered successfully {topic: ${topic}}`, timer.elapsed('main'));
         } catch (error: any) {
-            console.error(`[KĀDI] Subscriber: Subscription registration failed {topic: ${topic}, error: ${error.message || 'Unknown error'}}`);
+            logger.error(MODULE_DISCORD_BOT, `Subscriber: Subscription registration failed {topic: ${topic}}`, timer.elapsed('main'), error);
         }
     }
 
@@ -131,12 +131,12 @@ export class DiscordBot extends BaseBot {
      */
     protected async handleMention(mention: DiscordMention): Promise<void> {
         try {
-            console.log(`💬 Processing mention from @${mention.user}: "${mention.text}"`);
+            logger.info(MODULE_DISCORD_BOT, `Processing mention from @${mention.user}: "${mention.text}"`, timer.elapsed('main'));
 
             // Process mention using existing logic
             await this.processMention(mention);
         } catch (error: any) {
-            console.error(`❌ Error handling mention from @${mention.user}:`, error);
+            logger.error(MODULE_DISCORD_BOT, `Error handling mention from @${mention.user}`, timer.elapsed('main'), error);
 
             // Send error message to Discord
             await this.sendDiscordReply(
@@ -153,7 +153,7 @@ export class DiscordBot extends BaseBot {
     private async processMention(mention: DiscordMention): Promise<void> {
         // Check circuit breaker before processing
         if (this.checkCircuitBreaker()) {
-            console.warn(`⚡ Circuit breaker OPEN - skipping mention from @${mention.user}`);
+            logger.warn(MODULE_DISCORD_BOT, `Circuit breaker OPEN - skipping mention from @${mention.user}`, timer.elapsed('main'));
 
             // Publish error event
             this.client.publishEvent('artist.task.failed', {
@@ -250,12 +250,12 @@ export class DiscordBot extends BaseBot {
             // Reply to Discord
             await this.sendDiscordReply(mention.channel, mention.id, finalText);
 
-            console.log(`✅ Replied to @${mention.user}`);
+            logger.info(MODULE_DISCORD_BOT, `Replied to @${mention.user}`, timer.elapsed('main'));
 
             // Record success for circuit breaker
             this.recordSuccess();
         } catch (error: any) {
-            console.error(`❌ Error processing mention from @${mention.user}:`, error);
+            logger.error(MODULE_DISCORD_BOT, `Error processing mention from @${mention.user}`, timer.elapsed('main'), error);
 
             // Classify error type
             const errorType = this.classifyError(error);
@@ -288,7 +288,7 @@ export class DiscordBot extends BaseBot {
             try {
                 await this.sendDiscordReply(mention.channel, mention.id, userMessage);
             } catch (replyError: any) {
-                console.error(`❌ Failed to send error reply:`, replyError);
+                logger.error(MODULE_DISCORD_BOT, 'Failed to send error reply', timer.elapsed('main'), replyError);
             }
         }
     }
@@ -347,7 +347,7 @@ export class DiscordBot extends BaseBot {
         }
 
         try {
-            console.log(`🔧 Executing tool: ${toolName}`);
+            logger.info(MODULE_DISCORD_BOT, `Executing tool: ${toolName}`, timer.elapsed('main'));
 
             // Determine target agent based on tool name
             const targetAgent = this.resolveTargetAgent(toolName);
@@ -367,7 +367,7 @@ export class DiscordBot extends BaseBot {
 
             return {success: true, result};
         } catch (error: any) {
-            console.error(`❌ Tool execution failed (${toolName}):`, error);
+            logger.error(MODULE_DISCORD_BOT, `Tool execution failed (${toolName})`, timer.elapsed('main'), error);
 
             // Classify error and publish event
             const errorType = this.classifyError(error);
@@ -403,7 +403,7 @@ export class DiscordBot extends BaseBot {
         text: string
     ): Promise<void> {
         if (!this.protocol) {
-            console.error('❌ Cannot send Discord reply: protocol not initialized');
+            logger.error(MODULE_DISCORD_BOT, 'Cannot send Discord reply: protocol not initialized', timer.elapsed('main'));
             return;
         }
 
@@ -425,11 +425,11 @@ export class DiscordBot extends BaseBot {
         }
 
         // Split long message into chunks
-        console.log(`📄 Message too long (${text.length} chars), splitting into chunks...`);
+        logger.info(MODULE_DISCORD_BOT, `Message too long (${text.length} chars), splitting into chunks...`, timer.elapsed('main'));
 
         const chunks = this.splitMessage(text, MAX_DISCORD_MESSAGE_LENGTH);
 
-        console.log(`📤 Sending ${chunks.length} message chunks to Discord`);
+        logger.info(MODULE_DISCORD_BOT, `Sending ${chunks.length} message chunks to Discord`, timer.elapsed('main'));
 
         // Send first chunk as a reply to the original message
         await this.invokeToolWithRetry({
@@ -546,7 +546,7 @@ export class DiscordBot extends BaseBot {
                 }>;
             };
 
-            console.log(`🔍 Discovered ${result.tools.length} network tools from broker`);
+            logger.info(MODULE_DISCORD_BOT, `Discovered ${result.tools.length} network tools from broker`, timer.elapsed('main'));
 
             // Convert to Anthropic format
             return result.tools.map((tool: any) => ({
@@ -555,7 +555,7 @@ export class DiscordBot extends BaseBot {
                 input_schema: (tool.inputSchema || { type: 'object' }) as Anthropic.Tool.InputSchema
             }));
         } catch (error) {
-            console.error('❌ Failed to query network tools from broker:', error);
+            logger.error(MODULE_DISCORD_BOT, 'Failed to query network tools from broker', timer.elapsed('main'), error as Error | string);
             return [];  // Fallback to empty array on error
         }
     }
@@ -586,7 +586,7 @@ export class DiscordBot extends BaseBot {
         const uniqueNetworkTools = networkTools.filter(t => !localToolNames.has(t.name));
 
         // 4. Combine and return (local tools first, then unique network tools)
-        console.log(`📋 Available tools: ${localTools.length} local + ${uniqueNetworkTools.length} network (${networkTools.length - uniqueNetworkTools.length} duplicates removed) = ${localTools.length + uniqueNetworkTools.length} total`);
+        logger.info(MODULE_DISCORD_BOT, `Available tools: ${localTools.length} local + ${uniqueNetworkTools.length} network (${networkTools.length - uniqueNetworkTools.length} duplicates removed) = ${localTools.length + uniqueNetworkTools.length} total`, timer.elapsed('main'));
 
         return [...localTools, ...uniqueNetworkTools];
     }
