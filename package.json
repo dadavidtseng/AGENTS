@@ -1,7 +1,7 @@
 {
-  "name": "agent-artist",
-  "version": "1.0.0",
-  "description": "Artist agent for creative tasks",
+  "name": "template-agent-typescript",
+  "version": "0.0.1",
+  "description": "This is a template agent built with typescript.",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -22,10 +22,10 @@
   "author": "Yu-Wei Tseng",
   "license": "MIT",
   "dependencies": {
-    "@agents/shared": "file:../AGENTS/shared",
+    "agents-library": "file:../agents-library",
     "@anthropic-ai/sdk": "^0.32.1",
     "@kadi.build/core": "file:../kadi/kadi-core",
-    "@modelcontextprotocol/sdk": "^1.21.1",
+    "@modelcontextprotocol/sdk": "1.23.1",
     "dotenv": "^16.4.5",
     "zod": "^3.22.4"
   },
