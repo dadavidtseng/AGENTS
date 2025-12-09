@@ -7,8 +7,9 @@
  */
 
 import type { KadiClient } from '@kadi.build/core';
-import type { ClaudeOrchestrator } from '../helpers/claude-orchestrator.js';
 import { z } from 'zod';
+import Anthropic from '@anthropic-ai/sdk';
+import { invokeShrimTool, publishToolEvent, orchestrateWithClaude, type ToolDefinition } from 'agents-library';
 
 // ============================================================================
 // Types
@@ -35,7 +36,7 @@ export type PlanTaskOutput = z.infer<typeof planTaskOutputSchema>;
 
 export async function createPlanTaskHandler(
   client: KadiClient,
-  orchestrator: ClaudeOrchestrator | null
+  anthropic: Anthropic | null
 ): Promise<(params: PlanTaskInput) => Promise<PlanTaskOutput>> {
   return async (params: PlanTaskInput): Promise<PlanTaskOutput> => {
     console.log(`🎯 [plan_task HANDLER CALLED] Received params:`, JSON.stringify(params).substring(0, 100));
@@ -44,44 +45,47 @@ export async function createPlanTaskHandler(
     try {
       const protocol = client.getBrokerProtocol();
 
+      // Require Anthropic client for intelligent workflow
+      if (!anthropic) {
+        throw new Error('Anthropic API client not initialized - set ANTHROPIC_API_KEY environment variable');
+      }
+
       // Option C: Intelligent workflow orchestration with Claude API
-      if (orchestrator) {
-        console.log('🤖 Using Option C: AI-driven workflow orchestration');
+      console.log('🤖 Using Option C: AI-driven workflow orchestration');
 
-        // Step 1: Call shrimp_plan_task (returns planning prompt with guidelines)
-        console.log('Step 1/2: Calling shrimp_plan_task...');
-        const planResult: any = await protocol.invokeTool({
-          targetAgent: 'mcp-server-shrimp-agent-playground',
-          toolName: 'shrimp_plan_task',
-          toolInput: {
-            description: params.description,
-            requirements: params.requirements,
-          },
-          timeout: 30000,
-        });
+      // Step 1: Call shrimp_plan_task (returns planning prompt with guidelines)
+      console.log('Step 1/2: Calling shrimp_plan_task...');
+      const planResult = await invokeShrimTool(protocol, 'shrimp_plan_task', {
+        description: params.description,
+        requirements: params.requirements,
+      });
 
-        // Extract planning prompt from MCP response
-        const basePlanPrompt = Array.isArray(planResult.content)
-          ? planResult.content.filter((item: any) => item.type === 'text').map((item: any) => item.text).join('\n')
-          : String(planResult);
+      if (!planResult.success) {
+        throw new Error(planResult.error?.message || 'Failed to invoke shrimp_plan_task');
+      }
 
-        // Step 2: Enhance the prompt with user intent preservation guidelines
-        // Extract task count from user's request (e.g., "one task", "2 tasks", "three tasks")
-        const taskCountMatch = params.description.match(/\b(one|a|single|1|two|2|three|3|four|4|five|5|six|6|seven|7|eight|8|nine|9|\d+)\s+(task|placeholder)/i);
-        const requestedCount = taskCountMatch ? taskCountMatch[1].toLowerCase() : null;
+      // Extract planning prompt from MCP response
+      const basePlanPrompt = Array.isArray(planResult.data.content)
+        ? planResult.data.content.filter((item: any) => item.type === 'text').map((item: any) => item.text).join('\n')
+        : String(planResult.data);
 
-        // Map word numbers to digits
-        const numberWords: Record<string, number> = {
-          'one': 1, 'a': 1, 'single': 1,
-          'two': 2, 'three': 3, 'four': 4, 'five': 5,
-          'six': 6, 'seven': 7, 'eight': 8, 'nine': 9
-        };
+      // Step 2: Enhance the prompt with user intent preservation guidelines
+      // Extract task count from user's request (e.g., "one task", "2 tasks", "three tasks")
+      const taskCountMatch = params.description.match(/\b(one|a|single|1|two|2|three|3|four|4|five|5|six|6|seven|7|eight|8|nine|9|\d+)\s+(task|placeholder)/i);
+      const requestedCount = taskCountMatch ? taskCountMatch[1].toLowerCase() : null;
 
-        const exactCount = requestedCount
-          ? (numberWords[requestedCount] || parseInt(requestedCount, 10))
-          : null;
+      // Map word numbers to digits
+      const numberWords: Record<string, number> = {
+        'one': 1, 'a': 1, 'single': 1,
+        'two': 2, 'three': 3, 'four': 4, 'five': 5,
+        'six': 6, 'seven': 7, 'eight': 8, 'nine': 9
+      };
 
-        const enhancedPrompt = `${basePlanPrompt}
+      const exactCount = requestedCount
+        ? (numberWords[requestedCount] || parseInt(requestedCount, 10))
+        : null;
+
+      const enhancedPrompt = `${basePlanPrompt}
 
 ## CRITICAL: Task Count and Complexity Rules
 
@@ -131,142 +135,149 @@ ${exactCount ? `**EXPLICIT TASK COUNT CONSTRAINT**: The user requested EXACTLY $
 ${exactCount ? `\n**REMINDER**: You must create EXACTLY ${exactCount} task(s) as requested.\n` : ''}
 Now proceed: analyze → reflect → split (ONCE) → DONE.`;
 
-
-        // Step 2: Call Claude API with enhanced prompt and full tool access
-        console.log('Step 2/2: Calling Claude API for autonomous workflow orchestration...');
-        await orchestrator.callClaude(
-          enhancedPrompt,
-          protocol,
-          ['shrimp_analyze_task', 'shrimp_reflect_task', 'shrimp_split_tasks']
-        );
-
-        console.log(`✅ Claude API completed autonomous workflow orchestration`);
-
-        // Query all tasks to get complete task list with details
-        const listResult: any = await protocol.invokeTool({
-          targetAgent: 'mcp-server-shrimp-agent-playground',
-          toolName: 'shrimp_list_tasks',
-          toolInput: {
-            status: 'all',  // Get all tasks to see what was created
-          },
-          timeout: 30000,
-        });
-
-        // The MCP response contains the full task list in text format
-        const listContent = Array.isArray(listResult.content)
-          ? listResult.content.filter((item: any) => item.type === 'text').map((item: any) => item.text).join('\n')
-          : String(listResult);
-
-        console.log(`📋 List result preview: ${listContent.substring(0, 500)}...`);
-        console.log(`📋 List result (first ### section): ${listContent.substring(listContent.indexOf('###'), listContent.indexOf('###') + 300)}...`);
-
-        // Try multiple regex patterns to match different output formats
-        const createdTasks: Array<{number: string, id: string, name: string, status: string}> = [];
-
-        // Try Pattern 1: Task <number>: [<id>] <name> (Status: <status>)
-        let taskRegex = /Task (\d+):\s*\[([a-f0-9\-]+)\]\s*(.+?)\s*\(Status:\s*(\w+)\)/gi;
-        let match;
-        while ((match = taskRegex.exec(listContent)) !== null) {
-          createdTasks.push({
-            number: match[1],
-            id: match[2],
-            name: match[3].trim(),
-            status: match[4],
-          });
-        }
-
-        // Try Pattern 2: Markdown format from shrimp_list_tasks
-        // Expected format: ### Task Name \n **ID:** `uuid`
-        if (createdTasks.length === 0) {
-          const taskPattern = /###\s+([^\n]+)\s+\*\*ID:\*\*\s*`?([a-f0-9\-]{36})`?/gi;
-          let taskNumber = 0;
-
-          console.log(`🔍 DEBUG: Attempting to match task pattern in content (length: ${listContent.length})`);
-
-          while ((match = taskPattern.exec(listContent)) !== null) {
-            taskNumber++;
-            const name = match[1].trim();
-            const id = match[2];
-            const status = 'pending';
-
-            createdTasks.push({
-              number: String(taskNumber),
-              id: id,
-              name: name,
-              status: status,
-            });
-
-            console.log(`✅ DEBUG: Found task #${taskNumber}: "${name}" (${id})`);
+      // Define tool definitions for orchestration
+      const toolDefinitions: ToolDefinition[] = [
+        {
+          name: 'shrimp_analyze_task',
+          description: 'Analyze task requirements and provide detailed breakdown',
+          input_schema: {
+            type: 'object',
+            properties: {
+              initialConcept: { type: 'string', description: 'Initial concept or requirement' }
+            },
+            required: ['initialConcept']
           }
-
-          if (createdTasks.length === 0) {
-            console.log(`⚠️  DEBUG: No tasks matched. Sample content:\n${listContent.substring(0, 800)}`);
+        },
+        {
+          name: 'shrimp_reflect_task',
+          description: 'Reflect on task analysis and refine approach',
+          input_schema: {
+            type: 'object',
+            properties: {
+              analysis: { type: 'string', description: 'Analysis result to reflect on' }
+            },
+            required: ['analysis']
+          }
+        },
+        {
+          name: 'shrimp_split_tasks',
+          description: 'Split tasks into actionable subtasks',
+          input_schema: {
+            type: 'object',
+            properties: {
+              updateMode: { type: 'string', enum: ['append', 'replace', 'clearAllTasks'] },
+              tasksRaw: { type: 'string', description: 'JSON string of task array' },
+              globalAnalysisResult: { type: 'string', description: 'Global analysis summary' }
+            },
+            required: ['updateMode', 'tasksRaw']
           }
         }
+      ];
 
-        console.log(`📋 Tasks parsed: ${createdTasks.length} task(s)`);
+      // Step 2: Call Claude API with enhanced prompt and full tool access
+      console.log('Step 2/2: Calling Claude API for autonomous workflow orchestration...');
+      await orchestrateWithClaude(
+        anthropic,
+        protocol,
+        enhancedPrompt,
+        toolDefinitions,
+        { client } // Pass KadiClient for async response handling
+      );
 
-        // Format the response message with all task details
-        let message = '';
-        if (createdTasks.length === 0) {
-          message = 'Task creation completed. Please use list_active_tasks to view the created tasks.';
-        } else if (createdTasks.length === 1) {
-          const task = createdTasks[0];
-          message = `Task created successfully:\n\n**Task #${task.number}**\n- ID: ${task.id}\n- Name: ${task.name}\n- Status: ${task.status}\n\n${params.role ? `Will be assigned to ${params.role} after validation. ` : ''}You can review, update, execute, or remove this task using the task ID.`;
-        } else {
-          message = `${createdTasks.length} tasks created successfully:\n\n`;
-          for (const task of createdTasks) {
-            message += `**Task #${task.number}**\n- ID: ${task.id}\n- Name: ${task.name}\n- Status: ${task.status}\n\n`;
-          }
-          message += `${params.role ? `Will be assigned to ${params.role} after validation. ` : ''}You can review, update, execute, or remove these tasks using their task IDs.`;
-        }
+      console.log(`✅ Claude API completed autonomous workflow orchestration`);
 
-        return {
-          taskId: createdTasks.length > 0 ? createdTasks[0].id : 'unknown',
-          status: createdTasks.length > 0 ? createdTasks[0].status as any : 'pending',
-          message,
-        };
-      } else {
-        // Fallback: Simple wrapper mode (if Claude orchestrator unavailable)
-        console.log(`⏭️  Using simple wrapper mode (Claude orchestrator unavailable)`);
+      // Query all tasks to get complete task list with details
+      const listResult = await invokeShrimTool(protocol, 'shrimp_list_tasks', {
+        status: 'all',  // Get all tasks to see what was created
+      }, { client }); // Pass client for async response handling
 
-        const taskData = [{
-          name: 'Task: ' + params.description.substring(0, 50),
-          description: params.description,
-          implementationGuide: params.requirements || 'No specific implementation requirements provided.',
-          dependencies: [],
-          relatedFiles: [],
-          verificationCriteria: 'Task completion as described',
-        }];
-
-        const result: any = await protocol.invokeTool({
-          targetAgent: 'mcp-server-shrimp-agent-playground',
-          toolName: 'shrimp_split_tasks',
-          toolInput: {
-            updateMode: 'append',
-            tasksRaw: JSON.stringify(taskData),
-            globalAnalysisResult: params.description,
-          },
-          timeout: 30000,
-        });
-
-        const taskId = result.ephemeral?.taskCreationResult?.message || 'created';
-
-        return {
-          taskId,
-          status: 'pending',
-          message: `Task created (fallback mode). ${params.role ? `Will be assigned to ${params.role} after validation. ` : ''}You can review, update, execute, or remove this task using the task ID.`,
-        };
+      if (!listResult.success) {
+        throw new Error(listResult.error?.message || 'Failed to invoke shrimp_list_tasks');
       }
+
+      // The MCP response contains the full task list in text format
+      const listContent = Array.isArray(listResult.data.content)
+        ? listResult.data.content.filter((item: any) => item.type === 'text').map((item: any) => item.text).join('\n')
+        : String(listResult.data);
+
+      console.log(`📋 List result preview: ${listContent.substring(0, 500)}...`);
+      console.log(`📋 List result (first ### section): ${listContent.substring(listContent.indexOf('###'), listContent.indexOf('###') + 300)}...`);
+
+      // Try multiple regex patterns to match different output formats
+      const createdTasks: Array<{number: string, id: string, name: string, status: string}> = [];
+
+      // Try Pattern 1: Task <number>: [<id>] <name> (Status: <status>)
+      let taskRegex = /Task (\d+):\s*\[([a-f0-9\-]+)\]\s*(.+?)\s*\(Status:\s*(\w+)\)/gi;
+      let match;
+      while ((match = taskRegex.exec(listContent)) !== null) {
+        createdTasks.push({
+          number: match[1],
+          id: match[2],
+          name: match[3].trim(),
+          status: match[4],
+        });
+      }
+
+      // Try Pattern 2: Markdown format from shrimp_list_tasks
+      // Expected format: ### Task Name \n **ID:** `uuid`
+      if (createdTasks.length === 0) {
+        const taskPattern = /###\s+([^\n]+)\s+\*\*ID:\*\*\s*`?([a-f0-9\-]{36})`?/gi;
+        let taskNumber = 0;
+
+        console.log(`🔍 DEBUG: Attempting to match task pattern in content (length: ${listContent.length})`);
+
+        while ((match = taskPattern.exec(listContent)) !== null) {
+          taskNumber++;
+          const name = match[1].trim();
+          const id = match[2];
+          const status = 'pending';
+
+          createdTasks.push({
+            number: String(taskNumber),
+            id: id,
+            name: name,
+            status: status,
+          });
+
+          console.log(`✅ DEBUG: Found task #${taskNumber}: "${name}" (${id})`);
+        }
+
+        if (createdTasks.length === 0) {
+          console.log(`⚠️  DEBUG: No tasks matched. Sample content:\n${listContent.substring(0, 800)}`);
+        }
+      }
+
+      console.log(`📋 Tasks parsed: ${createdTasks.length} task(s)`);
+
+      // Format the response message with all task details
+      let message = '';
+      if (createdTasks.length === 0) {
+        message = 'Task creation completed. Please use list_active_tasks to view the created tasks.';
+      } else if (createdTasks.length === 1) {
+        const task = createdTasks[0];
+        message = `Task created successfully:\n\n**Task #${task.number}**\n- ID: ${task.id}\n- Name: ${task.name}\n- Status: ${task.status}\n\n${params.role ? `Will be assigned to ${params.role} after validation. ` : ''}You can review, update, execute, or remove this task using the task ID.`;
+      } else {
+        message = `${createdTasks.length} tasks created successfully:\n\n`;
+        for (const task of createdTasks) {
+          message += `**Task #${task.number}**\n- ID: ${task.id}\n- Name: ${task.name}\n- Status: ${task.status}\n\n`;
+        }
+        message += `${params.role ? `Will be assigned to ${params.role} after validation. ` : ''}You can review, update, execute, or remove these tasks using their task IDs.`;
+      }
+
+      return {
+        taskId: createdTasks.length > 0 ? createdTasks[0].id : 'unknown',
+        status: createdTasks.length > 0 ? createdTasks[0].status as any : 'pending',
+        message,
+      };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.error(`❌ Failed to plan task: ${errorMsg}`);
 
-      client.publishEvent('task.planning.failed', {
-        description: params.description,
-        error: errorMsg,
-        agent: 'agent-producer',
-      });
+      // Publish failure event using publishToolEvent from agents-library
+      await publishToolEvent(client, 'failed',
+        { error: errorMsg, description: params.description },
+        { toolName: 'plan_task' }
+      );
 
       throw new Error(`Failed to plan task: ${errorMsg}`);
     }

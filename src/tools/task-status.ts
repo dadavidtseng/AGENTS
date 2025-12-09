@@ -7,6 +7,7 @@
 
 import type { KadiClient } from '@kadi.build/core';
 import { z } from 'zod';
+import { invokeShrimTool, publishToolEvent } from 'agents-library';
 
 // ============================================================================
 // Types
@@ -45,21 +46,20 @@ export async function createGetTaskStatusHandler(
     try {
       const protocol = client.getBrokerProtocol();
 
-      // Forward to shrimp_get_task_detail via broker protocol
-      const result: any = await protocol.invokeTool({
-        targetAgent: 'mcp-server-shrimp-agent-playground',
-        toolName: 'shrimp_get_task_detail',
-        toolInput: {
-          taskId: params.taskId
-        },
-        timeout: 30000
-      });
+      // Forward to shrimp_get_task_detail via agents-library
+      const result = await invokeShrimTool(protocol, 'shrimp_get_task_detail', {
+        taskId: params.taskId
+      }, { client }); // Pass client for async response handling
+
+      if (!result.success) {
+        throw new Error(result.error?.message || 'Failed to invoke shrimp_get_task_detail');
+      }
 
       // Extract task details from MCP response
       // The MCP response contains the task details in text format
-      const detailContent = Array.isArray(result.content)
-        ? result.content.filter((item: any) => item.type === 'text').map((item: any) => item.text).join('\n')
-        : String(result);
+      const detailContent = Array.isArray(result.data.content)
+        ? result.data.content.filter((item: any) => item.type === 'text').map((item: any) => item.text).join('\n')
+        : String(result.data);
 
       console.log(`✅ Retrieved status for task ${params.taskId}`);
 
@@ -103,6 +103,13 @@ export async function createGetTaskStatusHandler(
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.error(`❌ Failed to get task status: ${errorMsg}`);
+
+      // Publish failure event using publishToolEvent from agents-library
+      await publishToolEvent(client, 'failed',
+        { error: errorMsg, taskId: params.taskId },
+        { toolName: 'get_task_status', taskId: params.taskId }
+      );
+
       throw new Error(`Failed to get task status: ${errorMsg}`);
     }
   };

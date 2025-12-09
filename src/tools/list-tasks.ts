@@ -7,6 +7,7 @@
 
 import type { KadiClient } from '@kadi.build/core';
 import { z } from 'zod';
+import { invokeShrimTool, publishToolEvent } from 'agents-library';
 
 // ============================================================================
 // Types
@@ -37,21 +38,20 @@ export async function createListActiveTasksHandler(
     try {
       const protocol = client.getBrokerProtocol();
 
-      // Forward to shrimp_list_tasks via broker protocol
-      const result: any = await protocol.invokeTool({
-        targetAgent: 'mcp-server-shrimp-agent-playground',
-        toolName: 'shrimp_list_tasks',
-        toolInput: {
-          status: params.status || 'all',
-        },
-        timeout: 30000,
-      });
+      // Forward to shrimp_list_tasks via agents-library
+      const result = await invokeShrimTool(protocol, 'shrimp_list_tasks', {
+        status: params.status || 'all',
+      }, { client }); // Pass client for async response handling
+
+      if (!result.success) {
+        throw new Error(result.error?.message || 'Failed to invoke shrimp_list_tasks');
+      }
 
       // Extract task list from MCP response
       // The MCP response contains the task list in text format
-      const listContent = Array.isArray(result.content)
-        ? result.content.filter((item: any) => item.type === 'text').map((item: any) => item.text).join('\n')
-        : String(result);
+      const listContent = Array.isArray(result.data.content)
+        ? result.data.content.filter((item: any) => item.type === 'text').map((item: any) => item.text).join('\n')
+        : String(result.data);
 
       // Parse tasks from markdown format
       // Expected format: ### Task Name \n **ID:** `uuid`
@@ -85,6 +85,12 @@ export async function createListActiveTasksHandler(
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.error(`❌ Failed to list tasks: ${errorMsg}`);
+
+      // Publish failure event using publishToolEvent from agents-library
+      await publishToolEvent(client, 'failed',
+        { error: errorMsg },
+        { toolName: 'list_active_tasks' }
+      );
 
       throw new Error(`Failed to list tasks: ${errorMsg}`);
     }
