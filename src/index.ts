@@ -135,16 +135,36 @@ class SlackManager {
    * Handle incoming @mention event
    */
   private async handleMention(event: any): Promise<void> {
+    const startTime = Date.now();
+    const startMs = new Date().toISOString();
+
     try {
+      console.log(`\n📥 [${startMs}] ===== MENTION RECEIVED FROM SLACK =====`);
+      console.log(`   Raw event.ts: ${event.ts}`);
+      console.log(`   Raw event.user: ${event.user}`);
+      console.log(`   Raw event.channel: ${event.channel}`);
+
       // Get bot user ID from Slack API (cached after first call)
       if (!this.botUserId && this.app) {
+        console.log(`🔍 [+0ms] Bot ID not cached, calling Slack API auth.test()...`);
+        const authStart = Date.now();
         const authResult = await this.app.client.auth.test();
+        const authDuration = Date.now() - authStart;
         this.botUserId = authResult.user_id as string;
-        console.log(`🤖 Bot user ID: ${this.botUserId}`);
+        console.log(`🤖 [+${authDuration}ms] ⭐ BLOCKING CALL COMPLETED: Bot user ID fetched from Slack API`);
+        console.log(`   ${this.botUserId}`);
+      } else if (this.botUserId) {
+        console.log(`🤖 [+0ms] Bot user ID (cached, no API call): ${this.botUserId}`);
+      } else {
+        console.log(`⚠️  [+0ms] this.app is null! Cannot fetch bot ID`);
       }
 
       // Remove bot mention tags from text (e.g., <@U12345>)
+      console.log(`📝 [+${Date.now() - startTime}ms] Parsing mention text...`);
+      const parseStart = Date.now();
       const cleanText = event.text.replace(/<@[A-Z0-9]+>/g, '').trim();
+      const parseDuration = Date.now() - parseStart;
+      console.log(`📝 [+${parseDuration}ms] Parsed text: "${cleanText}"`);
 
       // Create mention object
       const mention: SlackMention = {
@@ -152,21 +172,44 @@ class SlackManager {
         user: event.user,
         text: cleanText,
         channel: event.channel,
-        thread_ts: event.thread_ts || event.ts, // Use thread_ts if in thread, else start new thread
+        thread_ts: event.thread_ts || event.ts,
         ts: event.ts,
       };
+      console.log(`✏️  [+${Date.now() - startTime}ms] Mention object created`);
 
-      // Publish to KĀDI event bus (non-blocking)
+      // Publish to KĀDI event bus (blocking with proper error handling)
       if (this.publisher && this.botUserId) {
-        this.publisher.publishMention(mention, this.botUserId).catch((error) => {
-          console.error('[KĀDI] Failed to publish mention event:', error);
-          // Don't block Slack processing on publish failure
-        });
+        console.log(`📤 [+${Date.now() - startTime}ms] Publishing to KĀDI broker...`);
+        const publishStart = Date.now();
+
+        try {
+          console.log(`📤 [+${Date.now() - startTime}ms] Awaiting publishMention() call...`);
+          await this.publisher.publishMention(mention, this.botUserId);
+          const publishDuration = Date.now() - publishStart;
+          console.log(`✅ [+${publishDuration}ms] ⭐ BLOCKING CALL COMPLETED: Mention published to KĀDI`);
+          console.log(`⏱️  Total time from Slack receive to KĀDI publish: ${Date.now() - startTime}ms\n`);
+        } catch (error) {
+          const publishDuration = Date.now() - publishStart;
+          console.error(`❌ [+${publishDuration}ms] ⭐ BLOCKING CALL FAILED: publishMention threw error`);
+          console.error(`   Error: ${error instanceof Error ? error.message : String(error)}`);
+          console.warn(`⚠️  Slack mention may not have reached KĀDI broker`);
+          console.log(`❌ Failed at total time: ${Date.now() - startTime}ms\n`);
+        }
+      } else {
+        console.warn(`⚠️  [+${Date.now() - startTime}ms] CANNOT PUBLISH: publisher=${!!this.publisher}, botUserId=${this.botUserId}`);
       }
 
-      console.log(`💬 Received mention: "${cleanText}" from @${event.user}`);
+      const handlerDuration = Date.now() - startTime;
+      console.log(`💬 [+${handlerDuration}ms] ✅ HANDLER COMPLETE: "${cleanText}" from @${event.user}`);
+      if (handlerDuration > 500) {
+        console.warn(`⚠️  SLOW HANDLER: Took ${handlerDuration}ms (>500ms threshold)`);
+        console.warn(`   This will block Slack from processing the next mention!`);
+      }
+      console.log();
     } catch (error) {
-      console.error('❌ Error handling mention:', error);
+      const errorTime = Date.now() - startTime;
+      console.error(`❌ [+${errorTime}ms] Unhandled error in mention handler:`, error);
+      console.error(`❌ Error occurred at: ${errorTime}ms into handler\n`);
     }
   }
 
@@ -179,8 +222,18 @@ class SlackManager {
       return;
     }
 
-    await this.app.start();
-    console.log('✅ Slack Socket Mode listener started');
+    console.log('🚀 [START] Starting Slack Socket Mode listener...');
+    console.log('🚀 [START] Registering event handlers BEFORE starting app...');
+
+    try {
+      await this.app.start();
+      console.log('✅ [START] Slack Socket Mode listener started successfully');
+      console.log('🎧 [START] Ready to receive @mentions from Slack');
+      console.log('🎧 [START] Event handler registered for: app_mention');
+    } catch (error) {
+      console.error('❌ [START] Failed to start Slack Socket Mode:', error);
+      throw error;
+    }
   }
 
   /**
@@ -215,20 +268,39 @@ class SlackEventPublisher {
    * Start the event publisher
    */
   async run(): Promise<void> {
+    const runStartTime = Date.now();
+    console.log('\n═══════════════════════════════════════════════════════════');
     console.log('🚀 Starting Slack Event Publisher...');
+    console.log('═══════════════════════════════════════════════════════════');
     console.log('📋 Configuration:');
     console.log(`   - Log Level: ${this.config.LOG_LEVEL}`);
     console.log(`   - Broker: ${this.config.KADI_BROKER_URL}`);
+    console.log(`   - Bot User ID: ${this.config.SLACK_BOT_USER_ID}`);
+    console.log();
 
     // Start Slack Socket Mode
+    console.log('[STEP 1] Starting Slack Socket Mode...');
+    const slackStartTime = Date.now();
     await this.slackManager.start();
+    const slackDuration = Date.now() - slackStartTime;
+    console.log(`✅ [STEP 1] Slack Socket Mode started (+${slackDuration}ms)`);
+    console.log();
 
     // Connect to KĀDI broker
+    console.log('[STEP 2] Connecting to KĀDI broker...');
+    const brokerStartTime = Date.now();
     await this.publisher.connect();
+    const brokerDuration = Date.now() - brokerStartTime;
+    console.log(`✅ [STEP 2] Connected to KĀDI broker (+${brokerDuration}ms)`);
+    console.log();
 
+    const totalDuration = Date.now() - runStartTime;
+    console.log('═══════════════════════════════════════════════════════════');
     console.log('✅ Slack Event Publisher ready');
     console.log('🎧 Listening for Slack @mentions...');
     console.log('📤 Publishing events to KĀDI broker');
+    console.log(`⏱️  Total startup time: ${totalDuration}ms`);
+    console.log('═══════════════════════════════════════════════════════════\n');
 
     // Keep process alive and handle graceful shutdown
     process.on('SIGINT', async () => {
