@@ -33,13 +33,18 @@
  */
 
 import 'dotenv/config';
-import { KadiClient, z } from '@kadi.build/core';
-import { ClaudeOrchestrator } from './helpers/claude-orchestrator.js';
-import { createPlanTaskHandler, planTaskInputSchema, planTaskOutputSchema } from './tools/plan-task.js';
-import { createListActiveTasksHandler, listActiveTasksInputSchema, listActiveTasksOutputSchema } from './tools/list-tasks.js';
-import { createGetTaskStatusHandler, getTaskStatusInputSchema, getTaskStatusOutputSchema } from './tools/task-status.js';
-import { createAssignTaskHandler, assignTaskInputSchema, assignTaskOutputSchema } from './tools/assign-task.js';
-import { setupTaskCompletionNotifier } from './handlers/task-completion-notifier.js';
+import {KadiClient, z} from '@kadi.build/core';
+import Anthropic from '@anthropic-ai/sdk';
+import {createPlanTaskHandler, planTaskInputSchema, planTaskOutputSchema} from './tools/plan-task.js';
+import {
+    createListActiveTasksHandler,
+    listActiveTasksInputSchema,
+    listActiveTasksOutputSchema
+} from './tools/list-tasks.js';
+import {createGetTaskStatusHandler, getTaskStatusInputSchema, getTaskStatusOutputSchema} from './tools/task-status.js';
+import {createAssignTaskHandler, assignTaskInputSchema, assignTaskOutputSchema} from './tools/assign-task.js';
+import {setupTaskCompletionNotifier} from './handlers/task-completion-notifier.js';
+import {invokeShrimTool, publishToolEvent} from 'agents-library';
 
 // ============================================================================
 // Tool Schemas (Imported from tool modules)
@@ -54,18 +59,18 @@ import { setupTaskCompletionNotifier } from './handlers/task-completion-notifier
  * Input schema for approve_completion tool
  */
 const approveCompletionInputSchema = z.object({
-  taskId: z.string().describe('Task ID to approve'),
-  summary: z.string().describe('Summary of completion verification and approval'),
-  score: z.number().min(0).max(100).describe('Quality score (0-100)')
+    taskId: z.string().describe('Task ID to approve'),
+    summary: z.string().describe('Summary of completion verification and approval'),
+    score: z.number().min(0).max(100).describe('Quality score (0-100)')
 });
 
 /**
  * Output schema for approve_completion tool
  */
 const approveCompletionOutputSchema = z.object({
-  taskId: z.string(),
-  status: z.string(),
-  message: z.string().describe('Approval confirmation message')
+    taskId: z.string(),
+    status: z.string(),
+    message: z.string().describe('Approval confirmation message')
 });
 
 // ============================================================================
@@ -83,8 +88,8 @@ type ApproveCompletionOutput = z.infer<typeof approveCompletionOutputSchema>;
 // ============================================================================
 
 const config = {
-  brokerUrl: process.env.KADI_BROKER_URL || 'ws://localhost:8080',
-  networks: ['global', 'slack', 'discord', 'utility']
+    brokerUrl: process.env.KADI_BROKER_URL || 'ws://localhost:8080',
+    networks: ['global', 'slack', 'discord', 'utility']
 };
 
 // ============================================================================
@@ -101,17 +106,17 @@ const config = {
  * - MCP upstream calls to mcp-shrimp-task-manager
  */
 const client = new KadiClient({
-  name: 'agent-producer',
-  version: '1.0.0',
-  role: 'agent',
-  broker: config.brokerUrl,
-  networks: config.networks
+    name: 'agent-producer',
+    version: '1.0.0',
+    role: 'agent',
+    broker: config.brokerUrl,
+    networks: config.networks
 });
 
 // Add error handler to prevent crashes from subscription timeouts
 client.on('error', (error: Error) => {
-  console.error('⚠️  KĀDI Client Error (non-fatal):', error.message);
-  // Log but don't crash - these are often transient issues
+    console.error('⚠️  KĀDI Client Error (non-fatal):', error.message);
+    // Log but don't crash - these are often transient issues
 });
 
 // ============================================================================
@@ -123,33 +128,27 @@ client.on('error', (error: Error) => {
  * Used to send notifications back to the channel where the task was assigned
  */
 export const taskChannelMap = new Map<string, {
-  type: 'slack' | 'discord' | 'desktop';
-  channelId?: string;
-  userId?: string;
-  threadTs?: string; // Slack thread timestamp for replying in thread
+    type: 'slack' | 'discord' | 'desktop';
+    channelId?: string;
+    userId?: string;
+    threadTs?: string; // Slack thread timestamp for replying in thread
 }>();
 
 // ============================================================================
-// Claude Orchestrator (for Option C workflow)
+// Anthropic Client (for Option C workflow)
 // ============================================================================
 
 /**
- * Claude API orchestrator for intelligent task planning
- *
- * Provides AI-driven task refinement by orchestrating the complete shrimp workflow:
- * plan → analyze → reflect → split
+ * Anthropic API client for intelligent task planning
  */
-let orchestrator: ClaudeOrchestrator | null = null;
+let anthropic: Anthropic | null = null;
 
-// Initialize orchestrator if ANTHROPIC_API_KEY is available
+// Initialize Anthropic client if API key is available
 if (process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'YOUR_ANTHROPIC_API_KEY_HERE') {
-  orchestrator = new ClaudeOrchestrator({
-    client,
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-  });
-  console.log('✅ Claude orchestrator initialized for Option C workflow');
+    anthropic = new Anthropic({apiKey: process.env.ANTHROPIC_API_KEY});
+    console.log('✅ Anthropic client initialized for Option C workflow');
 } else {
-  console.log('⏭️  Claude orchestrator disabled (set ANTHROPIC_API_KEY to enable Option C workflow)');
+    console.log('⏭️  Anthropic client disabled (set ANTHROPIC_API_KEY to enable Option C workflow)');
 }
 
 // ============================================================================
@@ -160,13 +159,14 @@ if (process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'YOUR_ANT
  * Plan Task Tool Registration
  *
  * Note: Tool registration uses imported schemas and handler factory
+ * Now uses orchestrateWithClaude from agents-library for Option C workflow
  */
-const planTaskHandler = await createPlanTaskHandler(client, orchestrator);
+const planTaskHandler = await createPlanTaskHandler(client, anthropic);
 client.registerTool({
-  name: 'plan_task',
-  description: 'Create and assign a task to worker agents (artist, designer, or programmer). Uses AI-driven workflow orchestration for intelligent task planning with Claude API refinement.',
-  input: planTaskInputSchema,
-  output: planTaskOutputSchema
+    name: 'plan_task',
+    description: 'Create and assign a task to worker agents (artist, designer, or programmer). Uses AI-driven workflow orchestration for intelligent task planning with Claude API refinement.',
+    input: planTaskInputSchema,
+    output: planTaskOutputSchema
 }, planTaskHandler);
 
 /**
@@ -176,8 +176,8 @@ client.registerTool({
  */
 const listActiveTasksHandler = await createListActiveTasksHandler(client);
 client.registerTool({
-  name: 'list_active_tasks',
-  description: `List all active tasks across all worker agents with optional status filtering. Queries mcp-shrimp-task-manager for current task state.
+    name: 'list_active_tasks',
+    description: `List all active tasks across all worker agents with optional status filtering. Queries mcp-shrimp-task-manager for current task state.
 
 IMPORTANT OUTPUT FORMAT:
 When presenting results to users, ALWAYS format the task list as follows:
@@ -193,8 +193,8 @@ When presenting results to users, ALWAYS format the task list as follows:
    3. 5166ce3c-fdc6-42f6-a1e6-d9975ba38bdc - Placeholder Task for Testing
 
 Do NOT summarize or paraphrase - show the complete numbered list with IDs and names.`,
-  input: listActiveTasksInputSchema,
-  output: listActiveTasksOutputSchema
+    input: listActiveTasksInputSchema,
+    output: listActiveTasksOutputSchema
 }, listActiveTasksHandler);
 
 /**
@@ -204,10 +204,10 @@ Do NOT summarize or paraphrase - show the complete numbered list with IDs and na
  */
 const getTaskStatusHandler = await createGetTaskStatusHandler(client);
 client.registerTool({
-  name: 'get_task_status',
-  description: 'Get detailed status of a specific task including worker agent progress, file operations, and error logs. Queries mcp-shrimp-task-manager for task details.',
-  input: getTaskStatusInputSchema,
-  output: getTaskStatusOutputSchema
+    name: 'get_task_status',
+    description: 'Get detailed status of a specific task including worker agent progress, file operations, and error logs. Queries mcp-shrimp-task-manager for task details.',
+    input: getTaskStatusInputSchema,
+    output: getTaskStatusOutputSchema
 }, getTaskStatusHandler);
 
 /**
@@ -217,10 +217,10 @@ client.registerTool({
  */
 const assignTaskHandler = await createAssignTaskHandler(client);
 client.registerTool({
-  name: 'assign_task',
-  description: 'Assign a task to a worker agent (artist, designer, or programmer). Validates task existence and publishes KĀDI event for worker agent to receive and execute. Supports explicit role assignment or auto-detection from task metadata.',
-  input: assignTaskInputSchema,
-  output: assignTaskOutputSchema
+    name: 'assign_task',
+    description: 'Assign a task to a worker agent (artist, designer, or programmer). Validates task existence and publishes KĀDI event for worker agent to receive and execute. Supports explicit role assignment or auto-detection from task metadata.',
+    input: assignTaskInputSchema,
+    output: assignTaskOutputSchema
 }, assignTaskHandler);
 
 /**
@@ -233,81 +233,69 @@ client.registerTool({
  * @returns Approval confirmation
  */
 client.registerTool({
-  name: 'approve_completion',
-  description: 'Approve task completion and trigger final git merge. Validates completion criteria via mcp-shrimp-task-manager and publishes approval notification.',
-  input: approveCompletionInputSchema,
-  output: approveCompletionOutputSchema
+    name: 'approve_completion',
+    description: 'Approve task completion and trigger final git merge. Validates completion criteria via mcp-shrimp-task-manager and publishes approval notification.',
+    input: approveCompletionInputSchema,
+    output: approveCompletionOutputSchema
 }, async (params: ApproveCompletionInput): Promise<ApproveCompletionOutput> => {
-  console.log(`✅ Approving task completion: ${params.taskId} (score: ${params.score})`);
-  console.log(`🔍 [DEBUG] approve_completion params:`, JSON.stringify(params, null, 2));
+    console.log(`✅ Approving task completion: ${params.taskId} (score: ${params.score})`);
+    console.log(`🔍 [DEBUG] approve_completion params:`, JSON.stringify(params, null, 2));
 
-  try {
-    // Get broker protocol for direct tool invocation
-    const protocol = client.getBrokerProtocol();
+    try {
+        // Get broker protocol for direct tool invocation
+        const protocol = client.getBrokerProtocol();
 
-    const toolInput = {
-      taskId: params.taskId,
-      summary: params.summary,
-      score: params.score
-    };
-    console.log(`🔍 [DEBUG] Calling shrimp_verify_task with:`, JSON.stringify(toolInput, null, 2));
+        const toolInput = {
+            taskId: params.taskId,
+            summary: params.summary,
+            score: params.score
+        };
+        console.log(`🔍 [DEBUG] Calling shrimp_verify_task with:`, JSON.stringify(toolInput, null, 2));
 
-    // Forward to shrimp_verify_task via broker protocol
-    const result: any = await protocol.invokeTool({
-      targetAgent: 'mcp-server-shrimp-agent-playground',
-      toolName: 'shrimp_verify_task',
-      toolInput: toolInput,
-      timeout: 30000
-    });
+        // Forward to shrimp_verify_task via agents-library
+        const result = await invokeShrimTool(protocol, 'shrimp_verify_task', toolInput, {client});
 
-    console.log(`🔍 [DEBUG] shrimp_verify_task result:`, JSON.stringify(result, null, 2));
+        if (!result.success) {
+            const errorText = result.error?.message || 'Verification failed';
+            console.error(`❌ Shrimp verification failed: ${errorText}`);
 
-    // Check if shrimp returned an error
-    if (result.isError) {
-      const errorText = Array.isArray(result.content)
-        ? result.content.filter((item: any) => item.type === 'text').map((item: any) => item.text).join('\n')
-        : String(result.content || result);
+            // Publish failure event using publishToolEvent
+            await publishToolEvent(client, 'failed',
+                {error: errorText, taskId: params.taskId},
+                {toolName: 'approve_completion', taskId: params.taskId}
+            );
 
-      console.error(`❌ Shrimp verification failed: ${errorText}`);
+            throw new Error(`Task verification failed: ${errorText}`);
+        }
 
-      // Publish failure event
-      client.publishEvent('task.approval.failed', {
-        taskId: params.taskId,
-        error: errorText,
-        agent: 'agent-producer'
-      });
+        console.log(`🔍 [DEBUG] shrimp_verify_task result:`, JSON.stringify(result.data, null, 2));
+        console.log(`✅ Task ${params.taskId} approved successfully`);
 
-      throw new Error(`Task verification failed: ${errorText}`);
+        // Publish approval event
+        client.publishEvent('task.approved', {
+            taskId: params.taskId,
+            score: params.score,
+            agent: 'agent-producer'
+        });
+        console.log(`📤 Published task.approved event`);
+
+        return {
+            taskId: params.taskId,
+            status: (result.data as any)?.status || 'approved',
+            message: `Task ${params.taskId} approved with score ${params.score}`
+        };
+    } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.error(`❌ Failed to approve task: ${errorMsg}`);
+
+        // Publish error event using publishToolEvent
+        await publishToolEvent(client, 'failed',
+            {error: errorMsg, taskId: params.taskId},
+            {toolName: 'approve_completion', taskId: params.taskId}
+        );
+
+        throw new Error(`Failed to approve task: ${errorMsg}`);
     }
-
-    console.log(`✅ Task ${params.taskId} approved successfully`);
-
-    // Publish approval event
-    client.publishEvent('task.approved', {
-      taskId: params.taskId,
-      score: params.score,
-      agent: 'agent-producer'
-    });
-    console.log(`📤 Published task.approved event`);
-
-    return {
-      taskId: params.taskId,
-      status: result.status || 'approved',
-      message: `Task ${params.taskId} approved with score ${params.score}`
-    };
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    console.error(`❌ Failed to approve task: ${errorMsg}`);
-
-    // Publish error event
-    client.publishEvent('task.approval.failed', {
-      taskId: params.taskId,
-      error: errorMsg,
-      agent: 'agent-producer'
-    });
-
-    throw new Error(`Failed to approve task: ${errorMsg}`);
-  }
 });
 
 // ============================================================================
@@ -319,14 +307,14 @@ client.registerTool({
  * Subscribes to {role}.task.completed events from worker agents
  */
 async function setupTaskCompletionHandlers(client: KadiClient): Promise<void> {
-  const roles = ['artist', 'designer', 'programmer'];
-  for (const role of roles) {
-    const topic = `${role}.task.completed`;
-    await client.subscribeToEvent(topic, async (event: any) => {
-      await handleTaskCompletion(event, role, client);
-    });
-    console.log(`✅ Subscribed to ${topic}`);
-  }
+    const roles = ['artist', 'designer', 'programmer'];
+    for (const role of roles) {
+        const topic = `${role}.task.completed`;
+        await client.subscribeToEvent(topic, async (event: any) => {
+            await handleTaskCompletion(event, role, client);
+        });
+        console.log(`✅ Subscribed to ${topic}`);
+    }
 }
 
 /**
@@ -334,103 +322,121 @@ async function setupTaskCompletionHandlers(client: KadiClient): Promise<void> {
  * Validates completion criteria and publishes ready-for-approval event
  */
 async function handleTaskCompletion(event: any, role: string, client: KadiClient): Promise<void> {
-  try {
-    const { taskId, filesCreated, filesModified, commitSha } = event.data || {};
+    try {
+        const {taskId, filesCreated, filesModified, commitSha} = event.data || {};
 
-    console.log(`📥 Received ${role}.task.completed event`, {
-      taskId,
-      filesCreated: filesCreated?.length || 0,
-      filesModified: filesModified?.length || 0,
-      commitSha: commitSha?.substring(0, 7)
-    });
+        console.log(`📥 Received ${role}.task.completed event`, {
+            taskId,
+            filesCreated: filesCreated?.length || 0,
+            filesModified: filesModified?.length || 0,
+            commitSha: commitSha?.substring(0, 7)
+        });
 
-    // Validate task exists and get current status
-    // Use mcp-shrimp-task-manager directly to avoid circular calls
-    const protocol = client.getBrokerProtocol();
-    const taskStatusRaw: any = await protocol.invokeTool({
-      targetAgent: 'mcp-server-shrimp-agent-playground',
-      toolName: 'shrimp_get_task_detail',
-      toolInput: { taskId },
-      timeout: 30000
-    });
+        // Validate task exists and get current status using agents-library
+        const protocol = client.getBrokerProtocol();
+        const taskStatusResult = await invokeShrimTool(protocol, 'shrimp_get_task_detail', {taskId}, {client});
 
-    console.log(`🔍 [DEBUG] Task status raw result:`, JSON.stringify(taskStatusRaw, null, 2));
+        if (!taskStatusResult.success) {
+            console.error(`❌ Failed to get task status for ${taskId}: ${taskStatusResult.error?.message}`);
+            client.publishEvent('task.completion.processing.failed', {
+                taskId,
+                role,
+                error: taskStatusResult.error?.message || 'Failed to get task status',
+                agent: 'agent-producer'
+            });
+            return;
+        }
 
-    // Parse task details from markdown format
-    const detailContent = Array.isArray(taskStatusRaw.content)
-      ? taskStatusRaw.content.filter((item: any) => item.type === 'text').map((item: any) => item.text).join('\n')
-      : String(taskStatusRaw);
+        console.log(`🔍 [DEBUG] Task status result:`, JSON.stringify(taskStatusResult.data, null, 2));
 
-    const nameMatch = detailContent.match(/###\s+([^\n]+)/);
-    const statusMatch = detailContent.match(/\*\*Status:\*\*\s*(\w+)/i);
+        // Parse task details from markdown format
+        const detailContent = Array.isArray(taskStatusResult.data.content)
+            ? taskStatusResult.data.content.filter((item: any) => item.type === 'text').map((item: any) => item.text).join('\n')
+            : String(taskStatusResult.data);
 
-    if (!nameMatch || !statusMatch) {
-      console.error(`❌ Failed to parse task status for ${taskId}`);
-      client.publishEvent('task.completion.processing.failed', {
-        taskId,
-        role,
-        error: 'Task status parsing failed',
-        agent: 'agent-producer'
-      });
-      return;
+        const nameMatch = detailContent.match(/###\s+([^\n]+)/);
+        const statusMatch = detailContent.match(/\*\*Status:\*\*\s*(\w+)/i);
+
+        if (!nameMatch || !statusMatch) {
+            console.error(`❌ Failed to parse task status for ${taskId}`);
+            client.publishEvent('task.completion.processing.failed', {
+                taskId,
+                role,
+                error: 'Task status parsing failed',
+                agent: 'agent-producer'
+            });
+            return;
+        }
+
+        const taskStatus = {
+            taskId,
+            description: nameMatch[1].trim(),
+            status: statusMatch[1].toLowerCase()
+        };
+
+        // Validate completion criteria
+        const isValid = validateTaskCompletion({
+            taskId,
+            commitSha,
+            filesCreated,
+            filesModified,
+            taskStatus
+        });
+
+        if (isValid) {
+            // Auto-verify task completion to set status to COMPLETED
+            const verifyResult = await invokeShrimTool(protocol, 'shrimp_verify_task', {
+                taskId,
+                summary: `Task completed by ${role} agent. Created ${filesCreated?.length || 0} files, modified ${filesModified?.length || 0} files. Commit: ${commitSha}`,
+                score: 100
+            }, {client});
+
+            if (!verifyResult.success) {
+                console.error(`❌ Failed to verify task ${taskId}: ${verifyResult.error?.message}`);
+            } else {
+                console.log(`✅ Task ${taskId} status set to COMPLETED`);
+            }
+
+            // Get channel context from map (if available)
+            const channelContext = taskChannelMap.get(taskId);
+
+            // Publish ready for approval event with channel context
+            client.publishEvent('task.ready_for_approval', {
+                taskId,
+                role,
+                taskName: taskStatus.description,
+                message: `✅ ${taskStatus.description} completed by ${role} agent`,
+                completionDetails: {
+                    filesCreated: filesCreated || [],
+                    filesModified: filesModified || [],
+                    commitSha,
+                    completedAt: new Date().toISOString()
+                },
+                channel: channelContext || {type: 'desktop'}, // Default to desktop if no context
+                agent: 'agent-producer'
+            });
+            console.log(`✅ Task ${taskId} ready for user approval${channelContext ? ` (notifying via ${channelContext.type})` : ' (desktop notification)'}`);
+        } else {
+            // Publish review failed event
+            client.publishEvent('task.review.failed', {
+                taskId,
+                role,
+                reason: 'Completion criteria not met',
+                agent: 'agent-producer'
+            });
+            console.error(`❌ Task ${taskId} failed automated review`);
+        }
+    } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.error(`❌ Failed to process ${role}.task.completed event:`, errorMsg);
+
+        client.publishEvent('task.completion.processing.failed', {
+            taskId: event.data?.taskId,
+            role,
+            error: errorMsg,
+            agent: 'agent-producer'
+        });
     }
-
-    const taskStatus = {
-      taskId,
-      description: nameMatch[1].trim(),
-      status: statusMatch[1].toLowerCase()
-    };
-
-    // Validate completion criteria
-    const isValid = validateTaskCompletion({
-      taskId,
-      commitSha,
-      filesCreated,
-      filesModified,
-      taskStatus
-    });
-
-    if (isValid) {
-      // Get channel context from map (if available)
-      const channelContext = taskChannelMap.get(taskId);
-
-      // Publish ready for approval event with channel context
-      client.publishEvent('task.ready_for_approval', {
-        taskId,
-        role,
-        taskName: taskStatus.description,
-        message: `✅ ${taskStatus.description} completed by ${role} agent`,
-        completionDetails: {
-          filesCreated: filesCreated || [],
-          filesModified: filesModified || [],
-          commitSha,
-          completedAt: new Date().toISOString()
-        },
-        channel: channelContext || { type: 'desktop' }, // Default to desktop if no context
-        agent: 'agent-producer'
-      });
-      console.log(`✅ Task ${taskId} ready for user approval${channelContext ? ` (notifying via ${channelContext.type})` : ' (desktop notification)'}`);
-    } else {
-      // Publish review failed event
-      client.publishEvent('task.review.failed', {
-        taskId,
-        role,
-        reason: 'Completion criteria not met',
-        agent: 'agent-producer'
-      });
-      console.error(`❌ Task ${taskId} failed automated review`);
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    console.error(`❌ Failed to process ${role}.task.completed event:`, errorMsg);
-
-    client.publishEvent('task.completion.processing.failed', {
-      taskId: event.data?.taskId,
-      role,
-      error: errorMsg,
-      agent: 'agent-producer'
-    });
-  }
 }
 
 /**
@@ -438,19 +444,85 @@ async function handleTaskCompletion(event: any, role: string, client: KadiClient
  * Checks for commit SHA, file changes, and task status
  */
 function validateTaskCompletion(data: any): boolean {
-  const checks = {
-    hasCommit: !!data.commitSha,
-    hasFileChanges: (data.filesCreated?.length > 0) || (data.filesModified?.length > 0),
-    statusValid: data.taskStatus?.status !== 'completed'
-  };
+    const checks = {
+        hasCommit: !!data.commitSha,
+        hasFileChanges: (data.filesCreated?.length > 0) || (data.filesModified?.length > 0),
+        statusValid: data.taskStatus?.status !== 'completed'
+    };
 
-  const passed = Object.values(checks).every(check => check);
+    const passed = Object.values(checks).every(check => check);
 
-  if (!passed) {
-    console.warn(`⚠️  Task completion validation failed:`, checks);
-  }
+    if (!passed) {
+        console.warn(`⚠️  Task completion validation failed:`, checks);
+    }
 
-  return passed;
+    return passed;
+}
+
+// ============================================================================
+// Bot Instance Tracking
+// ============================================================================
+
+/**
+ * Track bot instances for graceful shutdown
+ * These are initialized after broker connection in main()
+ */
+let slackBot: any = null;
+let discordBot: any = null;
+
+/**
+ * Graceful shutdown sequence
+ *
+ * Handles SIGTERM/SIGINT signals to cleanly shut down all services:
+ * 1. Stop Slack bot (cancels Slack event subscriptions)
+ * 2. Stop Discord bot (cancels Discord event subscriptions)
+ * 3. Call client.disconnect() - KĀDI's built-in cleanup that:
+ *    - Stops broker protocol heartbeat
+ *    - Disconnects from broker (triggers broker's session cleanup)
+ *    - Unloads all loaded abilities
+ *    - Clears all event subscriptions (both local and broker-side)
+ *    - Clears protocol instances
+ * 4. Exit process
+ */
+async function gracefulShutdown(signal: string) {
+    console.log(`\n[agent-producer] ${signal} received, shutting down gracefully...`);
+
+    try {
+        // Step 1: Stop Slack bot if running
+        if (slackBot) {
+            console.log('[agent-producer] Stopping Slack bot...');
+            try {
+                if (typeof slackBot.stop === 'function') {
+                    await slackBot.stop();
+                }
+            } catch (error) {
+                console.error('[agent-producer] Error stopping Slack bot:', error);
+            }
+        }
+
+        // Step 2: Stop Discord bot if running
+        if (discordBot) {
+            console.log('[agent-producer] Stopping Discord bot...');
+            try {
+                if (typeof discordBot.stop === 'function') {
+                    await discordBot.stop();
+                }
+            } catch (error) {
+                console.error('[agent-producer] Error stopping Discord bot:', error);
+            }
+        }
+
+        // Step 3: Disconnect from broker and cleanup all subscriptions
+        // This is the critical step that cleanly unregisters from broker
+        console.log('[agent-producer] Disconnecting from KĀDI broker...');
+        await client.disconnect();
+
+        console.log('[agent-producer] ✅ Graceful shutdown complete');
+        process.exit(0);
+    } catch (error) {
+        console.error('[agent-producer] ❌ Error during graceful shutdown:', error);
+        process.exit(1);
+    }
 }
 
 // ============================================================================
@@ -462,104 +534,109 @@ function validateTaskCompletion(data: any): boolean {
  * Connects to KĀDI broker and starts serving tools
  */
 async function main() {
-  try {
-    console.log('[agent-producer] Connecting to KĀDI broker...');
-    console.log(`[agent-producer] Broker URL: ${config.brokerUrl}`);
-    console.log(`[agent-producer] Networks: ${config.networks.join(', ')}`);
-    console.log('[agent-producer] Registered tools:');
-    console.log('  - plan_task: Create and assign tasks to worker agents');
-    console.log('  - list_active_tasks: List all active tasks');
-    console.log('  - get_task_status: Get detailed task status');
-    console.log('  - assign_task: Assign tasks to worker agents');
-    console.log('  - approve_completion: Approve task completion');
-    console.log();
+    try {
+        console.log('[agent-producer] Connecting to KĀDI broker...');
+        console.log(`[agent-producer] Broker URL: ${config.brokerUrl}`);
+        console.log(`[agent-producer] Networks: ${config.networks.join(', ')}`);
+        console.log('[agent-producer] Registered tools:');
+        console.log('  - plan_task: Create and assign tasks to worker agents');
+        console.log('  - list_active_tasks: List all active tasks');
+        console.log('  - get_task_status: Get detailed task status');
+        console.log('  - assign_task: Assign tasks to worker agents');
+        console.log('  - approve_completion: Approve task completion');
+        console.log();
 
-    // CRITICAL: serve() is blocking - all logs must come BEFORE this line
-    // Connect to broker and start serving tool invocations
-    // The broker will route tool calls to this agent based on network membership
+        // CRITICAL: serve() is blocking - all logs must come BEFORE this line
+        // Connect to broker and start serving tool invocations
+        // The broker will route tool calls to this agent based on network membership
 
-    // Start Slack Bot after connection is established (async after serve starts)
-    const shouldEnableSlackBot = (process.env.ENABLE_SLACK_BOT === 'true' || process.env.ENABLE_SLACK_BOT === undefined) &&
-                                  process.env.ANTHROPIC_API_KEY &&
-                                  process.env.ANTHROPIC_API_KEY !== 'YOUR_ANTHROPIC_API_KEY_HERE';
-    if (shouldEnableSlackBot) {
-      console.log('🔄 Slack bot will start after broker connection...');
-      console.log();
+        // Setup signal handlers BEFORE starting serve()
+        // This ensures graceful shutdown is ready before blocking serve() call
+        process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+        process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-      // Give serve() a moment to establish connection, then start Slack bot
-      setTimeout(async () => {
-        try {
-          const { SlackBot } = await import('./bot/slack-bot.js');
-          const slackBot = new SlackBot({
-            client,
-            anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
-            botUserId: process.env.SLACK_BOT_USER_ID!,
-          });
-          slackBot.start();
-          console.log('✅ Slack bot started (subscribed to Slack mention events)');
-        } catch (error) {
-          console.error('❌ Failed to start Slack bot:', error);
+        // Start Slack Bot after connection is established (async after serve starts)
+        const shouldEnableSlackBot = (process.env.ENABLE_SLACK_BOT === 'true' || process.env.ENABLE_SLACK_BOT === undefined) &&
+            process.env.ANTHROPIC_API_KEY &&
+            process.env.ANTHROPIC_API_KEY !== 'YOUR_ANTHROPIC_API_KEY_HERE';
+        if (shouldEnableSlackBot) {
+            console.log('🔄 Slack bot will start after broker connection...');
+            console.log();
+
+            // Give serve() a moment to establish connection, then start Slack bot
+            setTimeout(async () => {
+                try {
+                    const {SlackBot} = await import('./bot/slack-bot.js');
+                    slackBot = new SlackBot({
+                        client,
+                        anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
+                        botUserId: process.env.SLACK_BOT_USER_ID!,
+                    });
+                    slackBot.start();
+                    console.log('✅ Slack bot started (subscribed to Slack mention events)');
+                } catch (error) {
+                    console.error('❌ Failed to start Slack bot:', error);
+                }
+            }, 2000); // Wait 2 seconds for broker connection
+        } else {
+            console.log('⏭️  Slack bot disabled (set ENABLE_SLACK_BOT=true and configure ANTHROPIC_API_KEY to enable)');
+            console.log();
         }
-      }, 2000); // Wait 2 seconds for broker connection
-    } else {
-      console.log('⏭️  Slack bot disabled (set ENABLE_SLACK_BOT=true and configure ANTHROPIC_API_KEY to enable)');
-      console.log();
-    }
 
-    // Start Discord Bot after connection is established (async after serve starts)
-    const shouldEnableDiscordBot = (process.env.ENABLE_DISCORD_BOT === 'true' || process.env.ENABLE_DISCORD_BOT === undefined) &&
-                                    process.env.ANTHROPIC_API_KEY &&
-                                    process.env.ANTHROPIC_API_KEY !== 'YOUR_ANTHROPIC_API_KEY_HERE';
-    if (shouldEnableDiscordBot) {
-      console.log('🔄 Discord bot will start after broker connection...');
-      console.log();
+        // Start Discord Bot after connection is established (async after serve starts)
+        const shouldEnableDiscordBot = (process.env.ENABLE_DISCORD_BOT === 'true' || process.env.ENABLE_DISCORD_BOT === undefined) &&
+            process.env.ANTHROPIC_API_KEY &&
+            process.env.ANTHROPIC_API_KEY !== 'YOUR_ANTHROPIC_API_KEY_HERE';
+        if (shouldEnableDiscordBot) {
+            console.log('🔄 Discord bot will start after broker connection...');
+            console.log();
 
-      // Give serve() a moment to establish connection, then start Discord bot
-      setTimeout(async () => {
-        try {
-          const { DiscordBot } = await import('./bot/discord-bot.js');
-          const discordBot = new DiscordBot({
-            client,
-            anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
-            botUserId: process.env.DISCORD_BOT_USER_ID!,
-          });
-          discordBot.start();
-          console.log('✅ Discord bot started (subscribed to Discord mention events)');
-        } catch (error) {
-          console.error('❌ Failed to start Discord bot:', error);
+            // Give serve() a moment to establish connection, then start Discord bot
+            setTimeout(async () => {
+                try {
+                    const {DiscordBot} = await import('./bot/discord-bot.js');
+                    discordBot = new DiscordBot({
+                        client,
+                        anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
+                        botUserId: process.env.DISCORD_BOT_USER_ID!,
+                    });
+                    discordBot.start();
+                    console.log('✅ Discord bot started (subscribed to Discord mention events)');
+                } catch (error) {
+                    console.error('❌ Failed to start Discord bot:', error);
+                }
+            }, 2000); // Wait 2 seconds for broker connection
+        } else {
+            console.log('⏭️  Discord bot disabled (set ENABLE_DISCORD_BOT=true and configure ANTHROPIC_API_KEY to enable)');
+            console.log();
         }
-      }, 2000); // Wait 2 seconds for broker connection
-    } else {
-      console.log('⏭️  Discord bot disabled (set ENABLE_DISCORD_BOT=true and configure ANTHROPIC_API_KEY to enable)');
-      console.log();
+
+        // Setup task completion event handlers after bots are initialized
+        setTimeout(async () => {
+            try {
+                await setupTaskCompletionHandlers(client);
+                console.log('✅ Task completion event handlers registered');
+            } catch (error) {
+                console.error('❌ Failed to setup task completion handlers:', error);
+            }
+        }, 2000);
+
+        // Setup task completion notifier for user notifications
+        setTimeout(async () => {
+            try {
+                await setupTaskCompletionNotifier(client);
+                console.log('✅ Task completion notifier registered');
+            } catch (error) {
+                console.error('❌ Failed to setup task completion notifier:', error);
+            }
+        }, 2000);
+
+        // Connect to KĀDI broker and start serving (BLOCKING - never returns)
+        await client.serve('broker');
+    } catch (error) {
+        console.error('[agent-producer] ❌ Fatal error:', error);
+        process.exit(1);
     }
-
-    // Setup task completion event handlers after bots are initialized
-    setTimeout(async () => {
-      try {
-        await setupTaskCompletionHandlers(client);
-        console.log('✅ Task completion event handlers registered');
-      } catch (error) {
-        console.error('❌ Failed to setup task completion handlers:', error);
-      }
-    }, 2000);
-
-    // Setup task completion notifier for user notifications
-    setTimeout(async () => {
-      try {
-        await setupTaskCompletionNotifier(client);
-        console.log('✅ Task completion notifier registered');
-      } catch (error) {
-        console.error('❌ Failed to setup task completion notifier:', error);
-      }
-    }, 2000);
-
-    // Connect to KĀDI broker and start serving (BLOCKING - never returns)
-    await client.serve('broker');
-  } catch (error) {
-    console.error('[agent-producer] ❌ Fatal error:', error);
-    process.exit(1);
-  }
 }
 
 // Start the application
