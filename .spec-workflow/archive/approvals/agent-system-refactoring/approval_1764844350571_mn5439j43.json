@@ -1,0 +1,39 @@
+{
+  "id": "approval_1764844350571_mn5439j43",
+  "title": "Requirements Document: Agent System Refactoring",
+  "filePath": ".spec-workflow/specs/agent-system-refactoring/requirements.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-12-04T10:32:30.571Z",
+  "category": "spec",
+  "categoryName": "agent-system-refactoring",
+  "response": "Feedback Summary (2 comments):\n\nSpecific Text Comments:\n1. \"@agents/shared\": Can we move this folder out of C:\\p4\\Personal\\SD\\AGENTS to C:\\p4\\Personal\\SD and name it agents-library?\n2. \"minimal configuration\": This will probably include the network it's connecting to kadi-broker\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"selection\",\n      \"comment\": \"Can we move this folder out of C:\\\\p4\\\\Personal\\\\SD\\\\AGENTS to C:\\\\p4\\\\Personal\\\\SD and name it agents-library?\",\n      \"timestamp\": \"2025-12-04T14:48:13.175Z\",\n      \"selectedText\": \"@agents/shared\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1764859693176_mptv8cc9r\"\n    },\n    {\n      \"type\": \"selection\",\n      \"comment\": \"This will probably include the network it's connecting to kadi-broker\",\n      \"timestamp\": \"2025-12-04T14:52:28.570Z\",\n      \"selectedText\": \"minimal configuration\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1764859948570_j1993p6p9\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (2 comments):\\n\\nSpecific Text Comments:\\n1. \\\"@agents/shared\\\": Can we move this folder out of C:\\\\p4\\\\Personal\\\\SD\\\\AGENTS to C:\\\\p4\\\\Personal\\\\SD and name it agents-library?\\n2. \\\"minimal configuration\\\": This will probably include the network it's connecting to kadi-broker\\n\",\n  \"timestamp\": \"2025-12-04T14:52:40.823Z\"\n}",
+  "respondedAt": "2025-12-04T14:52:40.855Z",
+  "comments": [
+    {
+      "type": "selection",
+      "comment": "Can we move this folder out of C:\\p4\\Personal\\SD\\AGENTS to C:\\p4\\Personal\\SD and name it agents-library?",
+      "timestamp": "2025-12-04T14:48:13.175Z",
+      "selectedText": "@agents/shared",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1764859693176_mptv8cc9r"
+    },
+    {
+      "type": "selection",
+      "comment": "This will probably include the network it's connecting to kadi-broker",
+      "timestamp": "2025-12-04T14:52:28.570Z",
+      "selectedText": "minimal configuration",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1764859948570_j1993p6p9"
+    }
+  ]
+}

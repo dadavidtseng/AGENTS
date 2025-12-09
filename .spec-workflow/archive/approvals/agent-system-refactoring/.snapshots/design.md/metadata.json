@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/agent-system-refactoring/design.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-12-04T15:10:58.877Z",
+      "trigger": "initial",
+      "approvalId": "approval_1764861058859_ym708tg9e",
+      "approvalTitle": "Design Document: Agent System Refactoring"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-12-04T15:16:05.897Z",
+      "trigger": "approved",
+      "approvalId": "approval_1764861058859_ym708tg9e",
+      "approvalTitle": "Design Document: Agent System Refactoring"
+    }
+  ]
+}

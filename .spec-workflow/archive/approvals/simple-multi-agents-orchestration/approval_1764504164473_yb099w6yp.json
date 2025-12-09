@@ -1,0 +1,39 @@
+{
+  "id": "approval_1764504164473_yb099w6yp",
+  "title": "Design Document - Channel-Specific Interaction Patterns",
+  "filePath": ".spec-workflow/specs/simple-multi-agents-orchestration/design.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-11-30T12:02:44.473Z",
+  "category": "spec",
+  "categoryName": "simple-multi-agents-orchestration",
+  "response": "Feedback Summary (2 comments):\n\nSpecific Text Comments:\n1. \"**Expected Structure:**\n```\nAGENTS/\n├── agent-prod...\": This is partially correct, under AGENTS directory, they are only submodules, the real project should be under the same hierarchy as AGENTS directory.\n2. \"Shadow Repo\": This should be shadow-agent-artist, shadow-agent-designer, shadow-agent-programmer\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"selection\",\n      \"comment\": \"This is partially correct, under AGENTS directory, they are only submodules, the real project should be under the same hierarchy as AGENTS directory.\",\n      \"timestamp\": \"2025-11-30T12:10:44.959Z\",\n      \"selectedText\": \"**Expected Structure:**\\n```\\nAGENTS/\\n├── agent-producer/          # Orchestrator agent\\n├── agent-artist/            # Worker agent (art/design)\\n├── agent-designer/          # Worker agent (documentation)\\n├── agent-programmer/        # Worker agent (code)\\n├── shadow-agent-artist/     # Shadow monitor for artist\\n├── shadow-agent-designer/   # Shadow monitor for designer\\n├── shadow-agent-programmer/ # Shadow monitor for programmer\\n└── shared/                  # Shared utilities (BaseBot)\\n```\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1764504644959_yvqqkr0uo\"\n    },\n    {\n      \"type\": \"selection\",\n      \"comment\": \"This should be shadow-agent-artist, shadow-agent-designer, shadow-agent-programmer\",\n      \"timestamp\": \"2025-11-30T12:21:54.974Z\",\n      \"selectedText\": \"Shadow Repo\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#ffeb3b\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1764505286666_7m9yj9u6r\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (2 comments):\\n\\nSpecific Text Comments:\\n1. \\\"**Expected Structure:**\\n```\\nAGENTS/\\n├── agent-prod...\\\": This is partially correct, under AGENTS directory, they are only submodules, the real project should be under the same hierarchy as AGENTS directory.\\n2. \\\"Shadow Repo\\\": This should be shadow-agent-artist, shadow-agent-designer, shadow-agent-programmer\\n\",\n  \"timestamp\": \"2025-11-30T12:33:35.648Z\"\n}",
+  "respondedAt": "2025-11-30T12:33:35.684Z",
+  "comments": [
+    {
+      "type": "selection",
+      "comment": "This is partially correct, under AGENTS directory, they are only submodules, the real project should be under the same hierarchy as AGENTS directory.",
+      "timestamp": "2025-11-30T12:10:44.959Z",
+      "selectedText": "**Expected Structure:**\n```\nAGENTS/\n├── agent-producer/          # Orchestrator agent\n├── agent-artist/            # Worker agent (art/design)\n├── agent-designer/          # Worker agent (documentation)\n├── agent-programmer/        # Worker agent (code)\n├── shadow-agent-artist/     # Shadow monitor for artist\n├── shadow-agent-designer/   # Shadow monitor for designer\n├── shadow-agent-programmer/ # Shadow monitor for programmer\n└── shared/                  # Shared utilities (BaseBot)\n```",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1764504644959_yvqqkr0uo"
+    },
+    {
+      "type": "selection",
+      "comment": "This should be shadow-agent-artist, shadow-agent-designer, shadow-agent-programmer",
+      "timestamp": "2025-11-30T12:21:54.974Z",
+      "selectedText": "Shadow Repo",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#ffeb3b",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1764505286666_7m9yj9u6r"
+    }
+  ]
+}

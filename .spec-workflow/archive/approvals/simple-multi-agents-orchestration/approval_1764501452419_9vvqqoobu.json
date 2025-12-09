@@ -1,0 +1,51 @@
+{
+  "id": "approval_1764501452419_9vvqqoobu",
+  "title": "Requirements V2 Addendum - Corrected with 6 User Feedbacks",
+  "filePath": ".spec-workflow\\specs\\simple-multi-agents-orchestration\\requirements-v2-addendum.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-11-30T11:17:32.419Z",
+  "category": "spec",
+  "categoryName": "simple-multi-agents-orchestration",
+  "response": "Feedback Summary (3 comments):\n\nSpecific Text Comments:\n1. \"Monitors execution via **status polling** (shrimp_...\": agent-producer shouldn't poll status, instead agent-producer should be able to receive event from agent-designer, agent-programmer, agent-artist when they finished their tasks. Also, I want to add shadow-agent-designer, shadow-agent-programmer, shadow-agent-artist in this architecture, they should be monitoring agent-designer, agent-programmer, agent-artist throughout the task execution process. For example, every time an agent do something, such as create files, modify files, remove files, move files, shadow-agent should commit and push that change to remote github repo, there will be three remote repo for shadow agents in this case.\n2. \"**agent-producer: User Verification and Git Push**\": agent-producer should git push in agent-playground, while agent-designer, agent-artist, agent-programmer use gitworktree to work in their own directory.\n3. \"Network Names\": use artist for agent-artist's network name\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"selection\",\n      \"comment\": \"agent-producer shouldn't poll status, instead agent-producer should be able to receive event from agent-designer, agent-programmer, agent-artist when they finished their tasks. Also, I want to add shadow-agent-designer, shadow-agent-programmer, shadow-agent-artist in this architecture, they should be monitoring agent-designer, agent-programmer, agent-artist throughout the task execution process. For example, every time an agent do something, such as create files, modify files, remove files, move files, shadow-agent should commit and push that change to remote github repo, there will be three remote repo for shadow agents in this case.\",\n      \"timestamp\": \"2025-11-30T11:23:14.880Z\",\n      \"selectedText\": \"Monitors execution via **status polling** (shrimp__list_tasks every 30s)\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1764501794880_wp1vap7qu\"\n    },\n    {\n      \"type\": \"selection\",\n      \"comment\": \"agent-producer should git push in agent-playground, while agent-designer, agent-artist, agent-programmer use gitworktree to work in their own directory.\",\n      \"timestamp\": \"2025-11-30T11:25:56.779Z\",\n      \"selectedText\": \"**agent-producer: User Verification and Git Push**\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1764501956779_nne5kk0sh\"\n    },\n    {\n      \"type\": \"selection\",\n      \"comment\": \"use artist for agent-artist's network name\",\n      \"timestamp\": \"2025-11-30T11:26:36.892Z\",\n      \"selectedText\": \"Network Names\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1764501996892_cradkp9vh\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (3 comments):\\n\\nSpecific Text Comments:\\n1. \\\"Monitors execution via **status polling** (shrimp_...\\\": agent-producer shouldn't poll status, instead agent-producer should be able to receive event from agent-designer, agent-programmer, agent-artist when they finished their tasks. Also, I want to add shadow-agent-designer, shadow-agent-programmer, shadow-agent-artist in this architecture, they should be monitoring agent-designer, agent-programmer, agent-artist throughout the task execution process. For example, every time an agent do something, such as create files, modify files, remove files, move files, shadow-agent should commit and push that change to remote github repo, there will be three remote repo for shadow agents in this case.\\n2. \\\"**agent-producer: User Verification and Git Push**\\\": agent-producer should git push in agent-playground, while agent-designer, agent-artist, agent-programmer use gitworktree to work in their own directory.\\n3. \\\"Network Names\\\": use artist for agent-artist's network name\\n\",\n  \"timestamp\": \"2025-11-30T11:26:47.055Z\"\n}",
+  "respondedAt": "2025-11-30T11:26:47.107Z",
+  "comments": [
+    {
+      "type": "selection",
+      "comment": "agent-producer shouldn't poll status, instead agent-producer should be able to receive event from agent-designer, agent-programmer, agent-artist when they finished their tasks. Also, I want to add shadow-agent-designer, shadow-agent-programmer, shadow-agent-artist in this architecture, they should be monitoring agent-designer, agent-programmer, agent-artist throughout the task execution process. For example, every time an agent do something, such as create files, modify files, remove files, move files, shadow-agent should commit and push that change to remote github repo, there will be three remote repo for shadow agents in this case.",
+      "timestamp": "2025-11-30T11:23:14.880Z",
+      "selectedText": "Monitors execution via **status polling** (shrimp__list_tasks every 30s)",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1764501794880_wp1vap7qu"
+    },
+    {
+      "type": "selection",
+      "comment": "agent-producer should git push in agent-playground, while agent-designer, agent-artist, agent-programmer use gitworktree to work in their own directory.",
+      "timestamp": "2025-11-30T11:25:56.779Z",
+      "selectedText": "**agent-producer: User Verification and Git Push**",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1764501956779_nne5kk0sh"
+    },
+    {
+      "type": "selection",
+      "comment": "use artist for agent-artist's network name",
+      "timestamp": "2025-11-30T11:26:36.892Z",
+      "selectedText": "Network Names",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1764501996892_cradkp9vh"
+    }
+  ]
+}

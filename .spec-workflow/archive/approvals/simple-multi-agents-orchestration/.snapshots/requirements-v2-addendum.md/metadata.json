@@ -1,0 +1,30 @@
+{
+  "filePath": ".spec-workflow/specs/simple-multi-agents-orchestration/requirements-v2-addendum.md",
+  "currentVersion": 3,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-30T10:30:37.894Z",
+      "trigger": "initial",
+      "approvalId": "approval_1764498637884_jaszruh1w",
+      "approvalTitle": "Requirements V2 Addendum - Architectural Corrections (Supersedes Original)"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-11-30T11:05:50.795Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1764498637884_jaszruh1w",
+      "approvalTitle": "Requirements V2 Addendum - Architectural Corrections (Supersedes Original)"
+    },
+    {
+      "version": 3,
+      "filename": "snapshot-003.json",
+      "timestamp": "2025-11-30T11:26:47.067Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1764501452419_9vvqqoobu",
+      "approvalTitle": "Requirements V2 Addendum - Corrected with 6 User Feedbacks"
+    }
+  ]
+}

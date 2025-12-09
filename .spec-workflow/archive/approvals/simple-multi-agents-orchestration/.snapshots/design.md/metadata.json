@@ -1,0 +1,46 @@
+{
+  "filePath": ".spec-workflow/specs/simple-multi-agents-orchestration/design.md",
+  "currentVersion": 5,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-30T12:02:44.478Z",
+      "trigger": "initial",
+      "approvalId": "approval_1764504164473_yb099w6yp",
+      "approvalTitle": "Design Document - Channel-Specific Interaction Patterns"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-11-30T12:33:35.656Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1764504164473_yb099w6yp",
+      "approvalTitle": "Design Document - Channel-Specific Interaction Patterns"
+    },
+    {
+      "version": 3,
+      "filename": "snapshot-003.json",
+      "timestamp": "2025-11-30T12:52:17.741Z",
+      "trigger": "approved",
+      "approvalId": "approval_1764506167307_0qf0uqd7v",
+      "approvalTitle": "Design Document - Corrected Structure & Shadow Agent Names"
+    },
+    {
+      "version": 4,
+      "filename": "snapshot-004.json",
+      "timestamp": "2025-11-30T13:05:00.642Z",
+      "trigger": "approved",
+      "approvalId": "approval_1764507849754_xeba3bp4b",
+      "approvalTitle": "Design Document - Improved Repository Architecture (Code vs Playground)"
+    },
+    {
+      "version": 5,
+      "filename": "snapshot-005.json",
+      "timestamp": "2025-11-30T14:27:08.354Z",
+      "trigger": "approved",
+      "approvalId": "approval_1764512788076_8k6x3pr21",
+      "approvalTitle": "Design Document (Refined for Template Architecture) - Updated Bot Pattern"
+    }
+  ]
+}

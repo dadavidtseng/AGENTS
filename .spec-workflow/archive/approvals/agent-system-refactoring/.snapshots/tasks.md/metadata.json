@@ -1,0 +1,30 @@
+{
+  "filePath": ".spec-workflow/specs/agent-system-refactoring/tasks.md",
+  "currentVersion": 3,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-12-04T15:23:27.740Z",
+      "trigger": "initial",
+      "approvalId": "approval_1764861807730_amznvyrx4",
+      "approvalTitle": "Tasks Document: Agent System Refactoring"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-12-04T15:38:44.964Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1764861807730_amznvyrx4",
+      "approvalTitle": "Tasks Document: Agent System Refactoring"
+    },
+    {
+      "version": 3,
+      "filename": "snapshot-003.json",
+      "timestamp": "2025-12-05T09:50:01.093Z",
+      "trigger": "approved",
+      "approvalId": "approval_1764862864120_8sqvmiu40",
+      "approvalTitle": "Tasks Document: Agent System Refactoring (Revised)"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "id": "approval_1764502786061_pxow3qv0z",
+  "title": "Complete Corrected Requirements.md (V3 - All 9 Architectural Corrections)",
+  "filePath": ".spec-workflow/specs/simple-multi-agents-orchestration/requirements.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-11-30T11:39:46.061Z",
+  "category": "spec",
+  "categoryName": "simple-multi-agents-orchestration",
+  "response": "Feedback Summary (2 comments):\n\nSpecific Text Comments:\n1. \"Slack, Discord via existing bot integrations\": Slack, Discord, Claude Code, Claude Desktop\nUsing slack and discord, agent-producer should receive events through kadi-broker by mcp-client-slack and mcp-client-discord.\nUsing Claude Code and Claude Desktop, agent-producer should provide a tool to kadi-broker, such as plan_task(just like what shrimp-task-manager mcp server has), so that user can call the tool in Claude Code and Claude Desktop\n2. \"shadow agent can track changes\": This is for the sake of roll back ability when agents do something wrong, or when user doesn't agree with the changes. Also, this will allow worker agents to work uninterrupted.\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"selection\",\n      \"comment\": \"Slack, Discord, Claude Code, Claude Desktop\\nUsing slack and discord, agent-producer should receive events through kadi-broker by mcp-client-slack and mcp-client-discord.\\nUsing Claude Code and Claude Desktop, agent-producer should provide a tool to kadi-broker, such as plan_task(just like what shrimp-task-manager mcp server has), so that user can call the tool in Claude Code and Claude Desktop\",\n      \"timestamp\": \"2025-11-30T11:44:01.763Z\",\n      \"selectedText\": \"Slack, Discord via existing bot integrations\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#ffeb3b\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1764502957829_5bv86oev3\"\n    },\n    {\n      \"type\": \"selection\",\n      \"comment\": \"This is for the sake of roll back ability when agents do something wrong, or when user doesn't agree with the changes. Also, this will allow worker agents to work uninterrupted.\",\n      \"timestamp\": \"2025-11-30T11:47:43.691Z\",\n      \"selectedText\": \"shadow agent can track changes\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1764503263691_kbfrg28le\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (2 comments):\\n\\nSpecific Text Comments:\\n1. \\\"Slack, Discord via existing bot integrations\\\": Slack, Discord, Claude Code, Claude Desktop\\nUsing slack and discord, agent-producer should receive events through kadi-broker by mcp-client-slack and mcp-client-discord.\\nUsing Claude Code and Claude Desktop, agent-producer should provide a tool to kadi-broker, such as plan_task(just like what shrimp-task-manager mcp server has), so that user can call the tool in Claude Code and Claude Desktop\\n2. \\\"shadow agent can track changes\\\": This is for the sake of roll back ability when agents do something wrong, or when user doesn't agree with the changes. Also, this will allow worker agents to work uninterrupted.\\n\",\n  \"timestamp\": \"2025-11-30T11:49:09.433Z\"\n}",
+  "respondedAt": "2025-11-30T11:49:09.464Z",
+  "comments": [
+    {
+      "type": "selection",
+      "comment": "Slack, Discord, Claude Code, Claude Desktop\nUsing slack and discord, agent-producer should receive events through kadi-broker by mcp-client-slack and mcp-client-discord.\nUsing Claude Code and Claude Desktop, agent-producer should provide a tool to kadi-broker, such as plan_task(just like what shrimp-task-manager mcp server has), so that user can call the tool in Claude Code and Claude Desktop",
+      "timestamp": "2025-11-30T11:44:01.763Z",
+      "selectedText": "Slack, Discord via existing bot integrations",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#ffeb3b",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1764502957829_5bv86oev3"
+    },
+    {
+      "type": "selection",
+      "comment": "This is for the sake of roll back ability when agents do something wrong, or when user doesn't agree with the changes. Also, this will allow worker agents to work uninterrupted.",
+      "timestamp": "2025-11-30T11:47:43.691Z",
+      "selectedText": "shadow agent can track changes",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1764503263691_kbfrg28le"
+    }
+  ]
+}
