@@ -16,7 +16,9 @@
       "mcp__shrimp-AGENTS__delete_task",
       "mcp__kadi-local__spawn_cube",
       "mcp__kadi-local__get_game_state",
-      "mcp__kadi-local__remove_cube"
+      "mcp__kadi-local__remove_cube",
+      "mcp__shrimp-AGENTS__query_task",
+      "SlashCommand(/zcf:workflow)"
     ]
   },
   "enabledMcpjsonServers": [
