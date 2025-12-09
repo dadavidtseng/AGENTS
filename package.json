@@ -22,10 +22,10 @@
   "author": "Yu-Wei Tseng",
   "license": "MIT",
   "dependencies": {
-    "@agents/shared": "file:../AGENTS/shared",
     "@anthropic-ai/sdk": "^0.32.1",
     "@kadi.build/core": "file:../kadi/kadi-core",
     "@modelcontextprotocol/sdk": "^1.21.1",
+    "agents-library": "file:../agents-library",
     "dotenv": "^16.4.5",
     "zod": "^3.22.4"
   },

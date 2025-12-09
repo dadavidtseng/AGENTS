@@ -20,7 +20,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import {DiscordMentionEventSchema} from '../types/discord-events.js';
-import {BaseBot, BaseBotConfig} from '@agents/shared';
+import {BaseBot, BaseBotConfig} from 'agents-library';
 
 // ============================================================================
 // Types
