@@ -21,6 +21,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import {DiscordMentionEvent, DiscordMentionEventSchema} from '../types/discord-events.js';
 import {BaseBot, BaseBotConfig, logger, MODULE_DISCORD_BOT, timer} from 'agents-library';
+import type { ProviderManager } from '../providers/provider-manager.js';
+import type { MemoryService } from '../memory/memory-service.js';
+import type { Message } from '../providers/types.js';
 
 // ============================================================================
 // Types
@@ -36,7 +39,8 @@ interface DiscordMention {
 }
 
 interface DiscordBotConfig extends BaseBotConfig {
-    // No additional config needed - extends BaseBotConfig
+    providerManager: ProviderManager;
+    memoryService: MemoryService;
 }
 
 // ============================================================================
@@ -44,8 +48,13 @@ interface DiscordBotConfig extends BaseBotConfig {
 // ============================================================================
 
 export class DiscordBot extends BaseBot {
+    private readonly providerManager: ProviderManager;
+    private readonly memoryService: MemoryService;
+
     constructor(config: DiscordBotConfig) {
         super(config);
+        this.providerManager = config.providerManager;
+        this.memoryService = config.memoryService;
     }
 
     /**
@@ -148,7 +157,7 @@ export class DiscordBot extends BaseBot {
     }
 
     /**
-     * Process a single Discord mention with Claude API
+     * Process a single Discord mention with ProviderManager and MemoryService
      */
     private async processMention(mention: DiscordMention): Promise<void> {
         // Check circuit breaker before processing
@@ -178,77 +187,95 @@ export class DiscordBot extends BaseBot {
         }
 
         try {
-            // Get list of available KADI tools (dynamically from client and broker)
-            const availableTools = await this.getAvailableTools();
+            // Step 1: Retrieve conversation context from MemoryService
+            const contextResult = await this.memoryService.retrieveContext(mention.user, mention.channel);
 
-            // Call Claude API
-            let response = await this.anthropic.messages.create({
-                model: process.env.BOT_CLAUDE_MODEL || 'claude-3-haiku-20240307',
-                max_tokens: parseInt(process.env.BOT_CLAUDE_MAX_TOKENS || '4096'),
-                tools: availableTools,
-                messages: [
-                    {
-                        role: 'user',
-                        content: mention.text,
-                    },
-                ],
-            });
-
-            // Handle tool use loop
-            let conversationMessages: any[] = [
-                {role: 'user', content: mention.text},
-            ];
-
-            while (response.stop_reason === 'tool_use') {
-                // Extract tool calls
-                const toolBlocks = response.content.filter((block) => block.type === 'tool_use');
-
-                // Add assistant response to conversation
-                conversationMessages.push({
-                    role: 'assistant',
-                    content: response.content,
-                });
-
-                // Execute tool calls
-                const toolResults = [];
-                for (const toolBlock of toolBlocks) {
-                    if (toolBlock.type !== 'tool_use') continue;
-
-                    const result = await this.executeKadiTool(
-                        toolBlock.name,
-                        toolBlock.input as Record<string, unknown>
-                    );
-
-                    toolResults.push({
-                        type: 'tool_result',
-                        tool_use_id: toolBlock.id,
-                        content: JSON.stringify(result),
-                    });
-                }
-
-                // Add tool results to conversation
-                conversationMessages.push({
-                    role: 'user',
-                    content: toolResults,
-                });
-
-                // Get next Claude response
-                response = await this.anthropic.messages.create({
-                    model: process.env.BOT_CLAUDE_MODEL || 'claude-3-haiku-20240307',
-                    max_tokens: parseInt(process.env.BOT_CLAUDE_MAX_TOKENS || '4096'),
-                    tools: availableTools,
-                    messages: conversationMessages,
-                });
+            if (!contextResult.success) {
+                logger.warn(MODULE_DISCORD_BOT, `Failed to retrieve context: ${contextResult.error.message}`, timer.elapsed('main'));
             }
 
-            // Extract final text response
-            const finalText = response.content
-                .filter((block) => block.type === 'text')
-                .map((block: any) => block.text)
-                .join('\n');
+            const context = contextResult.success ? contextResult.data : [];
 
-            // Reply to Discord
-            await this.sendDiscordReply(mention.channel, mention.id, finalText);
+            // Step 2: Build messages array (context + new user message)
+            const messages: Message[] = [
+                ...context.map(msg => ({
+                    role: msg.role,
+                    content: msg.content,
+                })),
+                {
+                    role: 'user' as const,
+                    content: mention.text,
+                },
+            ];
+
+            // Step 3: Detect model from message using regex /\[([^\]]+)\]/
+            const modelMatch = mention.text.match(/\[([^\]]+)\]/);
+            const detectedModel = modelMatch ? modelMatch[1] : undefined;
+
+            if (detectedModel) {
+                logger.info(MODULE_DISCORD_BOT, `Model detected from message: ${detectedModel}`, timer.elapsed('main'));
+            }
+
+            // Step 4: Generate response using ProviderManager
+            const responseResult = await this.providerManager.chat(messages, {
+                model: detectedModel,
+            });
+
+            // Step 5: Handle error
+            if (!responseResult.success) {
+                logger.error(MODULE_DISCORD_BOT, `Provider failed: ${responseResult.error.message}`, timer.elapsed('main'));
+
+                // Record failure for circuit breaker
+                const error = new Error(responseResult.error.message);
+                this.recordFailure(error);
+
+                // Publish detailed error event
+                this.client.publishEvent('artist.task.failed', {
+                    error: responseResult.error.message,
+                    errorType: responseResult.error.type,
+                    isTransient: responseResult.error.type === 'RATE_LIMIT' || responseResult.error.type === 'TIMEOUT' || responseResult.error.type === 'NETWORK_ERROR',
+                    context: {
+                        mentionId: mention.id,
+                        user: mention.user,
+                        channel: mention.channel,
+                        textPreview: mention.text.substring(0, 100),
+                        provider: responseResult.error.provider,
+                    },
+                    agent: 'agent-artist',
+                    timestamp: new Date().toISOString(),
+                });
+
+                // Send user-friendly error message (no stack traces)
+                const userMessage = 'Sorry, I encountered an issue generating a response. The issue has been logged.';
+                await this.sendDiscordReply(mention.channel, mention.id, userMessage);
+                return;
+            }
+
+            const botResponse = responseResult.data;
+
+            // Step 6: Store messages in MemoryService
+            // Store user message
+            await this.memoryService.storeMessage(mention.user, mention.channel, {
+                role: 'user',
+                content: mention.text,
+                timestamp: Date.now(),
+                metadata: {
+                    platform: 'discord',
+                },
+            });
+
+            // Store bot response
+            await this.memoryService.storeMessage(mention.user, mention.channel, {
+                role: 'assistant',
+                content: botResponse,
+                timestamp: Date.now(),
+                metadata: {
+                    platform: 'discord',
+                },
+            });
+
+            // Step 7: Send response to channel
+            await this.sendDiscordReply(mention.channel, mention.id, botResponse);
 
             logger.info(MODULE_DISCORD_BOT, `Replied to @${mention.user}`, timer.elapsed('main'));
 
@@ -280,7 +307,7 @@ export class DiscordBot extends BaseBot {
                 timestamp: new Date().toISOString(),
             });
 
-            // Send appropriate error message to Discord
+            // Send appropriate error message to Discord (no stack traces)
             const userMessage = isTransient
                 ? 'Sorry, I encountered a temporary issue. Please try again in a moment.'
                 : 'Sorry, I encountered an error processing your message. The issue has been logged.';
@@ -337,7 +364,9 @@ export class DiscordBot extends BaseBot {
 
     /**
      * Execute a KADI tool via broker with retry logic
+     * @deprecated This method is unused in the current implementation (tools are invoked via invokeToolWithRetry)
      */
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     private async executeKadiTool(
         toolName: string,
         input: Record<string, unknown>
@@ -520,8 +549,10 @@ export class DiscordBot extends BaseBot {
      * Uses KĀDI broker's kadi.ability.list API to discover tools available
      * on the networks this agent is connected to (global, text, git, slack, discord).
      *
+     * @deprecated This method is unused in the current implementation (tool use removed)
      * @returns Array of network tools in Anthropic format
      */
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     private async queryNetworkTools(): Promise<Anthropic.Tool[]> {
         try {
             const networks = this.client.config.networks || [];
@@ -569,7 +600,10 @@ export class DiscordBot extends BaseBot {
      *
      * This enables dynamic discovery - when broker tools change, they're
      * automatically available to Claude without code changes.
+     *
+     * @deprecated This method is unused in the current implementation (tool use removed)
      */
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     private async getAvailableTools(): Promise<Anthropic.Tool[]> {
         // 1. Get locally registered tools (tools on THIS agent)
         const localTools = this.client.getAllRegisteredTools().map(tool => ({
