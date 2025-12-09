@@ -16,28 +16,65 @@ import type { KadiClient } from '../kadi/kadi-core/src';
 // Mock Setup
 // ============================================================================
 
-// Mock Anthropic SDK
-const mockAnthropicCreate = vi.fn();
-vi.mock('@anthropic-ai/sdk', () => ({
-  default: class MockAnthropic {
-    messages = {
-      create: mockAnthropicCreate
-    };
-  }
-}));
+// Note: Anthropic SDK is not mocked here because SlackBot uses ProviderManager
+// which is mocked directly in the test setup
 
 // Mock KADI Client
 class MockKadiClient {
   private protocol: any;
+  private brokerManager: any;
+  public config: any;
+  private eventHandlers: Map<string, ((event: unknown) => void)[]>;
 
   constructor() {
     this.protocol = {
       invokeTool: vi.fn()
     };
+
+    // Mock BrokerManager with EventEmitter-like interface
+    this.brokerManager = {
+      on: vi.fn(),
+      off: vi.fn(),
+      emit: vi.fn()
+    };
+
+    this.config = {
+      networks: []
+    };
+
+    this.eventHandlers = new Map();
   }
 
   getBrokerProtocol() {
     return this.protocol;
+  }
+
+  getBrokerManager() {
+    return this.brokerManager;
+  }
+
+  subscribeToEvent(topic: string, handler: (event: unknown) => void) {
+    // Store handler for this topic
+    if (!this.eventHandlers.has(topic)) {
+      this.eventHandlers.set(topic, []);
+    }
+    this.eventHandlers.get(topic)!.push(handler);
+  }
+
+  publishEvent(topic: string, data: any) {
+    // Mock implementation - do nothing
+  }
+
+  // Test helper: trigger an event
+  triggerEvent(topic: string, event: unknown) {
+    const handlers = this.eventHandlers.get(topic);
+    if (handlers) {
+      handlers.forEach(handler => handler(event));
+    }
+  }
+
+  getAllRegisteredTools() {
+    return [];
   }
 
   async connect() {
@@ -57,6 +94,8 @@ describe('SlackBot - Mention Reply Functionality', () => {
   let slackBot: SlackBot;
   let mockClient: MockKadiClient;
   let mockProtocol: any;
+  let mockProviderManager: any;
+  let mockMemoryService: any;
 
   beforeEach(() => {
     // Reset all mocks
@@ -66,11 +105,32 @@ describe('SlackBot - Mention Reply Functionality', () => {
     mockClient = new MockKadiClient();
     mockProtocol = mockClient.getBrokerProtocol();
 
+    // Create mock ProviderManager
+    mockProviderManager = {
+      chat: vi.fn().mockResolvedValue({
+        success: true,
+        data: 'Mock response'
+      })
+    };
+
+    // Create mock MemoryService
+    mockMemoryService = {
+      retrieveContext: vi.fn().mockResolvedValue({
+        success: true,
+        data: []
+      }),
+      storeMessage: vi.fn().mockResolvedValue({
+        success: true
+      })
+    };
+
     // Create SlackBot instance (event-driven, no pollIntervalMs)
     slackBot = new SlackBot({
       client: mockClient as unknown as KadiClient,
       anthropicApiKey: 'test-api-key',
       botUserId: 'U01234ABCD',
+      providerManager: mockProviderManager,
+      memoryService: mockMemoryService,
     });
   });
 
@@ -79,74 +139,51 @@ describe('SlackBot - Mention Reply Functionality', () => {
   });
 
   // ==========================================================================
-  // Test 1: Poll for mentions and retrieve from MCP_Slack_Client
+  // Test 1: Handle Slack mention event and reply
   // ==========================================================================
 
-  it('should poll MCP_Slack_Client and retrieve @mentions', async () => {
-    // Mock slack_client_get_slack_mentions response
-    const mockMentions = {
-      result: JSON.stringify({
-        mentions: [
-          {
-            id: 'msg-1',
-            user: 'test-user',
-            text: 'Hello bot!',
-            channel: 'C123456',
-            thread_ts: '1234567890.123456',
-            ts: '1234567890.123456'
-          }
-        ]
-      })
+  it('should handle Slack mention event and send reply', async () => {
+    // Mock Slack mention event (event-driven architecture)
+    const mockMentionEvent = {
+      id: 'msg-1',
+      user: 'test-user',
+      text: 'Hello bot!',
+      channel: 'C123456',
+      thread_ts: '1234567890.123456',
+      ts: '1234567890.123456',
+      bot_id: 'U01234ABCD',
+      timestamp: new Date().toISOString()
     };
 
-    // Mock Claude API response (simple text response, no tool use)
-    const mockClaudeResponse = {
-      id: 'msg_123',
-      type: 'message',
-      role: 'assistant',
-      content: [
-        {
-          type: 'text',
-          text: 'Hello! How can I help you?'
-        }
-      ],
-      model: 'claude-3-haiku-20240307',
-      stop_reason: 'end_turn',
-      usage: { input_tokens: 10, output_tokens: 20 }
-    };
-
-    // Mock slack_send_reply (for sending response)
-    mockProtocol.invokeTool
-      .mockResolvedValueOnce(mockMentions)  // First call: get_slack_mentions
-      .mockResolvedValueOnce({ result: 'Message sent' });  // Second call: send_reply
-
-    mockAnthropicCreate.mockResolvedValueOnce(mockClaudeResponse);
-
-    // Start bot (begins polling)
-    slackBot.start();
-
-    // Wait for polling cycle to complete
-    await new Promise(resolve => setTimeout(resolve, 200));
-
-    // Verify get_slack_mentions was called
-    expect(mockProtocol.invokeTool).toHaveBeenCalledWith({
-      targetAgent: 'slack-client',
-      toolName: 'slack_client_get_slack_mentions',
-      toolInput: { limit: 5 },
-      timeout: 10000
+    // Mock ProviderManager response
+    mockProviderManager.chat.mockResolvedValueOnce({
+      success: true,
+      data: 'Hello! How can I help you?'
     });
 
-    // Verify Claude API was called with mention text
-    expect(mockAnthropicCreate).toHaveBeenCalledWith(
+    // Mock slack_send_reply (for sending response)
+    mockProtocol.invokeTool.mockResolvedValueOnce({ result: 'Message sent' });
+
+    // Start bot (subscribes to events)
+    slackBot.start();
+
+    // Trigger mention event
+    const topic = `slack.app_mention.U01234ABCD`;
+    mockClient.triggerEvent(topic, mockMentionEvent);
+
+    // Wait for async processing
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Verify ProviderManager.chat was called with mention text
+    expect(mockProviderManager.chat).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'user',
+          content: 'Hello bot!'
+        })
+      ]),
       expect.objectContaining({
-        model: 'claude-3-haiku-20240307',
-        max_tokens: 4096,
-        messages: [
-          {
-            role: 'user',
-            content: 'Hello bot!'
-          }
-        ]
+        model: undefined  // No model detected in message
       })
     );
 
@@ -164,181 +201,68 @@ describe('SlackBot - Mention Reply Functionality', () => {
   });
 
   // ==========================================================================
-  // Test 2: Handle Claude tool use (count_words)
+  // Test 2: Handle mention with tool use (removed - tool use not supported)
   // ==========================================================================
 
-  it('should process mention with tool use and reply with result', async () => {
-    // Mock mention requesting word count
-    const mockMentions = {
-      result: JSON.stringify({
-        mentions: [
-          {
-            id: 'msg-2',
-            user: 'test-user',
-            text: 'Count words in this message',
-            channel: 'C123456',
-            thread_ts: '1234567890.123456',
-            ts: '1234567890.123456'
-          }
-        ]
-      })
-    };
-
-    // Mock Claude response with tool use
-    const mockClaudeToolUse = {
-      id: 'msg_123',
-      type: 'message',
-      role: 'assistant',
-      content: [
-        {
-          type: 'text',
-          text: 'I\'ll count the words for you.'
-        },
-        {
-          type: 'tool_use',
-          id: 'tool_123',
-          name: 'count_words',
-          input: {
-            text: 'Count words in this message'
-          }
-        }
-      ],
-      model: 'claude-3-haiku-20240307',
-      stop_reason: 'tool_use',
-      usage: { input_tokens: 10, output_tokens: 20 }
-    };
-
-    // Mock tool execution result
-    const mockToolResult = {
-      success: true,
-      result: {
-        words: 5,
-        characters: 29,
-        lines: 1
-      }
-    };
-
-    // Mock Claude final response after tool execution
-    const mockClaudeFinalResponse = {
-      id: 'msg_124',
-      type: 'message',
-      role: 'assistant',
-      content: [
-        {
-          type: 'text',
-          text: 'The message contains 5 words, 29 characters, and 1 line.'
-        }
-      ],
-      model: 'claude-3-haiku-20240307',
-      stop_reason: 'end_turn',
-      usage: { input_tokens: 10, output_tokens: 20 }
-    };
-
-    // Setup mock call sequence
-    mockProtocol.invokeTool
-      .mockResolvedValueOnce(mockMentions)          // 1. get_slack_mentions
-      .mockResolvedValueOnce(mockToolResult)        // 2. count_words tool
-      .mockResolvedValueOnce({ result: 'Message sent' });  // 3. send_reply
-
-    mockAnthropicCreate
-      .mockResolvedValueOnce(mockClaudeToolUse)     // 1. Initial response with tool use
-      .mockResolvedValueOnce(mockClaudeFinalResponse);  // 2. Final response after tool
-
-    // Start bot
-    slackBot.start();
-
-    // Wait for processing
-    await new Promise(resolve => setTimeout(resolve, 300));
-
-    // Verify count_words tool was called
-    expect(mockProtocol.invokeTool).toHaveBeenCalledWith(
-      expect.objectContaining({
-        targetAgent: 'template-agent-typescript',
-        toolName: 'count_words',
-        toolInput: {
-          text: 'Count words in this message'
-        }
-      })
-    );
-
-    // Verify final reply was sent
-    expect(mockProtocol.invokeTool).toHaveBeenCalledWith({
-      targetAgent: 'slack-server',
-      toolName: 'slack_send_reply',
-      toolInput: {
-        channel: 'C123456',
-        thread_ts: '1234567890.123456',
-        text: 'The message contains 5 words, 29 characters, and 1 line.'
-      },
-      timeout: 10000
-    });
+  it.skip('should process mention with tool use and reply with result', async () => {
+    // This test is skipped because the current SlackBot implementation
+    // uses ProviderManager which doesn't support tool use.
+    // Tool use was removed in favor of simpler text-only responses.
   });
 
   // ==========================================================================
-  // Test 3: Handle multiple mentions in queue
+  // Test 3: Handle multiple mention events sequentially
   // ==========================================================================
 
-  it('should process multiple mentions sequentially', async () => {
-    // Mock multiple mentions
-    const mockMentions = {
-      result: JSON.stringify({
-        mentions: [
-          {
-            id: 'msg-1',
-            user: 'user1',
-            text: 'First message',
-            channel: 'C123456',
-            thread_ts: '1234567890.111111',
-            ts: '1234567890.111111'
-          },
-          {
-            id: 'msg-2',
-            user: 'user2',
-            text: 'Second message',
-            channel: 'C123456',
-            thread_ts: '1234567890.222222',
-            ts: '1234567890.222222'
-          }
-        ]
+  it('should process multiple mention events sequentially', async () => {
+    // Mock multiple mention events
+    const mockMentionEvent1 = {
+      id: 'msg-1',
+      user: 'user1',
+      text: 'First message',
+      channel: 'C123456',
+      thread_ts: '1234567890.111111',
+      ts: '1234567890.111111',
+      bot_id: 'U01234ABCD',
+      timestamp: new Date().toISOString()
+    };
+
+    const mockMentionEvent2 = {
+      id: 'msg-2',
+      user: 'user2',
+      text: 'Second message',
+      channel: 'C123456',
+      thread_ts: '1234567890.222222',
+      ts: '1234567890.222222',
+      bot_id: 'U01234ABCD',
+      timestamp: new Date(Date.now() + 1000).toISOString()
+    };
+
+    // Setup mock responses
+    mockProviderManager.chat
+      .mockResolvedValueOnce({
+        success: true,
+        data: 'Reply to first'
       })
-    };
+      .mockResolvedValueOnce({
+        success: true,
+        data: 'Reply to second'
+      });
 
-    // Mock Claude responses for both messages
-    const mockResponse1 = {
-      id: 'msg_1',
-      type: 'message',
-      role: 'assistant',
-      content: [{ type: 'text', text: 'Reply to first' }],
-      model: 'claude-3-haiku-20240307',
-      stop_reason: 'end_turn',
-      usage: { input_tokens: 10, output_tokens: 20 }
-    };
-
-    const mockResponse2 = {
-      id: 'msg_2',
-      type: 'message',
-      role: 'assistant',
-      content: [{ type: 'text', text: 'Reply to second' }],
-      model: 'claude-3-haiku-20240307',
-      stop_reason: 'end_turn',
-      usage: { input_tokens: 10, output_tokens: 20 }
-    };
-
-    // Setup mock sequence
     mockProtocol.invokeTool
-      .mockResolvedValueOnce(mockMentions)          // 1. get_slack_mentions
-      .mockResolvedValueOnce({ result: 'Sent 1' })  // 2. send_reply for msg-1
-      .mockResolvedValueOnce({ result: 'Sent 2' }); // 3. send_reply for msg-2
-
-    mockAnthropicCreate
-      .mockResolvedValueOnce(mockResponse1)
-      .mockResolvedValueOnce(mockResponse2);
+      .mockResolvedValueOnce({ result: 'Sent 1' })
+      .mockResolvedValueOnce({ result: 'Sent 2' });
 
     // Start bot
     slackBot.start();
 
+    // Trigger both events
+    const topic = `slack.app_mention.U01234ABCD`;
+    mockClient.triggerEvent(topic, mockMentionEvent1);
+    mockClient.triggerEvent(topic, mockMentionEvent2);
+
     // Wait for processing
-    await new Promise(resolve => setTimeout(resolve, 300));
+    await new Promise(resolve => setTimeout(resolve, 200));
 
     // Verify both replies were sent
     expect(mockProtocol.invokeTool).toHaveBeenCalledWith({
@@ -369,83 +293,71 @@ describe('SlackBot - Mention Reply Functionality', () => {
   // ==========================================================================
 
   it('should send error message to Slack when processing fails', async () => {
-    // Mock mention
-    const mockMentions = {
-      result: JSON.stringify({
-        mentions: [
-          {
-            id: 'msg-1',
-            user: 'test-user',
-            text: 'Hello bot!',
-            channel: 'C123456',
-            thread_ts: '1234567890.123456',
-            ts: '1234567890.123456'
-          }
-        ]
-      })
+    // Mock mention event
+    const mockMentionEvent = {
+      id: 'msg-1',
+      user: 'test-user',
+      text: 'Hello bot!',
+      channel: 'C123456',
+      thread_ts: '1234567890.123456',
+      ts: '1234567890.123456',
+      bot_id: 'U01234ABCD',
+      timestamp: new Date().toISOString()
     };
 
-    // Mock Claude API error
-    mockAnthropicCreate.mockRejectedValueOnce(new Error('API rate limit exceeded'));
+    // Mock ProviderManager error result
+    mockProviderManager.chat.mockResolvedValueOnce({
+      success: false,
+      error: {
+        type: 'RATE_LIMIT',
+        message: 'Rate limit exceeded',
+        provider: 'anthropic'
+      }
+    });
 
     // Setup mocks
-    mockProtocol.invokeTool
-      .mockResolvedValueOnce(mockMentions)          // 1. get_slack_mentions
-      .mockResolvedValueOnce({ result: 'Error sent' });  // 2. send_reply with error
+    mockProtocol.invokeTool.mockResolvedValueOnce({ result: 'Error sent' });
 
     // Start bot
     slackBot.start();
 
-    // Wait for processing
-    await new Promise(resolve => setTimeout(resolve, 300));
+    // Trigger event
+    const topic = `slack.app_mention.U01234ABCD`;
+    mockClient.triggerEvent(topic, mockMentionEvent);
 
-    // Verify error message was sent
-    expect(mockProtocol.invokeTool).toHaveBeenCalledWith({
-      targetAgent: 'slack-server',
-      toolName: 'slack_send_reply',
-      toolInput: {
-        channel: 'C123456',
-        thread_ts: '1234567890.123456',
-        text: 'Sorry, I encountered an error processing your message. Please try again later.'
-      },
-      timeout: 10000
-    });
+    // Wait for processing
+    await new Promise(resolve => setTimeout(resolve, 150));
+
+    // Verify error message was sent (check for user-friendly error message)
+    expect(mockProtocol.invokeTool).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetAgent: 'slack-server',
+        toolName: 'slack_send_reply',
+        toolInput: expect.objectContaining({
+          channel: 'C123456',
+          thread_ts: '1234567890.123456',
+          // Error message should contain 'issue' or 'error' but not include stack traces
+          text: expect.stringMatching(/issue|error/i)
+        })
+      })
+    );
   });
 
   // ==========================================================================
-  // Test 5: Handle empty mention queue (no mentions)
+  // Test 5: Handle no events (event-driven architecture)
   // ==========================================================================
 
-  it('should not call Claude API when no mentions are available', async () => {
-    // Mock empty mention queue
-    const mockEmptyMentions = {
-      result: JSON.stringify({
-        mentions: []
-      })
-    };
-
-    mockProtocol.invokeTool.mockResolvedValueOnce(mockEmptyMentions);
-
-    // Start bot
+  it('should not call ProviderManager when no events are triggered', async () => {
+    // Start bot (subscribes to events)
     slackBot.start();
 
-    // Wait for polling cycle
-    await new Promise(resolve => setTimeout(resolve, 200));
+    // Wait without triggering any events
+    await new Promise(resolve => setTimeout(resolve, 100));
 
-    // Verify get_slack_mentions was called at least once
-    expect(mockProtocol.invokeTool).toHaveBeenCalledWith({
-      targetAgent: 'slack-client',
-      toolName: 'slack_client_get_slack_mentions',
-      toolInput: { limit: 5 },
-      timeout: 10000
-    });
+    // Verify ProviderManager was NOT called
+    expect(mockProviderManager.chat).not.toHaveBeenCalled();
 
-    // Verify Claude API was NOT called
-    expect(mockAnthropicCreate).not.toHaveBeenCalled();
-
-    // Verify only polling happened (no send_reply calls)
-    // Note: May be called 1-2 times depending on timing (100ms interval, 200ms wait)
-    expect(mockProtocol.invokeTool.mock.calls.length).toBeGreaterThanOrEqual(1);
-    expect(mockProtocol.invokeTool.mock.calls.length).toBeLessThanOrEqual(2);
+    // Verify no send_reply calls
+    expect(mockProtocol.invokeTool).not.toHaveBeenCalled();
   });
 });

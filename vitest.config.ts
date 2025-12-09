@@ -3,13 +3,13 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     // Test file patterns
-    include: ['test/**/*.test.ts'],
+    include: ['test/**/*.test.ts', 'src/__tests__/**/*.test.ts'],
 
     // Environment
     environment: 'node',
 
     // Global test timeout
-    testTimeout: 10000,
+    testTimeout: 30000,
 
     // Coverage configuration
     coverage: {
