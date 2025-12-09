@@ -18,7 +18,7 @@
  * 4. Events consumed by template-agent-typescript subscribers
  */
 
-import { KadiEventPublisher as SharedPublisher, PublisherConfig } from '@agents/shared';
+import { KadiEventPublisher as SharedPublisher, PublisherConfig } from 'agents-library';
 import type { DiscordMentionEvent } from './types.js';
 import type { Config } from './index.js';
 

@@ -20,7 +20,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@agents/shared": "file:../AGENTS/shared",
+    "agents-library": "file:../agents-library",
     "@anthropic-ai/sdk": "^0.32.1",
     "@kadi.build/core": "file:../kadi/kadi-core",
     "@modelcontextprotocol/sdk": "^1.0.4",
