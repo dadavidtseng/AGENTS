@@ -236,4 +236,11 @@ docs/_build/
 # ----------------------------------------------------------------------------------------------------
 # Add your custom project-specific ignores below this line
 
+# Environment files with secrets
+.env.production
+.env.local
+
+# Claude Code planning documents (local working files)
+.claude/plan/
+
 
