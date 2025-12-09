@@ -1,0 +1,12 @@
+{
+  "id": "approval_1765137386014_wryxtr1t1",
+  "title": "Review and approve tasks.md breakdown",
+  "filePath": ".spec-workflow/specs/template-agent-enhancements/tasks.md",
+  "type": "document",
+  "status": "approved",
+  "createdAt": "2025-12-07T19:56:26.014Z",
+  "category": "spec",
+  "categoryName": "template-agent-enhancements",
+  "response": "Approved via dashboard",
+  "respondedAt": "2025-12-07T21:16:53.880Z"
+}

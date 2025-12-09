@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/template-agent-enhancements/tasks.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-12-07T19:56:26.021Z",
+      "trigger": "initial",
+      "approvalId": "approval_1765137386014_wryxtr1t1",
+      "approvalTitle": "Review and approve tasks.md breakdown"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-12-07T21:16:53.863Z",
+      "trigger": "approved",
+      "approvalId": "approval_1765137386014_wryxtr1t1",
+      "approvalTitle": "Review and approve tasks.md breakdown"
+    }
+  ]
+}

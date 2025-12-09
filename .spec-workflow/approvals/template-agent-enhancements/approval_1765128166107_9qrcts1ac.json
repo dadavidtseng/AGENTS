@@ -1,0 +1,39 @@
+{
+  "id": "approval_1765128166107_9qrcts1ac",
+  "title": "Design Document for Template Agent Enhancements",
+  "filePath": ".spec-workflow/specs/template-agent-enhancements/design.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-12-07T17:22:46.107Z",
+  "category": "spec",
+  "categoryName": "template-agent-enhancements",
+  "response": "Feedback Summary (2 comments):\n\nSpecific Text Comments:\n1. \"shared/agents-library/src/base-bot.ts\": We should use \"C:\\p4\\Personal\\SD\\agents-library\" only because I want to remove \"C:\\p4\\Personal\\SD\\AGENTS\\shared\"\n2. \"3. **Persistent Memory System**: Multi-layered mem...\": For this multi-layered memory system, are you planning on using Redis too? I remember you suggested me to use Redis for short-term memory.\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"selection\",\n      \"comment\": \"We should use \\\"C:\\\\p4\\\\Personal\\\\SD\\\\agents-library\\\" only because I want to remove \\\"C:\\\\p4\\\\Personal\\\\SD\\\\AGENTS\\\\shared\\\"\",\n      \"timestamp\": \"2025-12-07T17:25:26.293Z\",\n      \"selectedText\": \"shared/agents-library/src/base-bot.ts\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1765128326293_ykkvq8pxp\"\n    },\n    {\n      \"type\": \"selection\",\n      \"comment\": \"For this multi-layered memory system, are you planning on using Redis too? I remember you suggested me to use Redis for short-term memory.\",\n      \"timestamp\": \"2025-12-07T17:29:33.868Z\",\n      \"selectedText\": \"3. **Persistent Memory System**: Multi-layered memory architecture (private/public × short-term/long-term) using ArcadeDB\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1765128573868_p3d6dudhm\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (2 comments):\\n\\nSpecific Text Comments:\\n1. \\\"shared/agents-library/src/base-bot.ts\\\": We should use \\\"C:\\\\p4\\\\Personal\\\\SD\\\\agents-library\\\" only because I want to remove \\\"C:\\\\p4\\\\Personal\\\\SD\\\\AGENTS\\\\shared\\\"\\n2. \\\"3. **Persistent Memory System**: Multi-layered mem...\\\": For this multi-layered memory system, are you planning on using Redis too? I remember you suggested me to use Redis for short-term memory.\\n\",\n  \"timestamp\": \"2025-12-07T17:29:37.424Z\"\n}",
+  "respondedAt": "2025-12-07T17:29:37.453Z",
+  "comments": [
+    {
+      "type": "selection",
+      "comment": "We should use \"C:\\p4\\Personal\\SD\\agents-library\" only because I want to remove \"C:\\p4\\Personal\\SD\\AGENTS\\shared\"",
+      "timestamp": "2025-12-07T17:25:26.293Z",
+      "selectedText": "shared/agents-library/src/base-bot.ts",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1765128326293_ykkvq8pxp"
+    },
+    {
+      "type": "selection",
+      "comment": "For this multi-layered memory system, are you planning on using Redis too? I remember you suggested me to use Redis for short-term memory.",
+      "timestamp": "2025-12-07T17:29:33.868Z",
+      "selectedText": "3. **Persistent Memory System**: Multi-layered memory architecture (private/public × short-term/long-term) using ArcadeDB",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1765128573868_p3d6dudhm"
+    }
+  ]
+}

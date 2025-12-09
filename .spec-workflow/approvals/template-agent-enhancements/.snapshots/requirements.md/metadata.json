@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/template-agent-enhancements/requirements.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-12-07T16:18:10.859Z",
+      "trigger": "initial",
+      "approvalId": "approval_1765124290844_p7wztz9z5",
+      "approvalTitle": "Requirements for Template Agent Enhancements (Multi-LLM, Memory, File Management)"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-12-07T17:19:50.568Z",
+      "trigger": "approved",
+      "approvalId": "approval_1765124290844_p7wztz9z5",
+      "approvalTitle": "Requirements for Template Agent Enhancements (Multi-LLM, Memory, File Management)"
+    }
+  ]
+}

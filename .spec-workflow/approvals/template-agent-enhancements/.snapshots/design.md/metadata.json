@@ -1,0 +1,30 @@
+{
+  "filePath": ".spec-workflow/specs/template-agent-enhancements/design.md",
+  "currentVersion": 3,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-12-07T17:22:46.110Z",
+      "trigger": "initial",
+      "approvalId": "approval_1765128166107_9qrcts1ac",
+      "approvalTitle": "Design Document for Template Agent Enhancements"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-12-07T17:29:37.430Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1765128166107_9qrcts1ac",
+      "approvalTitle": "Design Document for Template Agent Enhancements"
+    },
+    {
+      "version": 3,
+      "filename": "snapshot-003.json",
+      "timestamp": "2025-12-07T19:37:01.898Z",
+      "trigger": "approved",
+      "approvalId": "approval_1765128857521_54po408hn",
+      "approvalTitle": "Design Document - Revised (Redis + Path Corrections)"
+    }
+  ]
+}
