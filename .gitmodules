@@ -25,3 +25,6 @@
 [submodule ".claude/shrimp_data"]
 	path = .claude/shrimp_data
 	url = https://github.com/dadavidtseng/shrimp_data_AGENTS.git
+[submodule "agent-producer"]
+	path = agent-producer
+	url = https://github.com/dadavidtseng/agent-producer.git
