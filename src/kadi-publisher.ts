@@ -7,7 +7,7 @@
  *
  * Architecture:
  * - Publishes to topic: slack.app_mention.{BOT_USER_ID}
- * - Uses shared KadiEventPublisher from @agents/shared
+ * - Uses shared KadiEventPublisher from agents-library
  * - Graceful degradation pattern (stub mode if broker unavailable)
  * - Fail-fast on publish errors (no retry logic)
  *
@@ -18,7 +18,7 @@
  * 4. Events consumed by template-agent-typescript subscribers
  */
 
-import { KadiEventPublisher as SharedPublisher, PublisherConfig } from '@agents/shared';
+import { KadiEventPublisher as SharedPublisher, PublisherConfig } from 'agents-library';
 import type { SlackMentionEvent } from './types.js';
 import type { Config } from './index.js';
 
