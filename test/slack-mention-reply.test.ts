@@ -9,8 +9,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { SlackBot } from '../bot/slack-bot.js';
-import type { KadiClient } from '@kadi.build/core';
+import { SlackBot } from '../src/bot/slack-bot.js';
+import type { KadiClient } from '../kadi/kadi-core/src';
 
 // ============================================================================
 // Mock Setup
