@@ -20,7 +20,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import {DiscordMentionEventSchema} from '../types/discord-events.js';
-import {BaseBot, BaseBotConfig} from '@agents/shared';
+import {BaseBot, BaseBotConfig} from 'agents-library';
 
 // ============================================================================
 // Types
@@ -116,8 +116,10 @@ export class DiscordBot extends BaseBot {
                     ts: mention.ts,
                 };
 
-                // Process mention using existing logic
-                await this.handleMention(discordMention);
+                // Process mention using existing logic (non-blocking to prevent event queue backup)
+                this.handleMention(discordMention).catch(error => {
+                    console.error(`[KĀDI] Subscriber: Error handling mention {mentionId: ${discordMention.id}, error: ${error.message}}`);
+                });
             });
 
             console.log(`[KĀDI] Subscriber: Subscription registered successfully {topic: ${topic}}`);

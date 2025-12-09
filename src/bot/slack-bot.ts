@@ -19,7 +19,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import type { KadiClient } from '@kadi.build/core';
-import { BaseBot } from '@agents/shared';
+import { BaseBot } from 'agents-library';
 import { SlackMentionEventSchema } from '../types/slack-events.js';
 
 // ============================================================================
@@ -68,7 +68,7 @@ export class SlackBot extends BaseBot {
   /**
    * Stop event subscription
    *
-   * Overrides BaseBot.stop() to cleanup Slack-specific resources.
+   * Overrides BaseBot.stop() to clean up Slack-specific resources.
    */
   stop(): void {
     // Unsubscribe from events if needed
@@ -135,8 +135,10 @@ export class SlackBot extends BaseBot {
 
         console.log(`[KĀDI] Subscriber: Event received {mentionId: ${mention.id}, user: ${mention.user}, channel: ${mention.channel}, textPreview: "${textPreview}", timestamp: ${mention.timestamp}}`);
 
-        // Process mention using handleMention
-        await this.handleMention(mention);
+        // Process mention using handleMention (non-blocking to prevent event queue backup)
+        this.handleMention(mention).catch(error => {
+          console.error(`[KĀDI] Subscriber: Error handling mention {mentionId: ${mention.id}, error: ${error.message}}`);
+        });
       });
 
       console.log(`[KĀDI] Subscriber: Subscription registered successfully {topic: ${topic}}`);
@@ -386,10 +388,25 @@ CRITICAL: When responding to users after using tools:
           toolInput: input,
           timeout: 30000,
         });
-      }
 
-      const resultStr = result ? JSON.stringify(result) : 'undefined';
-      console.log(`📤 Tool result received: ${resultStr.substring(0, 300)}...`);
+        // Check if result is pending (async operation)
+        if (result && typeof result === 'object' && result.status === 'pending' && result.requestId) {
+          const requestId = result.requestId;
+          console.log(`⏳ Tool is pending, waiting for async result: ${requestId}`);
+
+          // Wait for kadi.ability.response notification
+          try {
+            result = await this.waitForAbilityResponse(requestId, 30000);
+            console.log(`📤 Async tool result received: ${JSON.stringify(result).substring(0, 300)}...`);
+          } catch (error: any) {
+            console.error(`❌ Async tool timeout: ${error.message}`);
+            throw error;
+          }
+        } else {
+          const resultStr = result ? JSON.stringify(result) : 'undefined';
+          console.log(`📤 Tool result received (synchronous): ${resultStr.substring(0, 300)}...`);
+        }
+      }
 
       // Handle the result - MCP tools return results in various formats
       // Some return { result: string }, some return { content: [...] }, some return plain values
