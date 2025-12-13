@@ -1,5 +1,5 @@
 /**
- * Artist Agent for KĀDI Protocol
+ * Template Agent TypeScript for AGENTS
  * ================================
  *
  * PURPOSE:
@@ -480,6 +480,7 @@ async function main() {
           const modelManagerApiKey = process.env.MODEL_MANAGER_API_KEY;
           const memoryDataPath = process.env.MEMORY_DATA_PATH || './data/memory';
           const arcadedbUrl = process.env.ARCADEDB_URL;
+          const arcadedbPassword = process.env.ARCADEDB_ROOT_PASSWORD || 'root';
 
           logger.info(MODULE_AGENT, 'Initializing shared services for bots...', timer.elapsed('main'));
 
@@ -518,6 +519,7 @@ async function main() {
           const memoryService = new MemoryService(
             memoryDataPath,
             arcadedbUrl,
+            arcadedbPassword,
             providerManager
           );
 

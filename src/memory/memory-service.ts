@@ -98,17 +98,23 @@ export class MemoryService {
    *
    * @param memoryDataPath - Base directory for file storage
    * @param arcadedbUrl - ArcadeDB connection URL (optional)
+   * @param arcadedbPassword - ArcadeDB root password (optional, defaults to 'root')
    * @param providerManager - LLM provider for summarization (optional)
    */
   constructor(
     private readonly memoryDataPath: string,
     private readonly arcadedbUrl?: string,
+    private readonly arcadedbPassword?: string,
     private readonly providerManager?: ProviderManager
   ) {
     this.fileStorage = new FileStorageAdapter(memoryDataPath);
 
     if (arcadedbUrl) {
-      this.dbAdapter = new ArcadeDBAdapter(arcadedbUrl);
+      this.dbAdapter = new ArcadeDBAdapter(
+        arcadedbUrl,
+        'root',
+        arcadedbPassword || 'root'
+      );
     }
   }
 

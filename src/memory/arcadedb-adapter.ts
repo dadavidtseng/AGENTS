@@ -330,11 +330,12 @@ export class ArcadeDBAdapter {
     type: string,
     properties: VertexProperties
   ): Promise<Result<string, DatabaseError>> {
-    // Build property assignments with parameterization
+    // Build property map with parameterization for Cypher
     const propKeys = Object.keys(properties);
     const propAssignments = propKeys.map(key => `${key}: $${key}`).join(', ');
 
-    const cypher = `CREATE VERTEX ${type} SET ${propAssignments} RETURN @rid`;
+    // Cypher syntax: CREATE (n:Type {prop1: value1, prop2: value2}) RETURN n
+    const cypher = `CREATE (n:${type} {${propAssignments}}) RETURN n`;
     const params = { ...properties };
 
     const result = await this.query(cypher, params);
@@ -370,16 +371,18 @@ export class ArcadeDBAdapter {
     properties?: EdgeProperties
   ): Promise<Result<string, DatabaseError>> {
     // Build Cypher query with parameterization
+    // Cypher syntax: MATCH (a), (b) WHERE id(a) = '@rid1' AND id(b) = '@rid2'
+    //                CREATE (a)-[r:TYPE {props}]->(b) RETURN r
     let cypher: string;
     let params: Record<string, any>;
 
     if (properties && Object.keys(properties).length > 0) {
       const propKeys = Object.keys(properties);
       const propAssignments = propKeys.map(key => `${key}: $${key}`).join(', ');
-      cypher = `CREATE EDGE ${type} FROM $fromRid TO $toRid SET ${propAssignments} RETURN @rid`;
+      cypher = `MATCH (a), (b) WHERE id(a) = $fromRid AND id(b) = $toRid CREATE (a)-[r:${type} {${propAssignments}}]->(b) RETURN r`;
       params = { fromRid, toRid, ...properties };
     } else {
-      cypher = `CREATE EDGE ${type} FROM $fromRid TO $toRid RETURN @rid`;
+      cypher = `MATCH (a), (b) WHERE id(a) = $fromRid AND id(b) = $toRid CREATE (a)-[r:${type}]->(b) RETURN r`;
       params = { fromRid, toRid };
     }
 
