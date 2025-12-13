@@ -111,6 +111,7 @@ celerybeat.pid
 
 # Virtual environments
 .env
+.env.mcp
 .venv
 env/
 venv/
