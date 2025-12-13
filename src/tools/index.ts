@@ -41,6 +41,7 @@
  */
 
 import type { KadiClient } from '@kadi.build/core';
+import { registerSimpleMinerTools } from './simpleminer.js';
 
 /**
  * Tool Registry Array
@@ -49,8 +50,7 @@ import type { KadiClient } from '@kadi.build/core';
  * They will be called automatically during agent initialization.
  */
 export const toolRegistry: Array<(client: KadiClient) => void> = [
-  // Example: registerMyTool,
-  // Add your custom tools here
+  registerSimpleMinerTools,
 ];
 
 /**

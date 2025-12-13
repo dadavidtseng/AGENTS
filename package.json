@@ -10,7 +10,10 @@
     "build": "tsc",
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
-    "test": "vitest"
+    "test": "vitest",
+    "miner": "tsx src/MinerAgent.ts",
+    "miner:watch": "tsx watch src/MinerAgent.ts",
+    "builder": "tsx src/BuilderAgent.ts"
   },
   "keywords": [
     "kadi",
@@ -23,10 +26,10 @@
   "author": "Yu-Wei Tseng",
   "license": "MIT",
   "dependencies": {
-    "agents-library": "file:../agents-library",
     "@anthropic-ai/sdk": "^0.32.1",
     "@kadi.build/core": "file:../kadi/kadi-core",
     "@modelcontextprotocol/sdk": "1.24.0",
+    "agents-library": "file:../agents-library",
     "dotenv": "^16.4.5",
     "zod": "^4.1.5"
   },
