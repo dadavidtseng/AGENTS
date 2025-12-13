@@ -104,7 +104,8 @@ export class ProviderManager {
   ): Promise<Result<string, ProviderError>> {
     // Select provider based on model or use primary
     const selectedProvider = this.selectProvider(options?.model);
-    console.log(`[ProviderManager] Selected provider: ${selectedProvider}`);
+    const modelInfo = options?.model ? ` for model '${options.model}'` : ' (default model)';
+    console.log(`[ProviderManager:Chat] Selected provider: ${selectedProvider}${modelInfo}`);
 
     // Attempt with primary provider
     const result = await this.attemptWithRetry(
@@ -120,7 +121,7 @@ export class ProviderManager {
     // Handle rate limit with backoff
     if (result.error.type === ProviderErrorType.RATE_LIMIT) {
       console.warn(
-        `[ProviderManager] Rate limit on ${selectedProvider}, backing off...`
+        `[ProviderManager:Chat] Rate limit on ${selectedProvider}, backing off...`
       );
       // Don't fallback on rate limit - just return the error
       return result;
@@ -132,7 +133,7 @@ export class ProviderManager {
       this.config.fallbackProvider !== selectedProvider
     ) {
       console.warn(
-        `[ProviderManager] Primary provider ${selectedProvider} failed, trying fallback ${this.config.fallbackProvider}`
+        `[ProviderManager:Chat] Primary provider ${selectedProvider} failed, trying fallback ${this.config.fallbackProvider}`
       );
 
       const fallbackResult = await this.attemptWithRetry(
@@ -162,8 +163,9 @@ export class ProviderManager {
   ): Promise<Result<AsyncIterator<string>, ProviderError>> {
     // Select provider based on model or use primary
     const selectedProvider = this.selectProvider(options?.model);
+    const modelInfo = options?.model ? ` for model '${options.model}'` : ' (default model)';
     console.log(
-      `[ProviderManager] Selected provider for streaming: ${selectedProvider}`
+      `[ProviderManager:Stream] Selected provider: ${selectedProvider}${modelInfo}`
     );
 
     // Attempt with primary provider
@@ -180,7 +182,7 @@ export class ProviderManager {
     // Handle rate limit with backoff
     if (result.error.type === ProviderErrorType.RATE_LIMIT) {
       console.warn(
-        `[ProviderManager] Rate limit on ${selectedProvider}, backing off...`
+        `[ProviderManager:Stream] Rate limit on ${selectedProvider}, backing off...`
       );
       return result;
     }
@@ -191,7 +193,7 @@ export class ProviderManager {
       this.config.fallbackProvider !== selectedProvider
     ) {
       console.warn(
-        `[ProviderManager] Primary provider ${selectedProvider} failed, trying fallback ${this.config.fallbackProvider}`
+        `[ProviderManager:Stream] Primary provider ${selectedProvider} failed, trying fallback ${this.config.fallbackProvider}`
       );
 
       const fallbackResult = await this.attemptWithRetry(
@@ -280,7 +282,7 @@ export class ProviderManager {
             ) {
               currentHealth.isHealthy = false;
               console.warn(
-                `[ProviderManager] Provider ${name} marked unhealthy after ${currentHealth.consecutiveFailures} consecutive failures`
+                `[ProviderManager:HealthCheck] Provider ${name} marked unhealthy after ${currentHealth.consecutiveFailures} consecutive failures`
               );
             }
           }
@@ -288,7 +290,7 @@ export class ProviderManager {
           currentHealth.lastCheck = new Date();
         } catch (error) {
           console.error(
-            `[ProviderManager] Health check error for ${name}:`,
+            `[ProviderManager:HealthCheck] Health check error for ${name}:`,
             error
           );
         }
@@ -358,7 +360,7 @@ export class ProviderManager {
     const health = this.healthStatus.get(providerName);
     if (health && !health.isHealthy) {
       console.warn(
-        `[ProviderManager] Provider ${providerName} is unhealthy, skipping`
+        `[ProviderManager:Retry] Provider ${providerName} is unhealthy, skipping`
       );
       return err({
         type: ProviderErrorType.UNKNOWN,
@@ -374,7 +376,7 @@ export class ProviderManager {
         // Exponential backoff: delayMs * 2^attempt
         const delay = this.config.retryDelayMs * Math.pow(2, attempt - 1);
         console.log(
-          `[ProviderManager] Retry attempt ${attempt + 1}/${this.config.retryAttempts} after ${delay}ms delay`
+          `[ProviderManager:Retry] Attempt ${attempt + 1}/${this.config.retryAttempts} for ${providerName} after ${delay}ms delay`
         );
         await this.sleep(delay);
       }
@@ -392,19 +394,8 @@ export class ProviderManager {
 
       lastError = result.error;
 
-      // Track failure
-      if (health) {
-        health.consecutiveFailures++;
-        if (health.consecutiveFailures >= this.maxConsecutiveFailures) {
-          health.isHealthy = false;
-          console.warn(
-            `[ProviderManager] Provider ${providerName} marked unhealthy after ${health.consecutiveFailures} consecutive failures`
-          );
-        }
-      }
-
       console.error(
-        `[ProviderManager] Provider ${providerName} attempt ${attempt + 1} failed:`,
+        `[ProviderManager:Retry] Provider ${providerName} attempt ${attempt + 1} failed:`,
         result.error.type,
         result.error.message
       );
@@ -414,7 +405,7 @@ export class ProviderManager {
         const rateLimitDelay =
           this.rateLimitBaseDelayMs * Math.pow(2, attempt);
         console.warn(
-          `[ProviderManager] Rate limit detected, waiting ${rateLimitDelay}ms before retry`
+          `[ProviderManager:Retry] Rate limit detected on ${providerName}, waiting ${rateLimitDelay}ms before retry`
         );
         await this.sleep(rateLimitDelay);
       }
@@ -425,9 +416,32 @@ export class ProviderManager {
         result.error.type === ProviderErrorType.INVALID_REQUEST
       ) {
         console.error(
-          `[ProviderManager] Non-retryable error: ${result.error.type}`
+          `[ProviderManager:Retry] Non-retryable error on ${providerName}: ${result.error.type}`
         );
         break;
+      }
+    }
+
+    // After all retries exhausted, track failure for health monitoring
+    // Only track actual health issues, not model routing problems
+    if (health && lastError) {
+      // Exclude MODEL_NOT_FOUND - these are routing issues, not health problems
+      const shouldTrackFailure = lastError.type !== ProviderErrorType.MODEL_NOT_FOUND;
+
+      if (shouldTrackFailure) {
+        health.consecutiveFailures++;
+
+        if (health.consecutiveFailures >= this.maxConsecutiveFailures) {
+          health.isHealthy = false;
+          console.warn(
+            `[ProviderManager:CircuitBreaker] Provider ${providerName} circuit opened after ${health.consecutiveFailures} consecutive request failures`
+          );
+        }
+      } else {
+        // MODEL_NOT_FOUND doesn't affect health - log for debugging
+        console.log(
+          `[ProviderManager:Routing] Provider ${providerName} doesn't support requested model (not a health issue)`
+        );
       }
     }
 
@@ -446,13 +460,13 @@ export class ProviderManager {
   private startHealthChecks(): void {
     // Run initial health check
     this.checkAllProvidersHealth().catch((error) =>
-      console.error('[ProviderManager] Initial health check failed:', error)
+      console.error('[ProviderManager:HealthCheck] Initial health check failed:', error)
     );
 
     // Schedule periodic health checks
     this.healthCheckInterval = setInterval(() => {
       this.checkAllProvidersHealth().catch((error) =>
-        console.error('[ProviderManager] Periodic health check failed:', error)
+        console.error('[ProviderManager:HealthCheck] Periodic health check failed:', error)
       );
     }, this.config.healthCheckIntervalMs);
   }

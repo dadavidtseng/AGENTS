@@ -21,9 +21,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import {DiscordMentionEvent, DiscordMentionEventSchema} from '../types/discord-events.js';
 import {BaseBot, BaseBotConfig, logger, MODULE_DISCORD_BOT, timer} from 'agents-library';
-import type { ProviderManager } from '../providers/provider-manager.js';
-import type { MemoryService } from '../memory/memory-service.js';
-import type { Message } from '../providers/types.js';
+import type {ProviderManager} from '../providers/provider-manager.js';
+import type {MemoryService} from '../memory/memory-service.js';
+import type {Message} from '../providers/types.js';
 
 // ============================================================================
 // Types
@@ -583,7 +583,7 @@ export class DiscordBot extends BaseBot {
             return result.tools.map((tool: any) => ({
                 name: tool.name,
                 description: tool.description || '',
-                input_schema: (tool.inputSchema || { type: 'object' }) as Anthropic.Tool.InputSchema
+                input_schema: (tool.inputSchema || {type: 'object'}) as Anthropic.Tool.InputSchema
             }));
         } catch (error) {
             logger.error(MODULE_DISCORD_BOT, 'Failed to query network tools from broker', timer.elapsed('main'), error as Error | string);
