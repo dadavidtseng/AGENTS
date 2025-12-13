@@ -30,8 +30,9 @@ import asyncio
 import os
 from kadi import KadiClient
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import statistics
+from mcp_clients import GitMCPClient
 
 
 # ============================================================================
@@ -76,6 +77,67 @@ class SumOutput(BaseModel):
 
 
 # ============================================================================
+# Git Tool Schemas (Pydantic Models)
+# ============================================================================
+
+class GitWorktreeAddInput(BaseModel):
+    """Input schema for git worktree add operation."""
+    repo_path: str = Field(..., description="Path to the main repository")
+    worktree_path: str = Field(..., description="Path where the new worktree will be created")
+    branch: Optional[str] = Field(None, description="Branch name for the worktree")
+
+
+class GitWorktreeListInput(BaseModel):
+    """Input schema for git worktree list operation."""
+    repo_path: str = Field(..., description="Path to the main repository")
+
+
+class GitWorktreeRemoveInput(BaseModel):
+    """Input schema for git worktree remove operation."""
+    repo_path: str = Field(..., description="Path to the main repository")
+    worktree_path: str = Field(..., description="Path to the worktree to remove")
+    force: bool = Field(False, description="Force removal even if worktree is dirty")
+
+
+class GitWorktreePruneInput(BaseModel):
+    """Input schema for git worktree prune operation."""
+    repo_path: str = Field(..., description="Path to the main repository")
+
+
+class GitPushInput(BaseModel):
+    """Input schema for git push operation."""
+    repo_path: str = Field(..., description="Path to the repository")
+    remote: str = Field("origin", description="Remote name to push to")
+    branch: Optional[str] = Field(None, description="Branch to push (current branch if not specified)")
+    force: bool = Field(False, description="Force push")
+
+
+class GitStatusInput(BaseModel):
+    """Input schema for git status operation."""
+    repo_path: str = Field(..., description="Path to the repository")
+
+
+class GitBranchInput(BaseModel):
+    """Input schema for git branch operation."""
+    repo_path: str = Field(..., description="Path to the repository")
+    action: str = Field("list", description="Action to perform: list, create, delete")
+    branch_name: Optional[str] = Field(None, description="Branch name (for create/delete actions)")
+
+
+class GitCommitInput(BaseModel):
+    """Input schema for git commit operation."""
+    repo_path: str = Field(..., description="Path to the repository")
+    message: str = Field(..., description="Commit message")
+
+
+class GitOperationOutput(BaseModel):
+    """Generic output schema for git operations."""
+    success: bool = Field(..., description="Whether the operation succeeded")
+    message: Optional[str] = Field(None, description="Status or error message")
+    data: Optional[Dict[str, Any]] = Field(None, description="Operation result data")
+
+
+# ============================================================================
 # Data Processing Agent
 # ============================================================================
 
@@ -94,6 +156,12 @@ async def main():
         'broker': broker_url,
         'networks': networks
     })
+
+    # Create and connect Git MCP Client
+    git_client = GitMCPClient()
+    print("[*] Connecting to Git MCP Server...")
+    await git_client.connect()
+    print("[OK] Git MCP Server connected")
 
     # ========================================================================
     # Register Tools Using Decorator Pattern
@@ -258,6 +326,409 @@ async def main():
         return SumOutput(result=result, count=count)
 
     # ========================================================================
+    # Git Tools (Using MCP Client)
+    # ========================================================================
+
+    @client.tool(description="Add a new git worktree to a repository")
+    async def git_worktree_add(params: GitWorktreeAddInput) -> GitOperationOutput:
+        """
+        Add a new git worktree to a repository.
+
+        Args:
+            params: GitWorktreeAddInput with repo_path, worktree_path, and optional branch
+
+        Returns:
+            GitOperationOutput with operation result
+
+        Events Published:
+            git.worktree: Details of the worktree operation
+        """
+        try:
+            result = await git_client.git_worktree(
+                repo_path=params.repo_path,
+                action="add",
+                path=params.worktree_path,
+                branch=params.branch
+            )
+
+            success = result.get('success', False)
+            message = result.get('message', 'Worktree added successfully')
+
+            print(f"[OK] Git worktree add: {params.worktree_path}")
+
+            await client.publish_event('git.worktree', {
+                'operation': 'add',
+                'repo_path': params.repo_path,
+                'worktree_path': params.worktree_path,
+                'branch': params.branch,
+                'success': success,
+                'agent': 'data-processor-python'
+            })
+
+            return GitOperationOutput(success=success, message=message, data=result)
+
+        except Exception as e:
+            error_msg = f"Failed to add worktree: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+
+            await client.publish_event('git.error', {
+                'operation': 'worktree_add',
+                'error': error_msg,
+                'repo_path': params.repo_path,
+                'agent': 'data-processor-python'
+            })
+
+            return GitOperationOutput(success=False, message=error_msg, data=None)
+
+    @client.tool(description="List all git worktrees in a repository")
+    async def git_worktree_list(params: GitWorktreeListInput) -> GitOperationOutput:
+        """
+        List all git worktrees in a repository.
+
+        Args:
+            params: GitWorktreeListInput with repo_path
+
+        Returns:
+            GitOperationOutput with list of worktrees
+
+        Events Published:
+            git.worktree: Details of the worktree operation
+        """
+        try:
+            result = await git_client.git_worktree(
+                repo_path=params.repo_path,
+                action="list"
+            )
+
+            success = result.get('success', False)
+            worktrees = result.get('worktrees', [])
+
+            print(f"[OK] Git worktree list: Found {len(worktrees)} worktree(s)")
+
+            await client.publish_event('git.worktree', {
+                'operation': 'list',
+                'repo_path': params.repo_path,
+                'count': len(worktrees),
+                'success': success,
+                'agent': 'data-processor-python'
+            })
+
+            return GitOperationOutput(success=success, message=f"Found {len(worktrees)} worktree(s)", data=result)
+
+        except Exception as e:
+            error_msg = f"Failed to list worktrees: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+
+            await client.publish_event('git.error', {
+                'operation': 'worktree_list',
+                'error': error_msg,
+                'repo_path': params.repo_path,
+                'agent': 'data-processor-python'
+            })
+
+            return GitOperationOutput(success=False, message=error_msg, data=None)
+
+    @client.tool(description="Remove a git worktree from a repository")
+    async def git_worktree_remove(params: GitWorktreeRemoveInput) -> GitOperationOutput:
+        """
+        Remove a git worktree from a repository.
+
+        Args:
+            params: GitWorktreeRemoveInput with repo_path, worktree_path, and force flag
+
+        Returns:
+            GitOperationOutput with operation result
+
+        Events Published:
+            git.worktree: Details of the worktree operation
+        """
+        try:
+            result = await git_client.git_worktree(
+                repo_path=params.repo_path,
+                action="remove",
+                path=params.worktree_path,
+                force=params.force
+            )
+
+            success = result.get('success', False)
+            message = result.get('message', 'Worktree removed successfully')
+
+            print(f"[OK] Git worktree remove: {params.worktree_path}")
+
+            await client.publish_event('git.worktree', {
+                'operation': 'remove',
+                'repo_path': params.repo_path,
+                'worktree_path': params.worktree_path,
+                'force': params.force,
+                'success': success,
+                'agent': 'data-processor-python'
+            })
+
+            return GitOperationOutput(success=success, message=message, data=result)
+
+        except Exception as e:
+            error_msg = f"Failed to remove worktree: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+
+            await client.publish_event('git.error', {
+                'operation': 'worktree_remove',
+                'error': error_msg,
+                'repo_path': params.repo_path,
+                'agent': 'data-processor-python'
+            })
+
+            return GitOperationOutput(success=False, message=error_msg, data=None)
+
+    @client.tool(description="Prune stale git worktree administrative files")
+    async def git_worktree_prune(params: GitWorktreePruneInput) -> GitOperationOutput:
+        """
+        Prune stale git worktree administrative files.
+
+        Args:
+            params: GitWorktreePruneInput with repo_path
+
+        Returns:
+            GitOperationOutput with operation result
+
+        Events Published:
+            git.worktree: Details of the worktree operation
+        """
+        try:
+            result = await git_client.git_worktree(
+                repo_path=params.repo_path,
+                action="prune"
+            )
+
+            success = result.get('success', False)
+            message = result.get('message', 'Worktrees pruned successfully')
+
+            print(f"[OK] Git worktree prune: {params.repo_path}")
+
+            await client.publish_event('git.worktree', {
+                'operation': 'prune',
+                'repo_path': params.repo_path,
+                'success': success,
+                'agent': 'data-processor-python'
+            })
+
+            return GitOperationOutput(success=success, message=message, data=result)
+
+        except Exception as e:
+            error_msg = f"Failed to prune worktrees: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+
+            await client.publish_event('git.error', {
+                'operation': 'worktree_prune',
+                'error': error_msg,
+                'repo_path': params.repo_path,
+                'agent': 'data-processor-python'
+            })
+
+            return GitOperationOutput(success=False, message=error_msg, data=None)
+
+    @client.tool(description="Push commits to a remote git repository")
+    async def git_push(params: GitPushInput) -> GitOperationOutput:
+        """
+        Push commits to a remote git repository.
+
+        Args:
+            params: GitPushInput with repo_path, remote, branch, and force flag
+
+        Returns:
+            GitOperationOutput with operation result
+
+        Events Published:
+            git.push: Details of the push operation
+        """
+        try:
+            result = await git_client.git_push(
+                repo_path=params.repo_path,
+                remote=params.remote,
+                branch=params.branch,
+                force=params.force
+            )
+
+            success = result.get('success', False)
+            message = result.get('message', 'Push completed successfully')
+
+            print(f"[OK] Git push: {params.repo_path} -> {params.remote}/{params.branch or 'current'}")
+
+            await client.publish_event('git.push', {
+                'operation': 'push',
+                'repo_path': params.repo_path,
+                'remote': params.remote,
+                'branch': params.branch,
+                'force': params.force,
+                'success': success,
+                'agent': 'data-processor-python'
+            })
+
+            return GitOperationOutput(success=success, message=message, data=result)
+
+        except Exception as e:
+            error_msg = f"Failed to push: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+
+            await client.publish_event('git.error', {
+                'operation': 'push',
+                'error': error_msg,
+                'repo_path': params.repo_path,
+                'agent': 'data-processor-python'
+            })
+
+            return GitOperationOutput(success=False, message=error_msg, data=None)
+
+    @client.tool(description="Get the status of a git repository")
+    async def git_status(params: GitStatusInput) -> GitOperationOutput:
+        """
+        Get the status of a git repository.
+
+        Args:
+            params: GitStatusInput with repo_path
+
+        Returns:
+            GitOperationOutput with repository status
+
+        Events Published:
+            git.status: Details of the status check
+        """
+        try:
+            result = await git_client.git_status(repo_path=params.repo_path)
+
+            success = result.get('success', False)
+            is_clean = result.get('isClean', True)
+            current_branch = result.get('currentBranch', 'unknown')
+
+            status_msg = f"Branch: {current_branch}, Clean: {is_clean}"
+            print(f"[OK] Git status: {status_msg}")
+
+            await client.publish_event('git.status', {
+                'operation': 'status',
+                'repo_path': params.repo_path,
+                'current_branch': current_branch,
+                'is_clean': is_clean,
+                'success': success,
+                'agent': 'data-processor-python'
+            })
+
+            return GitOperationOutput(success=success, message=status_msg, data=result)
+
+        except Exception as e:
+            error_msg = f"Failed to get status: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+
+            await client.publish_event('git.error', {
+                'operation': 'status',
+                'error': error_msg,
+                'repo_path': params.repo_path,
+                'agent': 'data-processor-python'
+            })
+
+            return GitOperationOutput(success=False, message=error_msg, data=None)
+
+    @client.tool(description="List or manage git branches in a repository")
+    async def git_branch(params: GitBranchInput) -> GitOperationOutput:
+        """
+        List or manage git branches in a repository.
+
+        Args:
+            params: GitBranchInput with repo_path, action, and optional branch_name
+
+        Returns:
+            GitOperationOutput with branch information
+
+        Events Published:
+            git.branch: Details of the branch operation
+        """
+        try:
+            result = await git_client.git_branch(
+                repo_path=params.repo_path,
+                action=params.action,
+                branch_name=params.branch_name
+            )
+
+            success = result.get('success', False)
+            branches = result.get('branches', [])
+            current_branch = result.get('currentBranch', 'unknown')
+
+            message = f"Action: {params.action}, Current: {current_branch}"
+            print(f"[OK] Git branch: {message}")
+
+            await client.publish_event('git.branch', {
+                'operation': params.action,
+                'repo_path': params.repo_path,
+                'current_branch': current_branch,
+                'branch_count': len(branches),
+                'success': success,
+                'agent': 'data-processor-python'
+            })
+
+            return GitOperationOutput(success=success, message=message, data=result)
+
+        except Exception as e:
+            error_msg = f"Failed to manage branches: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+
+            await client.publish_event('git.error', {
+                'operation': 'branch',
+                'error': error_msg,
+                'repo_path': params.repo_path,
+                'agent': 'data-processor-python'
+            })
+
+            return GitOperationOutput(success=False, message=error_msg, data=None)
+
+    @client.tool(description="Create a git commit with staged changes")
+    async def git_commit(params: GitCommitInput) -> GitOperationOutput:
+        """
+        Create a git commit with staged changes.
+
+        Args:
+            params: GitCommitInput with repo_path and message
+
+        Returns:
+            GitOperationOutput with commit result
+
+        Events Published:
+            git.commit: Details of the commit operation
+        """
+        try:
+            result = await git_client.git_commit(
+                repo_path=params.repo_path,
+                message=params.message
+            )
+
+            success = result.get('success', False)
+            commit_hash = result.get('commitHash', 'unknown')
+
+            message = f"Commit created: {commit_hash[:8]}"
+            print(f"[OK] Git commit: {message}")
+
+            await client.publish_event('git.commit', {
+                'operation': 'commit',
+                'repo_path': params.repo_path,
+                'commit_hash': commit_hash,
+                'message': params.message,
+                'success': success,
+                'agent': 'data-processor-python'
+            })
+
+            return GitOperationOutput(success=success, message=message, data=result)
+
+        except Exception as e:
+            error_msg = f"Failed to commit: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+
+            await client.publish_event('git.error', {
+                'operation': 'commit',
+                'error': error_msg,
+                'repo_path': params.repo_path,
+                'agent': 'data-processor-python'
+            })
+
+            return GitOperationOutput(success=False, message=error_msg, data=None)
+
+    # ========================================================================
     # Event Subscriptions
     # ========================================================================
 
@@ -284,10 +755,27 @@ async def main():
 
         print(f"[INFO] Agent connected: {agent_name} on networks: {', '.join(networks)}")
 
+    def on_git_event(event_data):
+        """Handle git operation events."""
+        operation = event_data.get('operation', 'unknown')
+        repo_path = event_data.get('repo_path', 'unknown')
+        success = event_data.get('success', False)
+
+        status = "OK" if success else "FAILED"
+        print(f"[EVENT] Git {operation}: {repo_path} [{status}]")
+
     # Subscribe to all data events (await required for async API)
     await client.subscribe_to_event('data.analysis', on_data_analysis)
     await client.subscribe_to_event('data.error', on_error)
     await client.subscribe_to_event('agent.connected', on_agent_connected)
+
+    # Subscribe to git events
+    await client.subscribe_to_event('git.worktree', on_git_event)
+    await client.subscribe_to_event('git.push', on_git_event)
+    await client.subscribe_to_event('git.status', on_git_event)
+    await client.subscribe_to_event('git.branch', on_git_event)
+    await client.subscribe_to_event('git.commit', on_git_event)
+    await client.subscribe_to_event('git.error', on_error)
 
     # ========================================================================
     # Connect and Serve
@@ -308,16 +796,28 @@ async def main():
         print(f"Agent ID: {agent_id}")
         print()
         print("Available Tools:")
-        print("  - calculate_mean(numbers) - Arithmetic mean")
-        print("  - calculate_median(numbers) - Median value")
-        print("  - calculate_std_dev(numbers) - Standard deviation")
-        print("  - find_min_max(numbers) - Min, max, and range")
-        print("  - calculate_sum(numbers) - Sum of values")
+        print("  [Statistics]")
+        print("    - calculate_mean(numbers) - Arithmetic mean")
+        print("    - calculate_median(numbers) - Median value")
+        print("    - calculate_std_dev(numbers) - Standard deviation")
+        print("    - find_min_max(numbers) - Min, max, and range")
+        print("    - calculate_sum(numbers) - Sum of values")
+        print()
+        print("  [Git Operations]")
+        print("    - git_worktree_add(repo_path, worktree_path, branch?) - Add worktree")
+        print("    - git_worktree_list(repo_path) - List worktrees")
+        print("    - git_worktree_remove(repo_path, worktree_path, force?) - Remove worktree")
+        print("    - git_worktree_prune(repo_path) - Prune worktrees")
+        print("    - git_push(repo_path, remote?, branch?, force?) - Push to remote")
+        print("    - git_status(repo_path) - Get repository status")
+        print("    - git_branch(repo_path, action?, branch_name?) - Manage branches")
+        print("    - git_commit(repo_path, message) - Create commit")
         print()
         print("Subscribed to Events:")
         print("  - data.analysis - All data analysis events")
         print("  - data.error - All error events")
         print("  - agent.connected - Agent connection events")
+        print("  - git.* - All git operation events")
         print()
         print("Press Ctrl+C to stop the agent...")
         print("=" * 60)
@@ -326,7 +826,13 @@ async def main():
         await client.publish_event('agent.connected', {
             'name': 'data-processor-python',
             'networks': networks,
-            'tools': ['calculate_mean', 'calculate_median', 'calculate_std_dev', 'find_min_max', 'calculate_sum'],
+            'tools': [
+                # Statistics tools
+                'calculate_mean', 'calculate_median', 'calculate_std_dev', 'find_min_max', 'calculate_sum',
+                # Git tools
+                'git_worktree_add', 'git_worktree_list', 'git_worktree_remove', 'git_worktree_prune',
+                'git_push', 'git_status', 'git_branch', 'git_commit'
+            ],
             'timestamp': asyncio.get_event_loop().time()
         })
 
@@ -336,6 +842,12 @@ async def main():
     except Exception as e:
         print(f"[ERROR] Agent failed to start: {e}")
         raise
+
+    finally:
+        # Cleanup: Disconnect from Git MCP Server
+        print("[*] Disconnecting from Git MCP Server...")
+        await git_client.disconnect()
+        print("[OK] Git MCP Server disconnected")
 
 
 # ============================================================================
