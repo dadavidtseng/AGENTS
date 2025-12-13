@@ -28,3 +28,6 @@
 [submodule "agent-producer"]
 	path = agent-producer
 	url = https://github.com/dadavidtseng/agent-producer.git
+[submodule "agents-library"]
+	path = agents-library
+	url = https://github.com/dadavidtseng/agents-library.git

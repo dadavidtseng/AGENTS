@@ -239,6 +239,7 @@ docs/_build/
 # Environment files with secrets
 .env.production
 .env.local
+.env.test
 
 # Claude Code planning documents (local working files)
 .claude/plan/

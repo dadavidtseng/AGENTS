@@ -1,0 +1,31 @@
+=========================================
+Template Agent Test Deployment
+=========================================
+
+📋 Pre-deployment checklist:
+  ✓ docker-compose.test.yml created
+  ✓ .env.test configured
+  ✓ Source code found at /mnt/c/p4/Personal/SD/template-agent-typescript
+  ✓ agents-library found at /mnt/c/p4/Personal/SD/agents-library
+  ✓ @kadi.build/core will be installed from npm
+
+📁 Step 1: Creating remote directories...
+📤 Step 2: Transferring source code...
+  → Transferring template-agent-typescript...
+sending incremental file list
+.idea/
+.idea/workspace.xml
+            700   9%    0.00kB/s    0:00:00            7,118 100%    6.12MB/s    0:00:00 (xfr#1, to-chk=258/296)
+test-data/
+  → Transferring agents-library...
+sending incremental file list
+./
+package.json
+            797 100%    0.00kB/s    0:00:00              797 100%    0.00kB/s    0:00:00 (xfr#1, to-chk=89/92)
+📤 Step 3: Transferring deployment configuration...
+🛑 Step 4: Stopping existing containers...
+ Container template-agent-test  Stopping
+ Container template-agent-test  Stopped
+ Container template-agent-test  Removing
+ Container template-agent-test  Removed
+ Container template-agent-arcadedb  Stopping

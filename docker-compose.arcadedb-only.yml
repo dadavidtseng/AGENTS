@@ -1,0 +1,23 @@
+services:
+  arcadedb:
+    image: arcadedata/arcadedb:24.11.1
+    container_name: arcadedb-production
+    restart: unless-stopped
+    command: ["/bin/sh", "-c", "export JAVA_OPTS='-Xms256M -Xmx512M -Darcadedb.server.rootPassword=arcadedb' && /home/arcadedb/bin/server.sh"]
+    ports:
+      - "2480:2480"      # HTTP API
+      - "2424:2424"      # Binary protocol
+    volumes:
+      - arcadedb-data:/home/arcadedb/databases
+    environment:
+      - JAVA_OPTS=-Xms256M -Xmx512M -Darcadedb.server.rootPassword=arcadedb
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2480/api/v1/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  arcadedb-data:
+    name: arcadedb-production-data
