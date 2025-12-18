@@ -310,15 +310,15 @@ export class BaseShadowAgent {
   async start(): Promise<void> {
     console.log(`🚀 Starting shadow agent for role: ${this.role}`);
 
-    // Connect to KĀDI broker (non-blocking)
+    // Connect to KĀDI broker and wait for ready state
     console.log('   → Connecting to KĀDI broker...');
-    void this.client.serve('broker').catch((error: any) => {
-      console.error('❌ Broker connection error:', error);
-      process.exit(1);
+    await new Promise<void>((resolve) => {
+      this.client.once('ready', () => resolve());
+      void this.client.serve('broker').catch((error: any) => {
+        console.error('❌ Broker connection error:', error);
+        process.exit(1);
+      });
     });
-
-    // Wait a moment for broker connection to establish
-    await new Promise(resolve => setTimeout(resolve, 2000));
     console.log('   ✅ Connected to KĀDI broker');
 
     // Setup filesystem watcher for worker worktree

@@ -314,16 +314,16 @@ export class BaseWorkerAgent {
       // Note: client.serve() is BLOCKING, so we start it asynchronously
       console.log('   → Connecting to broker...');
 
-      // Start serve() in background (non-blocking)
-      // We intentionally don't await this - it runs indefinitely in background
-      void this.client.serve('broker').catch((error: any) => {
-        console.error(`❌ Client serve error: ${error.message || String(error)}`);
-        throw error;
+      // Start serve() in background and wait for 'ready' event
+      // client.serve() is blocking and runs indefinitely, so we don't await it
+      // Instead, we wait for the 'ready' event which is emitted after successful connection
+      await new Promise<void>((resolve) => {
+        this.client.once('ready', () => resolve());
+        void this.client.serve('broker').catch((error: any) => {
+          console.error(`❌ Client serve error: ${error.message || String(error)}`);
+          throw error;
+        });
       });
-
-      // Wait for connection to establish before accessing protocol
-      // KadiClient needs time to complete handshake
-      await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Step 2: Initialize broker protocol for tool invocation
       console.log('   → Initializing broker protocol...');
