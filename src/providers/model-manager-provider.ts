@@ -20,8 +20,17 @@ import { ok, err } from '../common/result.js';
  * OpenAI Chat Completion API Types
  */
 interface OpenAIChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | null;
+  tool_call_id?: string;
+  tool_calls?: Array<{
+    id: string;
+    type: 'function';
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }>;
 }
 
 interface OpenAIChatRequest {
@@ -31,6 +40,15 @@ interface OpenAIChatRequest {
   temperature?: number;
   stop?: string[];
   stream?: boolean;
+  tools?: Array<{
+    type: 'function';
+    function: {
+      name: string;
+      description: string;
+      parameters: any;
+    };
+  }>;
+  tool_choice?: 'auto' | 'none' | { type: 'function'; function: { name: string } };
 }
 
 interface OpenAIChatResponse {
@@ -42,7 +60,15 @@ interface OpenAIChatResponse {
     index: number;
     message: {
       role: string;
-      content: string;
+      content: string | null;
+      tool_calls?: Array<{
+        id: string;
+        type: 'function';
+        function: {
+          name: string;
+          arguments: string;
+        };
+      }>;
     };
     finish_reason: string;
   }>;
@@ -146,11 +172,15 @@ export class ModelManagerProvider implements LLMProvider {
         messages: messages.map((msg) => ({
           role: msg.role,
           content: msg.content,
+          ...(msg.tool_call_id && { tool_call_id: msg.tool_call_id }),
+          ...(msg.tool_calls && { tool_calls: msg.tool_calls }),
         })),
         max_completion_tokens: options?.maxTokens || this.defaultMaxTokens,
         temperature: options?.temperature,
         stop: options?.stopSequences,
         stream: false,
+        ...(options?.tools && { tools: options.tools }),
+        ...(options?.tool_choice && { tool_choice: options.tool_choice }),
       };
 
       const response = await fetch(`${this.baseURL}/v1/chat/completions`, {
@@ -174,9 +204,37 @@ export class ModelManagerProvider implements LLMProvider {
 
       const data = (await response.json()) as OpenAIChatResponse;
 
-      // Extract response text
+      // Extract response
       const choice = data.choices[0];
-      if (!choice || !choice.message || !choice.message.content) {
+      if (!choice || !choice.message) {
+        this.consecutiveFailures++;
+        return err(
+          this.createError(
+            ProviderErrorType.INVALID_REQUEST,
+            'No message in response'
+          )
+        );
+      }
+
+      const message = choice.message;
+
+      // Check if LLM wants to call tools
+      if (message.tool_calls && message.tool_calls.length > 0) {
+        // Return tool calls as a special JSON format that the bot can parse
+        // Format: __TOOL_CALLS__<JSON>
+        const toolCallsData = {
+          tool_calls: message.tool_calls,
+          message: message.content || ''
+        };
+        
+        const result = `__TOOL_CALLS__${JSON.stringify(toolCallsData)}`;
+        
+        this.consecutiveFailures = 0;
+        return ok(result);
+      }
+
+      // Regular text response
+      if (!message.content) {
         this.consecutiveFailures++;
         return err(
           this.createError(
@@ -189,7 +247,7 @@ export class ModelManagerProvider implements LLMProvider {
       // Reset failure counter on success
       this.consecutiveFailures = 0;
 
-      return ok(choice.message.content);
+      return ok(message.content);
     } catch (error: any) {
       clearTimeout(timeoutId);
       this.consecutiveFailures++;

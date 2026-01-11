@@ -31,7 +31,7 @@ export class AnthropicProvider implements LLMProvider {
   /**
    * Default model configuration
    */
-  private readonly defaultModel = 'claude-3-5-sonnet-20241022';
+  private readonly defaultModel = 'claude-sonnet-4-5-20250929';
   private readonly defaultMaxTokens = 8096;
 
   /**
@@ -39,7 +39,24 @@ export class AnthropicProvider implements LLMProvider {
    * Maps shorthand names to full Anthropic model identifiers
    */
   private readonly modelAliases: Record<string, string> = {
-    // Claude 3.5 models
+    // Claude 4 models (NEW - available in Tier 1)
+    'claude-4-sonnet': 'claude-sonnet-4-20250514',
+    'claude-sonnet-4': 'claude-sonnet-4-20250514',
+    'sonnet-4': 'claude-sonnet-4-20250514',
+    'claude-4.5-sonnet': 'claude-sonnet-4-5-20250929',
+    'claude-sonnet-4.5': 'claude-sonnet-4-5-20250929',
+    'sonnet-4.5': 'claude-sonnet-4-5-20250929',
+    'claude-4-opus': 'claude-opus-4-20250514',
+    'claude-opus-4': 'claude-opus-4-20250514',
+    'opus-4': 'claude-opus-4-20250514',
+    'claude-4.5-opus': 'claude-opus-4-5-20251101',
+    'claude-opus-4.5': 'claude-opus-4-5-20251101',
+    'opus-4.5': 'claude-opus-4-5-20251101',
+    'claude-4-haiku': 'claude-haiku-4-20250514',
+    'claude-haiku-4': 'claude-haiku-4-20250514',
+    'haiku-4': 'claude-haiku-4-20250514',
+
+    // Claude 3.5 models (NOT available in Tier 1)
     'claude-3-5-sonnet': 'claude-3-5-sonnet-20241022',
     'claude-3.5-sonnet': 'claude-3-5-sonnet-20241022',
     'sonnet-3.5': 'claude-3-5-sonnet-20241022',
@@ -64,11 +81,24 @@ export class AnthropicProvider implements LLMProvider {
    * Maps model identifiers to their maximum allowed output tokens
    */
   private readonly modelMaxTokens: Record<string, number> = {
-    // Claude 3.5 models (8192 max output tokens)
+    // Claude 4 models (8192 max output tokens) - TESTED WORKING
+    'claude-sonnet-4-20250514': 8192,
+    'claude-4-sonnet-20250514': 8192,
+    'claude-sonnet-4-5-20250929': 8192,
+    'claude-opus-4-20250514': 8192,
+    'claude-4-opus-20250514': 8192,
+    'claude-opus-4-5-20251101': 8192,
+    'claude-opus-4-5': 8192,
+    'claude-haiku-4-20250514': 8192,
+
+    // Claude 3.7 models (8192 max output tokens) - TESTED WORKING
+    'claude-3-7-sonnet-20250219': 8192,
+
+    // Claude 3.5 models (8192 max output tokens) - NOT AVAILABLE
     'claude-3-5-sonnet-20241022': 8192,
     'claude-3-5-haiku-20241022': 8192,
 
-    // Claude 3 models
+    // Claude 3 models (4096 max output tokens)
     'claude-3-opus-20240229': 4096,
     'claude-3-sonnet-20240229': 4096,
     'claude-3-haiku-20240307': 4096,
@@ -84,7 +114,12 @@ export class AnthropicProvider implements LLMProvider {
       throw new Error('Anthropic API key is required');
     }
 
-    this.client = new Anthropic({ apiKey });
+    // IMPORTANT: Explicitly set baseURL to official Anthropic API
+    // This prevents proxies/gateways from intercepting the requests
+    this.client = new Anthropic({
+      apiKey,
+      baseURL: 'https://api.anthropic.com',
+    });
   }
 
   /**
@@ -131,6 +166,101 @@ export class AnthropicProvider implements LLMProvider {
    * @param options - Optional chat configuration
    * @returns Result with response text or error
    */
+  /**
+   * Convert OpenAI tool format to Anthropic tool format
+   *
+   * OpenAI format:
+   * {
+   *   type: "function",
+   *   function: {
+   *     name: "tool_name",
+   *     description: "...",
+   *     parameters: { type: "object", properties: {...}, required: [...] }
+   *   }
+   * }
+   *
+   * Anthropic format:
+   * {
+   *   name: "tool_name",
+   *   description: "...",
+   *   input_schema: { type: "object", properties: {...}, required: [...] }
+   * }
+   */
+  private convertOpenAIToolsToAnthropic(openaiTools: any[]): Anthropic.Tool[] {
+    return openaiTools.map((tool) => ({
+      name: tool.function.name,
+      description: tool.function.description || '',
+      input_schema: tool.function.parameters as Anthropic.Tool.InputSchema,
+    }));
+  }
+
+  /**
+   * Convert OpenAI tool_choice to Anthropic tool_choice
+   *
+   * OpenAI: "auto" | "none" | { type: "function", function: { name: string } }
+   * Anthropic: { type: "auto" } | { type: "any" } | { type: "tool", name: string }
+   */
+  private convertOpenAIToolChoiceToAnthropic(
+    toolChoice?: 'auto' | 'none' | { type: 'function'; function: { name: string } }
+  ): Anthropic.MessageCreateParams['tool_choice'] {
+    if (!toolChoice || toolChoice === 'auto') {
+      return { type: 'auto' };
+    }
+
+    if (toolChoice === 'none') {
+      return undefined; // Anthropic doesn't have explicit "none", just omit tools
+    }
+
+    if (typeof toolChoice === 'object' && toolChoice.type === 'function') {
+      return {
+        type: 'tool',
+        name: toolChoice.function.name,
+      };
+    }
+
+    return { type: 'auto' }; // Fallback
+  }
+
+  /**
+   * Convert Anthropic tool use response to OpenAI format
+   *
+   * Returns special format: __TOOL_CALLS__<JSON>
+   * This allows the bot to parse and execute tools
+   */
+  private convertAnthropicToolCallsToOpenAI(content: Anthropic.ContentBlock[]): string | null {
+    const toolUseBlocks = content.filter(
+      (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
+    );
+
+    if (toolUseBlocks.length === 0) {
+      return null;
+    }
+
+    // Convert to OpenAI format
+    const toolCalls = toolUseBlocks.map((block) => ({
+      id: block.id,
+      type: 'function' as const,
+      function: {
+        name: block.name,
+        arguments: JSON.stringify(block.input),
+      },
+    }));
+
+    // Get text content if any
+    const textBlock = content.find(
+      (block): block is Anthropic.TextBlock => block.type === 'text'
+    );
+    const message = textBlock ? textBlock.text : '';
+
+    // Return in the format the bot expects
+    const toolCallsData = {
+      tool_calls: toolCalls,
+      message,
+    };
+
+    return `__TOOL_CALLS__${JSON.stringify(toolCallsData)}`;
+  }
+
   async chat(
     messages: Message[],
     options?: ChatOptions
@@ -143,15 +273,41 @@ export class AnthropicProvider implements LLMProvider {
       // Get appropriate max tokens for this model
       const maxTokens = this.getMaxTokensForModel(normalizedModel, options?.maxTokens);
 
+      // Convert tools from OpenAI format to Anthropic format if provided
+      const anthropicTools = options?.tools
+        ? this.convertOpenAIToolsToAnthropic(options.tools)
+        : undefined;
+
+      const anthropicToolChoice = options?.tool_choice
+        ? this.convertOpenAIToolChoiceToAnthropic(options.tool_choice)
+        : undefined;
+
+      // Debug logging
+      if (anthropicTools && anthropicTools.length > 0) {
+        console.log(`[AnthropicProvider] Passing ${anthropicTools.length} tools to ${normalizedModel}`);
+        console.log(`[AnthropicProvider] Tool names: ${anthropicTools.map(t => t.name).join(', ')}`);
+        console.log(`[AnthropicProvider] Tool choice: ${JSON.stringify(anthropicToolChoice)}`);
+        console.log(`[AnthropicProvider] First tool structure: ${JSON.stringify(anthropicTools[0], null, 2)}`);
+      } else {
+        console.log(`[AnthropicProvider] No tools provided for ${normalizedModel}`);
+        console.log(`[AnthropicProvider] options.tools: ${options?.tools ? `${options.tools.length} tools` : 'undefined'}`);
+      }
+
+      console.log(`[AnthropicProvider] API request - model: ${normalizedModel}, messages: ${messages.length}, tools: ${anthropicTools?.length || 0}`);
+
       const response = await this.client.messages.create({
         model: normalizedModel,
         max_tokens: maxTokens,
         temperature: options?.temperature,
         stop_sequences: options?.stopSequences,
-        messages: messages.map((msg) => ({
-          role: msg.role === 'system' ? 'user' : msg.role,
-          content: msg.content,
-        })),
+        messages: messages
+          .filter((msg) => msg.role !== 'tool' && msg.role !== 'system') // Filter out OpenAI tool messages and system
+          .map((msg) => ({
+            role: msg.role as 'user' | 'assistant',
+            content: (msg.content || '').trim(), // Anthropic requires non-null content and no trailing whitespace
+          })),
+        ...(anthropicTools && anthropicTools.length > 0 && { tools: anthropicTools }),
+        ...(anthropicToolChoice && { tool_choice: anthropicToolChoice }),
       });
 
       // Handle error responses that SDK didn't throw
@@ -173,6 +329,18 @@ export class AnthropicProvider implements LLMProvider {
       // Validate response structure
       if (!response || !response.content || !Array.isArray(response.content)) {
         return err(this.createError(ProviderErrorType.INVALID_REQUEST, 'Invalid response structure from Anthropic API'));
+      }
+
+      console.log(`[AnthropicProvider] Response received - stop_reason: ${response.stop_reason}, content blocks: ${response.content.length}`);
+      console.log(`[AnthropicProvider] Content types: ${response.content.map(c => c.type).join(', ')}`);
+
+      // Check if response contains tool calls
+      const toolCallsResponse = this.convertAnthropicToolCallsToOpenAI(response.content);
+      if (toolCallsResponse) {
+        console.log(`[AnthropicProvider] Tool calls detected!`);
+        // Reset failure counter on success
+        this.consecutiveFailures = 0;
+        return ok(toolCallsResponse);
       }
 
       // Extract text from response
@@ -215,10 +383,12 @@ export class AnthropicProvider implements LLMProvider {
         max_tokens: maxTokens,
         temperature: options?.temperature,
         stop_sequences: options?.stopSequences,
-        messages: messages.map((msg) => ({
-          role: msg.role === 'system' ? 'user' : msg.role,
-          content: msg.content,
-        })),
+        messages: messages
+          .filter((msg) => msg.role !== 'tool' && msg.role !== 'system') // Filter out OpenAI tool messages and system
+          .map((msg) => ({
+            role: msg.role as 'user' | 'assistant',
+            content: (msg.content || '').trim(), // Anthropic requires non-null content and no trailing whitespace
+          })),
       });
 
       // Create async iterator from stream
@@ -263,14 +433,27 @@ export class AnthropicProvider implements LLMProvider {
    * @returns Result with array of model IDs or error
    */
   async getAvailableModels(): Promise<Result<string[], ProviderError>> {
-    // Return known Claude models
+    // Return models confirmed to work with the current API key
     // Note: Anthropic SDK doesn't have a models.list() method
     const knownModels = [
-      'claude-3-5-sonnet-20241022',
-      'claude-3-5-haiku-20241022',
-      'claude-3-opus-20240229',
-      'claude-3-sonnet-20240229',
+      // Claude 4 Opus models (TESTED - WORKING - MOST POWERFUL)
+      'claude-opus-4-5-20251101',    // Claude Opus 4.5 (MOST CAPABLE)
+      'claude-opus-4-5',             // Claude Opus 4.5 (alias)
+      'claude-opus-4-20250514',      // Claude Opus 4
+      'claude-4-opus-20250514',      // Claude 4 Opus (alt format)
+
+      // Claude 4 Sonnet models (TESTED - WORKING)
+      'claude-sonnet-4-5-20250929',  // Claude Sonnet 4.5
+      'claude-sonnet-4-20250514',    // Claude Sonnet 4
+      'claude-4-sonnet-20250514',    // Claude 4 Sonnet (alt format)
+
+      // Claude 3.7 Sonnet (TESTED - WORKING)
+      'claude-3-7-sonnet-20250219',
+
+      // Claude 3 Haiku (TESTED - WORKING - FASTEST)
       'claude-3-haiku-20240307',
+
+      // Note: Claude 3.5 models and Claude 4 Haiku are NOT available
     ];
     return ok(knownModels);
   }

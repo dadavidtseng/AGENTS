@@ -1,5 +1,6 @@
 /**
  * LLM Provider System Types
+ * LLM Provider System Types
  *
  * Defines interfaces and types for the pluggable LLM provider architecture.
  * Supports multiple providers (Anthropic Claude, OpenAI-compatible Model Manager Gateway)
@@ -10,10 +11,32 @@ import type { Result } from '../common/result.js';
 
 /**
  * Message format for LLM conversations
+ * Supports OpenAI tool calling protocol
  */
 export interface Message {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string | null;
+  tool_call_id?: string;
+  tool_calls?: Array<{
+    id: string;
+    type: 'function';
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }>;
+}
+
+/**
+ * OpenAI-compatible tool definition
+ */
+export interface ToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: any;
+  };
 }
 
 /**
@@ -24,9 +47,12 @@ export interface ChatOptions {
   maxTokens?: number;
   temperature?: number;
   stopSequences?: string[];
+  tools?: ToolDefinition[];
+  tool_choice?: 'auto' | 'none' | { type: 'function'; function: { name: string } };
 }
 
 /**
+ * Provider error types
  * Provider error types
  */
 export enum ProviderErrorType {
@@ -41,6 +67,7 @@ export enum ProviderErrorType {
 
 /**
  * Error object returned by providers
+ * Error object returned by providers
  */
 export interface ProviderError {
   type: ProviderErrorType;
@@ -51,6 +78,7 @@ export interface ProviderError {
 
 /**
  * Provider health status
+ * Provider health status
  */
 export interface ProviderStatus {
   isHealthy: boolean;
@@ -59,6 +87,7 @@ export interface ProviderStatus {
 }
 
 /**
+ * Provider configuration
  * Provider configuration
  */
 export interface ProviderConfig {
@@ -70,6 +99,7 @@ export interface ProviderConfig {
 }
 
 /**
+ * Standard interface for all LLM provider adapters
  * Standard interface for all LLM provider adapters
  *
  * All LLM providers (Anthropic, Model Manager) must implement this interface

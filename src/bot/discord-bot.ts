@@ -216,13 +216,39 @@ export class DiscordBot extends BaseBot {
                 logger.info(MODULE_DISCORD_BOT, `Model detected from message: ${detectedModel}`, timer.elapsed('main'));
             }
 
-            // Step 4: Generate response using ProviderManager
-            const responseResult = await this.providerManager.chat(messages, {
-                model: detectedModel,
-            });
+            // Step 4: Get available tools and convert to OpenAI format
+            const anthropicTools = await this.getAvailableTools();
+            const openaiTools = this.convertToolsToOpenAIFormat(anthropicTools);
+            
+            logger.info(MODULE_DISCORD_BOT, `Passing ${openaiTools.length} tools to LLM`, timer.elapsed('main'));
 
-            // Step 5: Handle error
-            if (!responseResult.success) {
+            // Step 5: Tool calling loop - keep calling until we get a final text response
+            let maxIterations = 10;
+            let iteration = 0;
+            let finalResponse: string | null = null;
+            let toolsExecuted = false; // Track if tools have been executed
+
+            while (iteration < maxIterations && !finalResponse) {
+                iteration++;
+
+                logger.info(MODULE_DISCORD_BOT, `=== Iteration ${iteration} ===`, timer.elapsed('main'));
+                logger.info(MODULE_DISCORD_BOT, `Sending ${messages.length} messages to LLM with model: ${detectedModel || 'default'}${toolsExecuted ? ' (tools disabled - already executed)' : ''}`, timer.elapsed('main'));
+
+                // Log message roles for debugging
+                const msgSummary = messages.map(m => `${m.role}${m.tool_call_id ? `(tool:${m.tool_call_id.substring(0,8)})` : ''}`).join(', ');
+                logger.info(MODULE_DISCORD_BOT, `Message roles: [${msgSummary}]`, timer.elapsed('main'));
+
+                // Generate response using ProviderManager with tools
+                // IMPORTANT: After tools have been executed, don't send tools again to prevent
+                // server-side re-execution by some LLM gateways (e.g., model-manager with GPT-5)
+                const responseResult = await this.providerManager.chat(messages, {
+                    model: detectedModel,
+                    tools: toolsExecuted ? undefined : openaiTools,
+                    tool_choice: toolsExecuted ? undefined : 'auto',
+                });
+
+                // Handle error
+                if (!responseResult.success) {
                 logger.error(MODULE_DISCORD_BOT, `Provider failed: ${responseResult.error.message}`, timer.elapsed('main'));
 
                 // Record failure for circuit breaker
@@ -245,13 +271,66 @@ export class DiscordBot extends BaseBot {
                     timestamp: new Date().toISOString(),
                 });
 
-                // Send user-friendly error message (no stack traces)
-                const userMessage = 'Sorry, I encountered an issue generating a response. The issue has been logged.';
-                await this.sendDiscordReply(mention.channel, mention.id, userMessage);
+                    // Send user-friendly error message (no stack traces)
+                    const userMessage = 'Sorry, I encountered an issue generating a response. The issue has been logged.';
+                    await this.sendDiscordReply(mention.channel, mention.id, userMessage);
+                    return;
+                }
+
+                const botResponse = responseResult.data;
+
+                // Check if response contains tool calls
+                const toolCallData = this.parseToolCalls(botResponse);
+
+                if (toolCallData && toolCallData.toolCalls.length > 0) {
+                    // LLM wants to execute tools
+                    logger.info(MODULE_DISCORD_BOT, `LLM requested ${toolCallData.toolCalls.length} tool call(s)`, timer.elapsed('main'));
+
+                    // Add assistant message with tool calls to conversation
+                    messages.push({
+                        role: 'assistant',
+                        content: toolCallData.message || null,
+                        tool_calls: toolCallData.toolCalls,
+                    });
+
+                    // Execute each tool and collect results
+                    for (const toolCall of toolCallData.toolCalls) {
+                        const toolResult = await this.executeToolCall(toolCall);
+
+                        logger.info(MODULE_DISCORD_BOT, `Tool ${toolCall.function.name} result: ${toolResult.substring(0, 200)}...`, timer.elapsed('main'));
+                        logger.info(MODULE_DISCORD_BOT, `Tool call ID: ${toolCall.id}`, timer.elapsed('main'));
+
+                        // Add tool result to conversation using OpenAI tool format
+                        messages.push({
+                            role: 'tool',
+                            content: toolResult,
+                            tool_call_id: toolCall.id,
+                        });
+                    }
+
+                    logger.info(MODULE_DISCORD_BOT, `Messages array now has ${messages.length} messages, continuing to iteration ${iteration + 1}`, timer.elapsed('main'));
+
+                    // Continue loop - keep tools available for multi-step tasks
+                    // NOTE: toolsExecuted flag removed to allow chained tool execution
+                    continue;
+                }
+
+                // No tool calls - this is the final text response
+                logger.info(MODULE_DISCORD_BOT, `Received final text response (no tool calls), breaking loop`, timer.elapsed('main'));
+                finalResponse = botResponse;
+                break;
+            }
+
+            logger.info(MODULE_DISCORD_BOT, `Completed iteration ${iteration}, maxIterations: ${maxIterations}, finalResponse: ${finalResponse ? 'YES' : 'NO'}`, timer.elapsed('main'));
+
+            // Check if we got a final response
+            if (!finalResponse) {
+                logger.error(MODULE_DISCORD_BOT, `Tool calling loop exceeded maximum iterations (${maxIterations})`, timer.elapsed('main'));
+                await this.sendDiscordReply(mention.channel, mention.id, 'Sorry, I encountered an issue completing your request.');
                 return;
             }
 
-            const botResponse = responseResult.data;
+            const botResponse = finalResponse;
 
             // Step 6: Store messages in MemoryService
             // Store user message
@@ -259,9 +338,6 @@ export class DiscordBot extends BaseBot {
                 role: 'user',
                 content: mention.text,
                 timestamp: Date.now(),
-                metadata: {
-                    platform: 'discord',
-                },
             });
 
             // Store bot response
@@ -269,12 +345,10 @@ export class DiscordBot extends BaseBot {
                 role: 'assistant',
                 content: botResponse,
                 timestamp: Date.now(),
-                metadata: {
-                    platform: 'discord',
-                },
             });
 
             // Step 7: Send response to channel
+            logger.info(MODULE_DISCORD_BOT, `Sending final response (${botResponse.length} chars) to Discord...`, timer.elapsed('main'));
             await this.sendDiscordReply(mention.channel, mention.id, botResponse);
 
             logger.info(MODULE_DISCORD_BOT, `Replied to @${mention.user}`, timer.elapsed('main'));
@@ -363,64 +437,6 @@ export class DiscordBot extends BaseBot {
     }
 
     /**
-     * Execute a KADI tool via broker with retry logic
-     * @deprecated This method is unused in the current implementation (tools are invoked via invokeToolWithRetry)
-     */
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    private async executeKadiTool(
-        toolName: string,
-        input: Record<string, unknown>
-    ): Promise<any> {
-        if (!this.protocol) {
-            return {success: false, error: 'Protocol not initialized'};
-        }
-
-        try {
-            logger.info(MODULE_DISCORD_BOT, `Executing tool: ${toolName}`, timer.elapsed('main'));
-
-            // Determine target agent based on tool name
-            const targetAgent = this.resolveTargetAgent(toolName);
-
-            // Use invokeToolWithRetry for resilient tool execution
-            const result = await this.invokeToolWithRetry({
-                targetAgent,
-                toolName,
-                toolInput: input,
-                timeout: 30000,
-            });
-
-            // Handle the result - invokeTool may return different structures
-            if (result && typeof result === 'object') {
-                return {success: true, result: result.result || result};
-            }
-
-            return {success: true, result};
-        } catch (error: any) {
-            logger.error(MODULE_DISCORD_BOT, `Tool execution failed (${toolName})`, timer.elapsed('main'), error);
-
-            // Classify error and publish event
-            const errorType = this.classifyError(error);
-            const isTransient = errorType === 'network' || errorType === 'timeout' || errorType === 'rate_limit';
-
-            this.client.publishEvent('artist.task.failed', {
-                error: error.message || String(error),
-                errorType,
-                isTransient,
-                stack: error.stack,
-                context: {
-                    toolName,
-                    targetAgent: this.resolveTargetAgent(toolName),
-                    input: JSON.stringify(input).substring(0, 200),
-                },
-                agent: 'agent-artist',
-                timestamp: new Date().toISOString(),
-            });
-
-            return {success: false, error: String(error)};
-        }
-    }
-
-    /**
      * Send reply to Discord via MCP_Discord_Server
      *
      * Handles Discord's 2,000 character limit by splitting long messages
@@ -440,6 +456,7 @@ export class DiscordBot extends BaseBot {
 
         // If message fits in one reply, send directly
         if (text.length <= MAX_DISCORD_MESSAGE_LENGTH) {
+            logger.info(MODULE_DISCORD_BOT, `Invoking discord_server_send_reply for message_id: ${message_id}, text length: ${text.length}`, timer.elapsed('main'));
             await this.invokeToolWithRetry({
                 targetAgent: 'mcp-server-discord',
                 toolName: 'discord_server_send_reply',
@@ -450,6 +467,7 @@ export class DiscordBot extends BaseBot {
                 },
                 timeout: parseInt(process.env.BOT_TOOL_TIMEOUT_MS || '10000'),
             });
+            logger.info(MODULE_DISCORD_BOT, `Discord reply sent successfully for message_id: ${message_id}`, timer.elapsed('main'));
             return;
         }
 
@@ -623,6 +641,95 @@ export class DiscordBot extends BaseBot {
         logger.info(MODULE_DISCORD_BOT, `Available tools: ${localTools.length} local + ${uniqueNetworkTools.length} network (${networkTools.length - uniqueNetworkTools.length} duplicates removed) = ${localTools.length + uniqueNetworkTools.length} total`, timer.elapsed('main'));
 
         return [...localTools, ...uniqueNetworkTools];
+    }
+
+    /**
+     * Convert Anthropic tool format to OpenAI tool format
+     */
+    private convertToolsToOpenAIFormat(anthropicTools: Anthropic.Tool[]): Array<{
+        type: 'function';
+        function: {
+            name: string;
+            description: string;
+            parameters: any;
+        };
+    }> {
+        return anthropicTools.map(tool => ({
+            type: 'function' as const,
+            function: {
+                name: tool.name,
+                description: tool.description || '',
+                parameters: tool.input_schema,
+            },
+        }));
+    }
+
+    /**
+     * Parse tool calls from provider response
+     * Format: __TOOL_CALLS__{"tool_calls":[...],"message":"..."}
+     */
+    private parseToolCalls(response: string): { toolCalls: any[]; message: string } | null {
+        if (!response.startsWith('__TOOL_CALLS__')) {
+            return null;
+        }
+
+        try {
+            const jsonStr = response.substring('__TOOL_CALLS__'.length);
+            const data = JSON.parse(jsonStr);
+            return {
+                toolCalls: data.tool_calls || [],
+                message: data.message || ''
+            };
+        } catch (error) {
+            logger.error(MODULE_DISCORD_BOT, 'Failed to parse tool calls', timer.elapsed('main'), error as Error);
+            return null;
+        }
+    }
+
+    /**
+     * Execute a single tool call
+     *
+     * Handles both synchronous and asynchronous tool responses.
+     * If tool returns {status: 'pending', requestId: ...}, waits for async result.
+     */
+    private async executeToolCall(toolCall: any): Promise<string> {
+        const toolName = toolCall.function.name;
+        const toolArgs = JSON.parse(toolCall.function.arguments);
+
+        logger.info(MODULE_DISCORD_BOT, `Executing tool: ${toolName}`, timer.elapsed('main'));
+
+        try {
+            // Determine target agent based on tool name
+            const targetAgent = this.resolveTargetAgent(toolName);
+
+            // Use invokeToolWithRetry for resilient tool execution
+            const result = await this.invokeToolWithRetry({
+                targetAgent,
+                toolName,
+                toolInput: toolArgs,
+                timeout: 30000,
+            });
+
+            // Check if result is async pending - wait for actual result
+            if (result && typeof result === 'object' &&
+                result.status === 'pending' && result.requestId) {
+                logger.info(MODULE_DISCORD_BOT, `Tool ${toolName} returned pending, waiting for async result: ${result.requestId}`, timer.elapsed('main'));
+
+                try {
+                    const asyncResult = await this.waitForAbilityResponse(result.requestId, 30000);
+                    logger.info(MODULE_DISCORD_BOT, `Async result received for ${toolName}`, timer.elapsed('main'));
+                    return JSON.stringify(asyncResult);
+                } catch (asyncError: any) {
+                    logger.error(MODULE_DISCORD_BOT, `Async tool timeout for ${toolName}: ${asyncError.message}`, timer.elapsed('main'));
+                    return JSON.stringify({ error: `Tool timeout: ${asyncError.message}` });
+                }
+            }
+
+            return JSON.stringify(result);
+        } catch (error: any) {
+            logger.error(MODULE_DISCORD_BOT, `Tool execution failed: ${toolName}`, timer.elapsed('main'), error);
+            return JSON.stringify({ error: error.message || String(error) });
+        }
     }
 
     /**
