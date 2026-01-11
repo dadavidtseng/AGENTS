@@ -334,7 +334,8 @@ describe('ArcadeDBAdapter', () => {
 
       const fetchCall = mockFetch.mock.calls[0];
       const body = JSON.parse(fetchCall[1].body);
-      expect(body.command).toContain('CREATE VERTEX User');
+      // Cypher syntax: CREATE (n:User {name: $name, age: $age}) RETURN n
+      expect(body.command).toContain('CREATE (n:User');
       expect(body.command).toContain('name: $name');
       expect(body.command).toContain('age: $age');
       expect(body.params).toEqual(properties);
@@ -382,8 +383,10 @@ describe('ArcadeDBAdapter', () => {
 
       const fetchCall = mockFetch.mock.calls[0];
       const body = JSON.parse(fetchCall[1].body);
-      expect(body.command).toContain('CREATE EDGE KNOWS');
-      expect(body.command).toContain('FROM $fromRid TO $toRid');
+      // Cypher syntax: MATCH (a), (b) WHERE id(a) = $fromRid AND id(b) = $toRid CREATE (a)-[r:KNOWS]->(b) RETURN r
+      expect(body.command).toContain('MATCH (a), (b)');
+      expect(body.command).toContain('WHERE id(a) = $fromRid AND id(b) = $toRid');
+      expect(body.command).toContain('CREATE (a)-[r:KNOWS]->(b)');
       expect(body.params.fromRid).toBe('#10:0');
       expect(body.params.toRid).toBe('#10:1');
     });
@@ -410,8 +413,11 @@ describe('ArcadeDBAdapter', () => {
 
       const fetchCall = mockFetch.mock.calls[0];
       const body = JSON.parse(fetchCall[1].body);
-      expect(body.command).toContain('CREATE EDGE KNOWS');
-      expect(body.command).toContain('SET');
+      // Cypher syntax: MATCH (a), (b) WHERE id(a) = $fromRid AND id(b) = $toRid CREATE (a)-[r:KNOWS {since: $since, strength: $strength}]->(b) RETURN r
+      expect(body.command).toContain('MATCH (a), (b)');
+      expect(body.command).toContain('CREATE (a)-[r:KNOWS {');
+      expect(body.command).toContain('since: $since');
+      expect(body.command).toContain('strength: $strength');
       expect(body.params).toMatchObject(properties);
     });
 

@@ -1,0 +1,66 @@
+{
+  "name": "template-agent-typescript",
+  "version": "0.0.1",
+  "license": "MIT",
+  "kind": "agent",
+  "description": "Template agent built with TypeScript for KADI framework",
+  "repo": "",
+  "abilities": {},
+  "scripts": {
+    "setup": "npm install && npm run build"
+  },
+  "deploy": {
+    "local-dev": {
+      "target": "local",
+      "engine": "docker",
+      "services": {
+        "agent": {
+          "image": "template-agent-typescript:latest",
+          "env": [
+            "NODE_ENV=production",
+            "ENABLE_DISCORD_BOT=${ENABLE_DISCORD_BOT}",
+            "ENABLE_SLACK_BOT=${ENABLE_SLACK_BOT}",
+            "DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}",
+            "SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}",
+            "KADI_BROKER_URL=${KADI_BROKER_URL}",
+            "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}",
+            "BOT_CLAUDE_MODEL=${BOT_CLAUDE_MODEL}"
+          ],
+          "volumes": [
+            "./data:/app/data"
+          ]
+        }
+      }
+    },
+    "akash-testnet": {
+      "target": "akash",
+      "network": "testnet",
+      "services": {
+        "agent": {
+          "image": "template-agent-typescript:latest",
+          "env": [
+            "NODE_ENV=production"
+          ],
+          "expose": []
+        }
+      }
+    },
+    "akash-mainnet": {
+      "target": "akash",
+      "network": "mainnet",
+      "placement": {
+        "region": "us-central",
+        "tier": "community"
+      },
+      "services": {
+        "agent": {
+          "image": "template-agent-typescript:latest",
+          "env": [
+            "NODE_ENV=production"
+          ],
+          "expose": []
+        }
+      }
+    }
+  }
+}

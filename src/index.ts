@@ -91,7 +91,7 @@ const config = {
   brokerUrl: process.env.KADI_BROKER_URL || 'ws://localhost:8080',
 
   /** Networks to join (comma-separated in env var) */
-  networks: (process.env.KADI_NETWORKS || 'global,slack,discord').split(',')
+  networks: (process.env.KADI_NETWORKS || 'global,slack,discord,file-ops,deployment,tunnel').split(',')
 };
 
 // ============================================================================

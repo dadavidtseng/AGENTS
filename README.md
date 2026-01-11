@@ -55,7 +55,7 @@ cd template-agent-typescript
 npm install
 
 # Configure environment
-cp .env.template .env
+cp .env.example .env
 # Edit .env with your configuration
 
 # Build the project

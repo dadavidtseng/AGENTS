@@ -73,7 +73,7 @@ npm run build
 
 ```bash
 # Copy template
-cp .env.template .env
+cp .env.example .env
 
 # Edit configuration
 nano .env
@@ -278,7 +278,7 @@ npm install
 npm run build
 
 # Configure environment
-cp .env.template .env.production
+cp .env.example .env.production
 nano .env.production
 
 # Start with PM2
