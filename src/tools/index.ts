@@ -40,10 +40,58 @@
  * ```
  */
 
-import type {KadiClient} from '@kadi.build/core';
-import {logger, MODULE_TOOLS, timer} from 'agents-library';
-import {registerEchoTool} from './echo.js';
-import {registerListToolsTool} from './list-tools.js';
+import type { KadiClient } from '@kadi.build/core';
+import { logger, MODULE_TOOLS, timer } from 'agents-library';
+import { registerEchoTool } from './echo.js';
+import { registerListToolsTool } from './list-tools.js';
+
+// File management tools (1:1 mapping to file-management-ability)
+// Local operations
+import {
+  registerListFilesAndFoldersTool,
+  registerMoveAndRenameTool,
+  registerCopyFileTool,
+  registerCopyFolderTool,
+  registerDeleteFileTool,
+  registerCreateFolderTool,
+  registerDeleteFolderTool,
+  registerWatchFolderTool,
+  registerCreateFileTool,
+  // Remote operations
+  // registerSendFileToRemoteServerTool,
+  registerDownloadFileFromRemoteTool,
+  registerCreateRemoteFolderTool,
+  registerDeleteRemoteFolderTool,
+  registerMoveRemoteFileOrFolderTool,
+  registerCopyRemoteFileTool,
+  registerCopyRemoteFolderTool,
+  registerDeleteRemoteFileTool,
+  registerDownloadFolderFromRemoteTool,
+} from './file-management/index.js';
+
+// Local Remote File Manager tools (1:1 mapping to local-remote-file-manager-ability)
+// Provides 33 comprehensive file management tools across 6 categories
+import { registerAllLocalRemoteFileManagerTools } from './local-remote-file-manager/index.js';
+
+// Cloud File Manager tools (1:1 mapping to cloud-file-manager-ability)
+// Provides 15 cloud storage tools for Dropbox, Google Drive, and Box
+import { registerAllCloudFileManagerTools } from './cloud-file-manager/index.js';
+
+// Deploy tools (1:1 mapping to deploy-ability)
+// Provides 2 deployment tools for Akash Network and local Docker
+import { registerAllDeployTools } from './deploy/index.js';
+
+// Tunnel tools (1:1 mapping to kadi-tunnel-ability)
+// Provides 5 tunnel management tools for creating HTTP tunnels
+import { registerAllTunnelTools } from './tunnel/index.js';
+
+// Container Registry tools (1:1 mapping to container-registry-ability)
+// Provides 8 container registry tools for managing temporary Docker registries
+import { registerAllContainerRegistryTools } from './container-registry/index.js';
+
+// ArcadeDB tools (1:1 mapping to arcadedb-ability)
+// Provides 11 database management tools for ArcadeDB operations
+import { registerAllArcadeDbTools } from './arcadedb/index.js';
 
 /**
  * Tool Registry Array
@@ -52,10 +100,41 @@ import {registerListToolsTool} from './list-tools.js';
  * They will be called automatically during agent initialization.
  */
 export const toolRegistry: Array<(client: KadiClient) => void> = [
-    registerEchoTool,
-    registerListToolsTool,
-    // Example: registerMyTool,
-    // Add your custom tools here
+  registerEchoTool,
+  registerListToolsTool,
+  // File management tools - Local operations (1:1 mapping)
+  registerListFilesAndFoldersTool,
+  registerMoveAndRenameTool,
+  registerCopyFileTool,
+  registerCopyFolderTool,
+  registerDeleteFileTool,
+  registerCreateFolderTool,
+  registerDeleteFolderTool,
+  registerWatchFolderTool,
+  registerCreateFileTool,
+  // File management tools - Remote operations (1:1 mapping)
+  // registerSendFileToRemoteServerTool,
+  registerDownloadFileFromRemoteTool,
+  registerCreateRemoteFolderTool,
+  registerDeleteRemoteFolderTool,
+  registerMoveRemoteFileOrFolderTool,
+  registerCopyRemoteFileTool,
+  registerCopyRemoteFolderTool,
+  registerDeleteRemoteFileTool,
+  registerDownloadFolderFromRemoteTool,
+  // Local Remote File Manager tools (33 tools across 6 categories)
+  registerAllLocalRemoteFileManagerTools,
+  // Cloud File Manager tools (15 tools for Dropbox, Google Drive, Box)
+  registerAllCloudFileManagerTools,
+  // Deploy tools (2 tools for Akash Network, local Docker)
+  registerAllDeployTools,
+  // Tunnel tools (5 tools for tunnel management)
+  registerAllTunnelTools,
+  // Container Registry tools (8 tools for container registry management)
+  registerAllContainerRegistryTools,
+  // ArcadeDB tools (11 tools for ArcadeDB database management)
+  registerAllArcadeDbTools,
+  // Add your custom tools here
 ];
 
 /**
@@ -65,18 +144,18 @@ export const toolRegistry: Array<(client: KadiClient) => void> = [
  * You don't need to modify this function - just add your tools to the array above.
  */
 export function registerAllTools(client: KadiClient): void {
-    // Start timer for tool registration tracking
-    timer.start('tools-registry');
+  // Start timer for tool registration tracking
+  timer.start('tools-registry');
 
-    logger.info(MODULE_TOOLS, `Registering ${toolRegistry.length} custom tool(s)...`, timer.elapsed('tools-registry'));
+  logger.info(MODULE_TOOLS, `Registering ${toolRegistry.length} custom tool(s)...`, timer.elapsed('tools-registry'));
 
-    for (const registerTool of toolRegistry) {
-        registerTool(client);
-    }
+  for (const registerTool of toolRegistry) {
+    registerTool(client);
+  }
 
-    if (toolRegistry.length > 0) {
-        logger.info(MODULE_TOOLS, `Registered ${toolRegistry.length} custom tool(s)`, timer.elapsed('tools-registry'));
-    } else {
-        logger.info(MODULE_TOOLS, 'No custom tools registered (add tools to src/tools/ to extend functionality)', timer.elapsed('tools-registry'));
-    }
+  if (toolRegistry.length > 0) {
+    logger.info(MODULE_TOOLS, `Registered ${toolRegistry.length} custom tool(s)`, timer.elapsed('tools-registry'));
+  } else {
+    logger.info(MODULE_TOOLS, 'No custom tools registered (add tools to src/tools/ to extend functionality)', timer.elapsed('tools-registry'));
+  }
 }
