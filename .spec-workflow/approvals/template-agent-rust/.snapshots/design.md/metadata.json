@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/template-agent-rust/design.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-12-18T05:45:05.537Z",
+      "trigger": "initial",
+      "approvalId": "approval_1766036705523_o6xduh3nt",
+      "approvalTitle": "Design Document for Template Agent Rust"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-12-18T05:58:06.148Z",
+      "trigger": "approved",
+      "approvalId": "approval_1766036705523_o6xduh3nt",
+      "approvalTitle": "Design Document for Template Agent Rust"
+    }
+  ]
+}

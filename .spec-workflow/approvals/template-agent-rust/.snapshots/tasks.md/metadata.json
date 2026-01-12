@@ -1,0 +1,14 @@
+{
+  "filePath": ".spec-workflow/specs/template-agent-rust/tasks.md",
+  "currentVersion": 1,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-12-18T06:02:46.467Z",
+      "trigger": "initial",
+      "approvalId": "approval_1766037766461_4pv3j1zqx",
+      "approvalTitle": "Tasks Document for Template Agent Rust"
+    }
+  ]
+}

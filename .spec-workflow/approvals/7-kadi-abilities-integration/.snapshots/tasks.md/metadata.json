@@ -1,0 +1,14 @@
+{
+  "filePath": ".spec-workflow/specs/7-kadi-abilities-integration/tasks.md",
+  "currentVersion": 1,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-12-24T04:10:47.424Z",
+      "trigger": "initial",
+      "approvalId": "approval_1766549447378_gfaad4p8i",
+      "approvalTitle": "Tasks Document - 32 atomic tasks with incremental E2E testing"
+    }
+  ]
+}
