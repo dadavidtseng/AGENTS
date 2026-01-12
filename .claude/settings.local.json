@@ -19,9 +19,31 @@
       "mcp__kadi-local__remove_cube",
       "mcp__shrimp-AGENTS__query_task",
       "SlashCommand(/zcf:workflow)",
-      "mcp__spec-workflow-AGENTS__spec-status"
+      "mcp__spec-workflow-AGENTS__spec-status",
+      "mcp__open-websearch__search",
+      "mcp__serena-AGENTS__read_file",
+      "mcp__serena-AGENTS__activate_project",
+      "mcp__serena-AGENTS__get_symbols_overview",
+      "mcp__serena-AGENTS__search_for_pattern",
+      "mcp__serena-AGENTS__create_text_file",
+      "mcp__serena-AGENTS__list_dir",
+      "mcp__serena-AGENTS__find_file",
+      "mcp__serena-AGENTS__replace_content",
+      "mcp__serena-AGENTS__find_symbol",
+      "mcp__serena-AGENTS__insert_after_symbol",
+      "mcp__serena-AGENTS__replace_symbol_body",
+      "mcp__serena-AGENTS__get_current_config",
+      "mcp__shrimp-AGENTS__process_thought",
+      "mcp__serena-AGENTS__think_about_collected_information",
+      "mcp__serena-AGENTS__check_onboarding_performed",
+      "mcp__serena-AGENTS__think_about_task_adherence",
+      "mcp__serena-AGENTS__think_about_whether_you_are_done",
+      "mcp__serena-AGENTS__list_memories",
+      "mcp__serena-AGENTS__initial_instructions",
+      "mcp__serena-AGENTS__insert_before_symbol"
     ]
   },
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "shrimp-AGENTS",
     "spec-workflow-AGENTS"

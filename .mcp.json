@@ -18,6 +18,23 @@
         "-y",
         "@pimzino/spec-workflow-mcp@latest"
       ]
+    },
+    "serena-AGENTS": {
+      "command": "uvx",
+      "args": [
+        "--python",
+        "3.12",
+        "--from",
+        "git+https://github.com/oraios/serena",
+        "serena",
+        "start-mcp-server",
+        "--project",
+        "AGENTS"
+      ],
+      "cwd": "C:\\p4\\Personal\\SD\\AGENTS",
+      "env": {
+        "SERENA_PROJECT_ROOT": "C:\\p4\\Personal\\SD\\AGENTS"
+      }
     }
   }
 }
