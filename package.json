@@ -1,0 +1,27 @@
+{
+  "name": "mcp-server-quest",
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Comprehensive quest orchestration system with KĀDI broker integration",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "node --test tests/**/*.test.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "latest",
+    "@anthropic-ai/sdk": "latest",
+    "fastify": "latest",
+    "@fastify/static": "latest",
+    "@fastify/websocket": "latest"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "tsx": "latest",
+    "@types/node": "latest"
+  }
+}

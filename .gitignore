@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.quest-data/
+*.log
+.DS_Store
+.env
+.env.local
+coverage/
+*.tsbuildinfo
+.idea
+
