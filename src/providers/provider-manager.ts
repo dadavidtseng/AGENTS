@@ -119,11 +119,11 @@ export class ProviderManager {
     }
 
     // Handle rate limit with backoff
-    if (result.error.type === ProviderErrorType.RATE_LIMIT) {
+    if (!result.success && (result as { success: false; error: ProviderError }).error.type === ProviderErrorType.RATE_LIMIT) {
       console.warn(
         `[ProviderManager:Chat] Rate limit on ${selectedProvider}, backing off...`
       );
-      // Don't fallback on rate limit - just return the error
+      // Don't fall back on rate limit - just return the error
       return result;
     }
 
@@ -160,7 +160,7 @@ export class ProviderManager {
   async streamChat(
     messages: Message[],
     options?: ChatOptions
-  ): Promise<Result<AsyncIterator<string>, ProviderError>> {
+  ): Promise<Result<AsyncIterable<string>, ProviderError>> {
     // Select provider based on model or use primary
     const selectedProvider = this.selectProvider(options?.model);
     const modelInfo = options?.model ? ` for model '${options.model}'` : ' (default model)';
@@ -180,7 +180,7 @@ export class ProviderManager {
     }
 
     // Handle rate limit with backoff
-    if (result.error.type === ProviderErrorType.RATE_LIMIT) {
+    if (!result.success && (result as { success: false; error: ProviderError }).error.type === ProviderErrorType.RATE_LIMIT) {
       console.warn(
         `[ProviderManager:Stream] Rate limit on ${selectedProvider}, backing off...`
       );
@@ -229,7 +229,8 @@ export class ProviderManager {
       if (result.success) {
         allModels.push(...result.data);
       } else {
-        errors.push(result.error);
+        const errorResult = result as { success: false; error: ProviderError };
+        errors.push(errorResult.error);
       }
     }
 
@@ -392,16 +393,18 @@ export class ProviderManager {
         return result;
       }
 
-      lastError = result.error;
+      // Type cast to error branch
+      const errorResult = result as { success: false; error: ProviderError };
+      lastError = errorResult.error;
 
       console.error(
         `[ProviderManager:Retry] Provider ${providerName} attempt ${attempt + 1} failed:`,
-        result.error.type,
-        result.error.message
+        errorResult.error.type,
+        errorResult.error.message
       );
 
       // Handle rate limits with special backoff
-      if (result.error.type === ProviderErrorType.RATE_LIMIT) {
+      if (errorResult.error.type === ProviderErrorType.RATE_LIMIT) {
         const rateLimitDelay =
           this.rateLimitBaseDelayMs * Math.pow(2, attempt);
         console.warn(
@@ -412,11 +415,11 @@ export class ProviderManager {
 
       // Don't retry on auth failures or invalid requests
       if (
-        result.error.type === ProviderErrorType.AUTH_FAILED ||
-        result.error.type === ProviderErrorType.INVALID_REQUEST
+        errorResult.error.type === ProviderErrorType.AUTH_FAILED ||
+        errorResult.error.type === ProviderErrorType.INVALID_REQUEST
       ) {
         console.error(
-          `[ProviderManager:Retry] Non-retryable error on ${providerName}: ${result.error.type}`
+          `[ProviderManager:Retry] Non-retryable error on ${providerName}: ${errorResult.error.type}`
         );
         break;
       }

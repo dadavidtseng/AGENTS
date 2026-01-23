@@ -131,7 +131,7 @@ export interface LLMProvider {
   streamChat(
     messages: Message[],
     options?: ChatOptions
-  ): Promise<Result<AsyncIterator<string>, ProviderError>>;
+  ): Promise<Result<AsyncIterable<string>, ProviderError>>;
 
   /**
    * Check if provider is healthy

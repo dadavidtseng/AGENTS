@@ -265,7 +265,7 @@ export class ModelManagerProvider implements LLMProvider {
   async streamChat(
     messages: Message[],
     options?: ChatOptions
-  ): Promise<Result<AsyncIterator<string>, ProviderError>> {
+  ): Promise<Result<AsyncIterable<string>, ProviderError>> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
 
@@ -331,31 +331,13 @@ export class ModelManagerProvider implements LLMProvider {
    * @returns True if provider is responding correctly
    */
   async isHealthy(): Promise<boolean> {
-    // If too many consecutive failures, consider unhealthy
-    if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
-      return false;
-    }
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // Short timeout for health check
-
-    try {
-      const response = await fetch(`${this.baseURL}/v1/models`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        signal: controller.signal,
-        // @ts-ignore - Node.js fetch accepts agent option
-        agent: this.httpsAgent,
-      });
-
-      clearTimeout(timeoutId);
-      return response.ok;
-    } catch (error) {
-      clearTimeout(timeoutId);
-      return false;
-    }
+    // Passive health check: only monitor consecutive failures
+    // Don't make actual API calls to avoid costs and false positives from slow admin endpoints
+    // 
+    // This approach is consistent with AnthropicProvider and provides more accurate
+    // health status by reflecting actual chat request success/failure rather than
+    // administrative endpoint availability.
+    return this.consecutiveFailures < this.maxConsecutiveFailures;
   }
 
   /**
@@ -408,7 +390,7 @@ export class ModelManagerProvider implements LLMProvider {
    */
   private async *createStreamIterator(
     stream: ReadableStream<Uint8Array>
-  ): AsyncIterator<string> {
+  ): AsyncIterable<string> {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
     let buffer = '';

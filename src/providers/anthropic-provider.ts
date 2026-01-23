@@ -261,6 +261,122 @@ export class AnthropicProvider implements LLMProvider {
     return `__TOOL_CALLS__${JSON.stringify(toolCallsData)}`;
   }
 
+  /**
+   * Convert OpenAI message format to Anthropic message format
+   *
+   * Handles conversion of tool messages (role: 'tool') to Anthropic's tool_result format.
+   * OpenAI uses separate tool messages, Anthropic embeds tool results in user messages.
+   *
+   * OpenAI format:
+   * { role: 'tool', content: '{"result": "..."}', tool_call_id: 'call_123' }
+   *
+   * Anthropic format:
+   * { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_123', content: '{"result": "..."}' }] }
+   */
+  private convertMessagesToAnthropicFormat(messages: Message[]): Anthropic.MessageParam[] {
+    const anthropicMessages: Anthropic.MessageParam[] = [];
+
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+
+      // Skip system messages (Anthropic doesn't support them in messages array)
+      if (msg.role === 'system') {
+        continue;
+      }
+
+      // Convert tool messages to Anthropic's tool_result format
+      if (msg.role === 'tool') {
+        // Tool results should only be included if we're in the same request as the tool_use
+        // In subsequent requests (like streaming after tool execution), skip tool results
+        // because the corresponding tool_use is not in this request's messages
+        
+        // Check if there's a previous assistant message with __TOOL_CALLS__ marker
+        // If so, this is a subsequent request and we should skip the tool result
+        let skipToolResult = false;
+        for (let j = i - 1; j >= 0; j--) {
+          if (anthropicMessages[j] && anthropicMessages[j].role === 'assistant') {
+            const assistantContent = anthropicMessages[j].content;
+            if (typeof assistantContent === 'string' && assistantContent.includes('__TOOL_CALLS__')) {
+              // This tool result corresponds to a tool call that was already processed
+              // Skip it in subsequent requests
+              skipToolResult = true;
+            }
+            break;
+          }
+        }
+        
+        if (skipToolResult) {
+          continue;
+        }
+
+        const toolContent = (msg.content || '').trim();
+        const toolCallId = msg.tool_call_id || '';
+        
+        // Skip tool messages with missing content or ID
+        if (!toolContent || !toolCallId) {
+          continue;
+        }
+
+        anthropicMessages.push({
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: toolCallId,
+              content: toolContent,
+            },
+          ],
+        });
+        continue;
+      }
+
+      // Handle assistant messages with tool_calls
+      if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+        // Convert OpenAI tool_calls to Anthropic tool_use format
+        const toolUseBlocks: any[] = msg.tool_calls.map((toolCall) => ({
+          type: 'tool_use',
+          id: toolCall.id,
+          name: toolCall.function.name,
+          input: JSON.parse(toolCall.function.arguments),
+        }));
+
+        // Include text content if present, otherwise just tool_use blocks
+        const content = (msg.content || '').trim();
+        const contentBlocks: any[] = [];
+        
+        if (content) {
+          contentBlocks.push({
+            type: 'text',
+            text: content,
+          });
+        }
+        
+        contentBlocks.push(...toolUseBlocks);
+
+        anthropicMessages.push({
+          role: 'assistant',
+          content: contentBlocks,
+        });
+        continue;
+      }
+
+      // Regular user/assistant messages without tool calls
+      const content = (msg.content || '').trim();
+      
+      // Skip messages with empty content
+      if (!content) {
+        continue;
+      }
+
+      anthropicMessages.push({
+        role: msg.role as 'user' | 'assistant',
+        content,
+      });
+    }
+
+    return anthropicMessages;
+  }
+
   async chat(
     messages: Message[],
     options?: ChatOptions
@@ -282,30 +398,14 @@ export class AnthropicProvider implements LLMProvider {
         ? this.convertOpenAIToolChoiceToAnthropic(options.tool_choice)
         : undefined;
 
-      // Debug logging
-      if (anthropicTools && anthropicTools.length > 0) {
-        console.log(`[AnthropicProvider] Passing ${anthropicTools.length} tools to ${normalizedModel}`);
-        console.log(`[AnthropicProvider] Tool names: ${anthropicTools.map(t => t.name).join(', ')}`);
-        console.log(`[AnthropicProvider] Tool choice: ${JSON.stringify(anthropicToolChoice)}`);
-        console.log(`[AnthropicProvider] First tool structure: ${JSON.stringify(anthropicTools[0], null, 2)}`);
-      } else {
-        console.log(`[AnthropicProvider] No tools provided for ${normalizedModel}`);
-        console.log(`[AnthropicProvider] options.tools: ${options?.tools ? `${options.tools.length} tools` : 'undefined'}`);
-      }
 
-      console.log(`[AnthropicProvider] API request - model: ${normalizedModel}, messages: ${messages.length}, tools: ${anthropicTools?.length || 0}`);
 
       const response = await this.client.messages.create({
         model: normalizedModel,
         max_tokens: maxTokens,
         temperature: options?.temperature,
         stop_sequences: options?.stopSequences,
-        messages: messages
-          .filter((msg) => msg.role !== 'tool' && msg.role !== 'system') // Filter out OpenAI tool messages and system
-          .map((msg) => ({
-            role: msg.role as 'user' | 'assistant',
-            content: (msg.content || '').trim(), // Anthropic requires non-null content and no trailing whitespace
-          })),
+        messages: this.convertMessagesToAnthropicFormat(messages),
         ...(anthropicTools && anthropicTools.length > 0 && { tools: anthropicTools }),
         ...(anthropicToolChoice && { tool_choice: anthropicToolChoice }),
       });
@@ -331,13 +431,11 @@ export class AnthropicProvider implements LLMProvider {
         return err(this.createError(ProviderErrorType.INVALID_REQUEST, 'Invalid response structure from Anthropic API'));
       }
 
-      console.log(`[AnthropicProvider] Response received - stop_reason: ${response.stop_reason}, content blocks: ${response.content.length}`);
-      console.log(`[AnthropicProvider] Content types: ${response.content.map(c => c.type).join(', ')}`);
+
 
       // Check if response contains tool calls
       const toolCallsResponse = this.convertAnthropicToolCallsToOpenAI(response.content);
       if (toolCallsResponse) {
-        console.log(`[AnthropicProvider] Tool calls detected!`);
         // Reset failure counter on success
         this.consecutiveFailures = 0;
         return ok(toolCallsResponse);
@@ -383,12 +481,7 @@ export class AnthropicProvider implements LLMProvider {
         max_tokens: maxTokens,
         temperature: options?.temperature,
         stop_sequences: options?.stopSequences,
-        messages: messages
-          .filter((msg) => msg.role !== 'tool' && msg.role !== 'system') // Filter out OpenAI tool messages and system
-          .map((msg) => ({
-            role: msg.role as 'user' | 'assistant',
-            content: (msg.content || '').trim(), // Anthropic requires non-null content and no trailing whitespace
-          })),
+        messages: this.convertMessagesToAnthropicFormat(messages),
       });
 
       // Create async iterator from stream
