@@ -16,8 +16,16 @@ export const createFileInputSchema = z.object({
 });
 
 export const createFileOutputSchema = z.object({
-  success: z.boolean().describe('Whether the operation succeeded'),
-  message: z.string().describe('Success message or error details')
+  status: z.enum(['complete', 'partial', 'error']).describe('Task completion status'),
+  result: z.object({
+    filePath: z.string().describe('Path to the created file'),
+    success: z.boolean().describe('Whether the file was created successfully')
+  }).describe('File creation result'),
+  presentation: z.object({
+    summary: z.string().describe('Short success/error message'),
+    details: z.string().describe('Detailed information about the operation'),
+    format_hint: z.string().describe('Guidance for LLM on how to present this result')
+  }).describe('Presentation layer for LLM to customize output')
 });
 
 export type CreateFileInput = z.infer<typeof createFileInputSchema>;
@@ -33,7 +41,7 @@ export function registerCreateFileTool(client: KadiClient) {
   client.registerTool(
     {
       name: 'create_file',
-      description: 'Create a local file with content. Direct mapping to file-management-ability.',
+      description: 'Create a local file with content. This is a one-time operation that completes immediately. Do not retry on success.',
       input: createFileInputSchema,
       output: createFileOutputSchema,
     },
@@ -62,7 +70,19 @@ export function registerCreateFileTool(client: KadiClient) {
 
         logger.info(MODULE_AGENT, `Create file completed: ${result.message}`, timer.elapsed('main'));
 
-        return result;
+        // Return structured output with completion status
+        return {
+          status: 'complete',
+          result: {
+            filePath: params.filePath,
+            success: true
+          },
+          presentation: {
+            summary: `File successfully created at: ${params.filePath}`,
+            details: `✅ File creation completed.\n\nPath: ${params.filePath}\nStatus: Success\n\nThe file has been created and is ready to use.`,
+            format_hint: 'Inform the user that the file was created successfully. This task is complete and requires no further action.'
+          }
+        };
 
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -74,8 +94,16 @@ export function registerCreateFileTool(client: KadiClient) {
         );
 
         return {
-          success: false,
-          message: `Create file failed: ${errorMessage}`
+          status: 'error',
+          result: {
+            filePath: params.filePath,
+            success: false
+          },
+          presentation: {
+            summary: `File creation failed: ${errorMessage}`,
+            details: `❌ File creation failed.\n\nPath: ${params.filePath}\nError: ${errorMessage}\n\nPlease check the path and try again.`,
+            format_hint: 'Inform the user that file creation failed and provide the error message.'
+          }
         };
       }
     }

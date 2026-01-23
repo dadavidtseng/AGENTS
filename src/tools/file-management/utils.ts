@@ -1,5 +1,5 @@
 /**
- * Shared utilities for file-management-ability tools
+ * Shared utilities for ability-file-management tools
  *
  * This module centralizes common imports and helper functions
  * to avoid code duplication across tool files.
@@ -19,19 +19,20 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 /**
- * Get the path to file-management-ability
+ * Get the path to ability-file-management
  *
  * This works for both development (src/) and production (dist/) builds.
- * The ability is located at: C:\p4\Personal\SD\kadi\file-management-ability
- * From dist/tools/file-management/: ../../../ goes to template-agent-typescript root
- * Then ../ goes to AGENTS, then kadi/file-management-ability
+ * The ability is located at: C:\GitHub\ability-file-management
+ * From dist/tools/file-management/: ../../../ goes up to C:\GitHub
+ * From src/tools/file-management/: ../../../../ goes up to C:\GitHub
  */
 export function getFileManagementAbilityPath(): string {
   // Try common paths based on project structure
   const candidates = [
-    resolve(__dirname, '../../../kadi/file-management-ability'),  // From dist/tools/file-management/
-    resolve(__dirname, '../../../../kadi/file-management-ability'), // From src/tools/file-management/ (dev)
-    resolve(__dirname, '../../../../../kadi/file-management-ability'), // Alternative structure
+    resolve(__dirname, '../../../ability-file-management'),  // From dist/tools/file-management/ → C:\GitHub\ability-file-management
+    resolve(__dirname, '../../../../ability-file-management'), // From src/tools/file-management/ (dev) → C:\GitHub\ability-file-management
+    resolve(__dirname, '../../../kadi/ability-file-management'),  // Legacy path (backward compatibility)
+    resolve(__dirname, '../../../../kadi/ability-file-management'), // Legacy path (backward compatibility)
   ];
 
   for (const path of candidates) {
@@ -41,5 +42,7 @@ export function getFileManagementAbilityPath(): string {
   }
 
   // If none found, throw with helpful error
-  throw new Error(`file-management-ability not found. Tried paths: ${candidates.join(', ')}`);
+  throw new Error(`ability-file-management not found. Tried paths: ${candidates.join(', ')}`);
 }
+
+
