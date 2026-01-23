@@ -23,7 +23,8 @@ import { BaseBot, logger, MODULE_SLACK_BOT, timer } from 'agents-library';
 import { SlackMentionEventSchema, SlackMentionEvent } from '../types/slack-events.js';
 import type { ProviderManager } from '../providers/provider-manager.js';
 import type { MemoryService } from '../memory/memory-service.js';
-import type { Message } from '../providers/types.js';
+import type { Message, ProviderError } from '../providers/types.js';
+import type { MemoryError } from '../memory/types.js';
 
 // ============================================================================
 // Types
@@ -192,7 +193,8 @@ export class SlackBot extends BaseBot {
       const contextResult = await this.memoryService.retrieveContext(mention.user, mention.channel);
 
       if (!contextResult.success) {
-        logger.warn(MODULE_SLACK_BOT, `Failed to retrieve context: ${contextResult.error.message}`, timer.elapsed('main'));
+        const errorResult = contextResult as { success: false; error: MemoryError };
+        logger.warn(MODULE_SLACK_BOT, `Failed to retrieve context: ${errorResult.error.message}`, timer.elapsed('main'));
       }
 
       const context = contextResult.success ? contextResult.data : [];
@@ -217,30 +219,32 @@ export class SlackBot extends BaseBot {
         logger.info(MODULE_SLACK_BOT, `Model detected from message: ${detectedModel}`, timer.elapsed('main'));
       }
 
-      // Step 4: Generate response using ProviderManager
-      const responseResult = await this.providerManager.chat(messages, {
+      // Step 4: Generate response using ProviderManager (STREAMING enabled for better UX)
+      const streamResult = await this.providerManager.streamChat(messages, {
         model: detectedModel,
       });
 
-      // Step 5: Handle error
-      if (!responseResult.success) {
-        logger.error(MODULE_SLACK_BOT, `Provider failed: ${responseResult.error.message}`, timer.elapsed('main'));
+      // Step 5: Handle stream error or success
+      if (!streamResult.success) {
+        // Explicit type cast to error branch
+        const errorResult = streamResult as { success: false; error: ProviderError };
+        logger.error(MODULE_SLACK_BOT, `Provider failed: ${errorResult.error.message}`, timer.elapsed('main'));
 
         // Record failure for circuit breaker
-        const error = new Error(responseResult.error.message);
+        const error = new Error(errorResult.error.message);
         this.recordFailure(error);
 
         // Publish detailed error event
         this.client.publishEvent('artist.task.failed', {
-          error: responseResult.error.message,
-          errorType: responseResult.error.type,
-          isTransient: responseResult.error.type === 'RATE_LIMIT' || responseResult.error.type === 'TIMEOUT' || responseResult.error.type === 'NETWORK_ERROR',
+          error: errorResult.error.message,
+          errorType: errorResult.error.type,
+          isTransient: errorResult.error.type === 'RATE_LIMIT' || errorResult.error.type === 'TIMEOUT' || errorResult.error.type === 'NETWORK_ERROR',
           context: {
             mentionId: mention.id,
             user: mention.user,
             channel: mention.channel,
             textPreview: mention.text.substring(0, 100),
-            provider: responseResult.error.provider,
+            provider: errorResult.error.provider,
           },
           agent: 'agent-artist',
           timestamp: new Date().toISOString(),
@@ -252,7 +256,18 @@ export class SlackBot extends BaseBot {
         return;
       }
 
-      const botResponse = responseResult.data;
+      // Buffer the streamed response
+      let botResponse = '';
+      try {
+        for await (const chunk of streamResult.data) {
+          botResponse += chunk;
+        }
+        logger.info(MODULE_SLACK_BOT, `Streamed response complete (${botResponse.length} chars)`, timer.elapsed('main'));
+      } catch (streamError: any) {
+        logger.error(MODULE_SLACK_BOT, `Stream error: ${streamError.message}`, timer.elapsed('main'));
+        await this.sendSlackReply(mention.channel, mention.thread_ts, 'Sorry, the response stream was interrupted.');
+        return;
+      }
 
       // Step 6: Store messages in MemoryService
       // Store user message
