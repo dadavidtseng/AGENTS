@@ -33,7 +33,7 @@ chmod +x scripts/init-template.sh
 ./scripts/init-template.sh
 
 # OR manually copy environment file
-cp .env.template .env
+cp .env.example .env
 ```
 
 ### Step 2: Configure Your Agent

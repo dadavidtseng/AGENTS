@@ -56,7 +56,7 @@ fi
 echo ""
 echo "📄 Creating .env file..."
 
-cp .env.template .env
+cp .env.example .env
 
 # Update values in .env
 if [[ "$OSTYPE" == "darwin"* ]]; then
