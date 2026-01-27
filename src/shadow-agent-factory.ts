@@ -272,8 +272,10 @@ export class BaseShadowAgent {
     this.client = new KadiClient({
       name: `shadow-agent-${config.role}`,
       version: '1.0.0',
-      role: 'agent',
-      broker: config.brokerUrl,
+      brokers: {
+        default: config.brokerUrl
+      },
+      defaultBroker: 'default',
       networks: config.networks
     });
 
@@ -312,14 +314,13 @@ export class BaseShadowAgent {
 
     // Connect to KĀDI broker and wait for ready state
     console.log('   → Connecting to KĀDI broker...');
-    await new Promise<void>((resolve) => {
-      this.client.once('ready', () => resolve());
-      void this.client.serve('broker').catch((error: any) => {
-        console.error('❌ Broker connection error:', error);
-        process.exit(1);
-      });
-    });
-    console.log('   ✅ Connected to KĀDI broker');
+    try {
+      await this.client.connect();
+      console.log('   ✅ Connected to KĀDI broker');
+    } catch (error: any) {
+      console.error('❌ Broker connection error:', error);
+      process.exit(1);
+    }
 
     // Setup filesystem watcher for worker worktree
     await this.setupFilesystemWatcher();
@@ -896,7 +897,7 @@ export class BaseShadowAgent {
     }
 
     // Publish event using KadiClient
-    this.client.publishEvent(topic, payload);
+    await this.client.publish(topic, payload, { broker: 'default', network: 'global' });
     console.log(`📤 Published backup ${success ? 'success' : 'failure'} event to ${topic}`);
   }
 

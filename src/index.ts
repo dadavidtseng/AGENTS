@@ -158,3 +158,37 @@ export {
   isToolInvocationFailure,
   classifyToolError
 } from './types/tool-schemas.js';
+
+// ============================================================================
+// Providers
+// ============================================================================
+
+export { ProviderManager } from './providers/provider-manager.js';
+export { AnthropicProvider } from './providers/anthropic-provider.js';
+export { ModelManagerProvider } from './providers/model-manager-provider.js';
+export * from './providers/types.js';
+
+// ============================================================================
+// Memory Services
+// ============================================================================
+
+export { MemoryService } from './memory/memory-service.js';
+export { FileStorageAdapter } from './memory/file-storage-adapter.js';
+export { ArcadeDBAdapter, ArcadeDBClient } from './memory/arcadedb-adapter.js';
+export {
+  type MemoryType,
+  type MemoryEntry,
+  type ConversationMessage,
+  type ConversationSummary,
+  type UserPreference,
+  type PublicKnowledge,
+  MemoryErrorType,
+  type MemoryError
+} from './memory/types.js';
+
+// ============================================================================
+// Common Utilities
+// ============================================================================
+
+export { type Result, ok, err } from './common/result.js';
+export * from './common/types.js';

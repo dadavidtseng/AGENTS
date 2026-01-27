@@ -251,8 +251,10 @@ export class BaseWorkerAgent {
     this.client = new KadiClient({
       name: `agent-${config.role}`,
       version: '1.0.0',
-      role: 'agent',
-      broker: config.brokerUrl,
+      brokers: {
+        default: config.brokerUrl
+      },
+      defaultBroker: 'default',
       networks: config.networks
     });
 
@@ -272,7 +274,7 @@ export class BaseWorkerAgent {
       protected async handleMention(_event: any): Promise<void> {
         // No-op: worker agents don't handle mentions
       }
-      public start(): void {
+      public async start(): Promise<void> {
         // No-op: lifecycle managed by BaseWorkerAgent
       }
       public stop(): void {
@@ -295,7 +297,7 @@ export class BaseWorkerAgent {
    * 4. Connect event publisher with retry logic
    *
    * Connection is performed with exponential backoff retry logic inherited from
-   * Uses client.publishEvent() for event publishing. If broker is unavailable, events will be queued.
+   * Uses client.publish() for event publishing. If broker is unavailable, events will be queued.
    *
    * @throws {Error} If broker connection fails after all retries
    *
@@ -310,30 +312,21 @@ export class BaseWorkerAgent {
     console.log('🔌 Initializing KĀDI client...');
 
     try {
-      // Step 1: Start client connection to broker in background
-      // Note: client.serve() is BLOCKING, so we start it asynchronously
+      // Step 1: Start client connection to broker
       console.log('   → Connecting to broker...');
 
-      // Start serve() in background and wait for 'ready' event
-      // client.serve() is blocking and runs indefinitely, so we don't await it
-      // Instead, we wait for the 'ready' event which is emitted after successful connection
-      await new Promise<void>((resolve) => {
-        this.client.once('ready', () => resolve());
-        void this.client.serve('broker').catch((error: any) => {
-          console.error(`❌ Client serve error: ${error.message || String(error)}`);
-          throw error;
-        });
-      });
-
-      // Step 2: Initialize broker protocol for tool invocation
-      console.log('   → Initializing broker protocol...');
-      this.protocol = this.client.getBrokerProtocol();
-
-      if (!this.protocol) {
-        throw new Error('Failed to initialize broker protocol - connection may not be established');
+      try {
+        await this.client.connect();
+        console.log('   ✅ Connected to broker');
+      } catch (error: any) {
+        console.error(`❌ Client connection error: ${error.message || String(error)}`);
+        throw error;
       }
 
-      console.log('   ✅ Broker protocol initialized');
+      // Step 2: Initialize ability response subscription
+      console.log('   → Initializing ability response subscription...');
+      await this.baseBot['initializeAbilityResponseSubscription']();
+      console.log('   ✅ Ability response subscription initialized');
 
       console.log('');
       console.log('✅ KĀDI client initialized successfully');
@@ -387,7 +380,7 @@ export class BaseWorkerAgent {
     try {
       // Subscribe to event topic with bound callback
       // Using .bind(this) to preserve instance context in callback
-      await this.client.subscribeToEvent(topic, this.handleTaskAssignment.bind(this));
+      await this.client.subscribe(topic, this.handleTaskAssignment.bind(this), { broker: 'default' });
 
       console.log(`   ✅ Subscribed successfully`);
       console.log('');
@@ -917,7 +910,7 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
       console.log(`   Task ID: ${taskId}`);
       console.log(`   Commit SHA: ${commitSha.substring(0, 7)}`);
 
-      this.client.publishEvent(topic, payload);
+      await this.client.publish(topic, payload, { broker: 'default', network: 'global' });
 
       console.log(`   ✅ Completion event published`);
 
@@ -971,7 +964,7 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
       console.log(`   Task ID: ${taskId}`);
       console.log(`   Error: ${error.message.substring(0, 100)}${error.message.length > 100 ? '...' : ''}`);
 
-      this.client.publishEvent(topic, payload);
+      await this.client.publish(topic, payload, { broker: 'default', network: 'global' });
 
       console.log(`   ✅ Failure event published`);
 

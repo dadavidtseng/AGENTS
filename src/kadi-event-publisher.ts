@@ -23,7 +23,7 @@
  * ```
  */
 
-import { KadiClient, z, type AgentRole } from '@kadi.build/core';
+import { KadiClient, z } from '@kadi.build/core';
 
 /**
  * Validates topic pattern against standard format: {platform}.{event_type}.{bot_id}
@@ -63,9 +63,6 @@ export interface PublisherConfig {
 
   /** Client version (default: '1.0.0') */
   version?: string;
-
-  /** Client role (default: 'agent') */
-  role?: AgentRole;
 }
 
 /**
@@ -100,8 +97,7 @@ export class KadiEventPublisher {
       brokerUrl: config.brokerUrl,
       clientName: config.clientName,
       networks: config.networks,
-      version: config.version || '1.0.0',
-      role: config.role || 'agent'
+      version: config.version || '1.0.0'
     };
 
     // Graceful degradation: Check if broker URL is valid
@@ -128,8 +124,10 @@ export class KadiEventPublisher {
     const client = new KadiClient({
       name: this.config.clientName,
       version: this.config.version,
-      role: this.config.role,
-      broker: this.config.brokerUrl,
+      brokers: {
+        default: this.config.brokerUrl
+      },
+      defaultBroker: 'default',
       networks: this.config.networks
     });
 
@@ -191,7 +189,7 @@ export class KadiEventPublisher {
 
       try {
         const agentId = await this.client.connect();
-        console.log(`[KĀDI] Publisher: Connected successfully {agentId: ${agentId || 'unknown'}, networks: ${JSON.stringify(this.config.networks)}}`);
+        console.log(`[KĀDI] Publisher: Connected successfully {agentId: ${agentId ?? 'unknown'}, networks: ${JSON.stringify(this.config.networks)}}`);
         return; // Success - exit retry loop
       } catch (error: any) {
         const isLastAttempt = attempt === maxRetries;
@@ -263,7 +261,10 @@ export class KadiEventPublisher {
     }
 
     try {
-      this.client.publishEvent(topic, event);
+      await this.client.publish(topic, event, {
+        broker: 'default',
+        network: this.config.networks[0] || 'global'
+      });
 
       // Log with metadata if provided, otherwise generic log
       if (metadata) {

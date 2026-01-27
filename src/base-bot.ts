@@ -19,9 +19,9 @@
  *     // Slack-specific mention handling
  *   }
  *
- *   start(): void {
- *     super.initializeProtocol();
- *     this.subscribeToMentions();
+ *   async start(): Promise<void> {
+ *     await super.initializeAbilityResponseSubscription();
+ *     await this.subscribeToMentions();
  *   }
  *
  *   stop(): void {
@@ -35,6 +35,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { KadiClient } from '@kadi.build/core';
 import { logger, MODULE_AGENT } from './utils/logger.js';
 import { timer } from './utils/timer.js';
+import type { ProviderManager } from './providers/provider-manager.js';
+import type { MemoryService } from './memory/memory-service.js';
 
 // ============================================================================
 // Base Bot Configuration Interface
@@ -52,6 +54,12 @@ export interface BaseBotConfig {
 
   /** Bot user ID for topic routing (platform-specific format) */
   botUserId: string;
+
+  /** Optional provider manager for LLM operations (shared service) */
+  providerManager?: ProviderManager;
+
+  /** Optional memory service for conversation context (shared service) */
+  memoryService?: MemoryService;
 }
 
 // ============================================================================
@@ -78,14 +86,17 @@ export abstract class BaseBot {
   /** KĀDI client for broker communication */
   protected client: KadiClient;
 
-  /** Broker protocol for tool invocation (initialized in start()) */
-  protected protocol: any = null;
-
   /** Anthropic API client for Claude integration */
   protected anthropic: Anthropic;
 
   /** Bot user ID for topic routing */
   protected botUserId: string;
+
+  /** Optional provider manager for LLM operations */
+  protected providerManager?: ProviderManager;
+
+  /** Optional memory service for conversation context */
+  protected memoryService?: MemoryService;
 
   /** Pending async tool responses (requestId -> Promise resolver) */
   private pendingResponses = new Map<string, {
@@ -149,6 +160,8 @@ export abstract class BaseBot {
     this.client = config.client;
     this.anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
     this.botUserId = config.botUserId;
+    this.providerManager = config.providerManager;
+    this.memoryService = config.memoryService;
   }
 
   // ============================================================================
@@ -168,10 +181,10 @@ export abstract class BaseBot {
    * Start the bot and begin processing events
    *
    * Subclasses must implement this to:
-   * 1. Call initializeProtocol()
+   * 1. Call initializeAbilityResponseSubscription()
    * 2. Subscribe to platform-specific events
    */
-  public abstract start(): void;
+  public abstract start(): Promise<void>;
 
   /**
    * Stop the bot and cleanup resources
@@ -186,16 +199,16 @@ export abstract class BaseBot {
   // ============================================================================
 
   /**
-   * Initialize broker protocol
+   * Initialize ability response subscription
    *
    * Must be called by subclasses in their start() method
    * before attempting to invoke tools or subscribe to events.
+   *
+   * Subscribes to async ability responses from kadi-broker.
    */
-  protected initializeProtocol(): void {
-    this.protocol = this.client.getBrokerProtocol();
-
+  protected async initializeAbilityResponseSubscription(): Promise<void> {
     // Subscribe to async ability responses from kadi-broker
-    this.subscribeToAbilityResponses();
+    await this.subscribeToAbilityResponses();
   }
 
   /**
@@ -206,17 +219,10 @@ export abstract class BaseBot {
    *
    * @private
    */
-  private subscribeToAbilityResponses(): void {
-    // Listen to broker messages directly via BrokerConnectionManager
-    const brokerManager = this.client.getBrokerManager();
-
-    brokerManager.on('brokerMessage', (_brokerName: string, message: any) => {
-      // Only handle kadi.ability.response notifications
-      if (message?.method !== 'kadi.ability.response') {
-        return;
-      }
-
-      const { requestId, result, error } = message.params || {};
+  private async subscribeToAbilityResponses(): Promise<void> {
+    // Subscribe to kadi.ability.response events via kadi-core v0.6.0 subscribe API
+    await this.client.subscribe('kadi.ability.response', (event: any) => {
+      const { requestId, result, error } = event || {};
 
       const pending = this.pendingResponses.get(requestId);
       if (!pending) {
@@ -234,7 +240,7 @@ export abstract class BaseBot {
       } else {
         pending.resolve(result);
       }
-    });
+    }, { broker: 'default' });
 
     logger.info(MODULE_AGENT, 'Subscribed to kadi.ability.response notifications', timer.elapsed('main'));
   }
@@ -410,7 +416,11 @@ export abstract class BaseBot {
     this.totalRequests++;
 
     try {
-      const result = await this.protocol.invokeTool(params);
+      const result = await this.client.invokeRemote(
+        params.toolName,
+        params.toolInput,
+        { timeout: params.timeout }
+      );
       this.recordSuccess();
       return result;
     } catch (error: any) {

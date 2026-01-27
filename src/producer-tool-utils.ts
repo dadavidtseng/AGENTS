@@ -56,20 +56,14 @@ class AsyncResponseManager {
   /**
    * Subscribe to kadi.ability.response notifications (once per process)
    */
-  subscribeToAbilityResponses(client: KadiClient): void {
+  async subscribeToAbilityResponses(client: KadiClient): Promise<void> {
     if (this.subscribed) {
       return; // Already subscribed
     }
 
-    const brokerManager = client.getBrokerManager();
-
-    brokerManager.on('brokerMessage', (_brokerName: string, message: any) => {
-      // Only handle kadi.ability.response notifications
-      if (message?.method !== 'kadi.ability.response') {
-        return;
-      }
-
-      const { requestId, result, error } = message.params || {};
+    // Subscribe to kadi.ability.response events via kadi-core v0.6.0 subscribe API
+    await client.subscribe('kadi.ability.response', (event: any) => {
+      const { requestId, result, error } = event || {};
 
       const pending = this.pendingResponses.get(requestId);
       if (!pending) {
@@ -87,7 +81,7 @@ class AsyncResponseManager {
       } else {
         pending.resolve(result);
       }
-    });
+    }, { broker: 'default' });
 
     this.subscribed = true;
     logger.info(MODULE_AGENT, 'AsyncResponseManager: Subscribed to kadi.ability.response notifications', timer.elapsed('main'));
@@ -963,7 +957,7 @@ export async function publishToolEvent(
     console.log(`   Payload keys: ${Object.keys(eventPayload).join(', ')}`);
 
     // Publish event to KĀDI broker
-    await client.publishEvent(topic, eventPayload);
+    await client.publish(topic, eventPayload, { broker: 'default', network: 'global' });
 
     console.log(`   ✅ Event published successfully`);
 
