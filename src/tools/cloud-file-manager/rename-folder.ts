@@ -35,12 +35,12 @@ export function registerRenameFolderTool(client: KadiClient) {
 
       try {
         const abilityPath = getCloudFileManagerAbilityPath();
-        const cloudManager = await client.load('cloud-file-manager-ability', 'native', {
-          path: abilityPath
+        const cloudManager = await client.loadNative('cloud-file-manager-ability', {
+          path: process.env.CLOUD_FILE_MANAGER_ABILITY_PATH!
         });
 
-        const result = await cloudManager.cloud_rename_folder(params);
-        await cloudManager.__disconnect();
+        const result = await cloudManager.invoke('cloud_rename_folder', params);
+        await cloudManager.disconnect();
 
         logger.info(MODULE_AGENT, `Rename folder completed successfully`, timer.elapsed('main'));
         return result;

@@ -48,12 +48,12 @@ export function registerAddContainerTool(client: KadiClient) {
       try {
         const abilityPath = getContainerRegistryAbilityPath();
 
-        const registryAbility = await client.load('container-registry-ability', 'native', {
-          path: abilityPath
+        const registryAbility = await client.loadNative('container-registry-ability', {
+          path: process.env.CONTAINER_REGISTRY_ABILITY_PATH!
         });
 
-        const result = await registryAbility.add_container(params);
-        await registryAbility.__disconnect();
+        const result = await registryAbility.invoke('add_container', params);
+        await registryAbility.disconnect();
 
         logger.info(MODULE_AGENT, `Add container completed: ${result.message}`, timer.elapsed('main'));
 

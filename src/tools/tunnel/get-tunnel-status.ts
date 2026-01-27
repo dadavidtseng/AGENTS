@@ -55,15 +55,15 @@ export function registerGetTunnelStatusTool(client: KadiClient) {
 
         logger.info(MODULE_AGENT, `Loading ability from path: ${abilityPath}`, timer.elapsed('main'));
 
-        const tunnelAbility = await client.load('kadi-tunnel-ability', 'native', {
-          path: abilityPath
+        const tunnelAbility = await client.loadNative('kadi-tunnel-ability', {
+          path: process.env.KADI_TUNNEL_ABILITY_PATH!
         });
 
         // Call through native transport proxy
-        const result = await tunnelAbility.get_tunnel_status(params);
+        const result = await tunnelAbility.invoke('get_tunnel_status', params);
 
         // Disconnect after use
-        await tunnelAbility.__disconnect();
+        await tunnelAbility.disconnect();
 
         logger.info(MODULE_AGENT, `Get tunnel status completed: ${result.message}`, timer.elapsed('main'));
 

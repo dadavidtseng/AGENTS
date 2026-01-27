@@ -52,15 +52,15 @@ export function registerDeleteRemoteFolderTool(client: KadiClient) {
 
         logger.info(MODULE_AGENT, `Loading ability from path: ${abilityPath}`, timer.elapsed('main'));
 
-        const fileManager = await client.load('file-management-ability', 'native', {
-          path: abilityPath
+        const fileManager = await client.loadNative('file-management-ability', {
+          path: process.env.FILE_MANAGEMENT_ABILITY_PATH!
         });
 
         // Call through native transport proxy
-        const result = await fileManager.delete_remote_folder(params);
+        const result = await fileManager.invoke('delete_remote_folder', params);
 
         // Disconnect after use
-        await fileManager.__disconnect();
+        await fileManager.disconnect();
 
         logger.info(MODULE_AGENT, `Delete remote folder completed: ${result.message}`, timer.elapsed('main'));
 

@@ -30,16 +30,16 @@ export function registerCreateTemporaryUrl(client: KadiClient) {
     logger.info(MODULE_AGENT, `Creating temporary URL for: ${params.filePath}`, timer.elapsed('main'));
 
     const abilityPath = getLocalRemoteFileManagerAbilityPath();
-    const ability = await client.load('local-remote-file-manager-ability', 'native', {
-      path: abilityPath
+    const ability = await client.loadNative('local-remote-file-manager-ability', {
+      path: process.env.LOCAL_REMOTE_FILE_MANAGER_ABILITY_PATH!
     });
 
     try {
-      const result = await ability.create_temporary_url(params);
+      const result = await ability.invoke('create_temporary_url', params);
       logger.info(MODULE_AGENT, `Temporary URL created: ${result.publicUrl}`, timer.elapsed('main'));
       return result;
     } finally {
-      await ability.__disconnect();
+      await ability.disconnect();
     }
   });
 }

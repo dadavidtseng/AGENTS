@@ -41,12 +41,12 @@ export function registerRemoveContainerTool(client: KadiClient) {
       try {
         const abilityPath = getContainerRegistryAbilityPath();
 
-        const registryAbility = await client.load('container-registry-ability', 'native', {
-          path: abilityPath
+        const registryAbility = await client.loadNative('container-registry-ability', {
+          path: process.env.CONTAINER_REGISTRY_ABILITY_PATH!
         });
 
-        const result = await registryAbility.remove_container(params);
-        await registryAbility.__disconnect();
+        const result = await registryAbility.invoke('remove_container', params);
+        await registryAbility.disconnect();
 
         logger.info(MODULE_AGENT, `Remove container completed: ${result.message}`, timer.elapsed('main'));
 

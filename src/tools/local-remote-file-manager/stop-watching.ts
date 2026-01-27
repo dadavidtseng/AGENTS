@@ -24,16 +24,16 @@ export function registerStopWatching(client: KadiClient) {
     logger.info(MODULE_AGENT, `Stopping watch: ${params.watchIdOrPath}`, timer.elapsed('main'));
 
     const abilityPath = getLocalRemoteFileManagerAbilityPath();
-    const ability = await client.load('local-remote-file-manager-ability', 'native', {
-      path: abilityPath
+    const ability = await client.loadNative('local-remote-file-manager-ability', {
+      path: process.env.LOCAL_REMOTE_FILE_MANAGER_ABILITY_PATH!
     });
 
     try {
-      const result = await ability.stop_watching(params);
+      const result = await ability.invoke('stop_watching', params);
       logger.info(MODULE_AGENT, 'Watcher stopped', timer.elapsed('main'));
       return result;
     } finally {
-      await ability.__disconnect();
+      await ability.disconnect();
     }
   });
 }

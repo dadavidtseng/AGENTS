@@ -58,10 +58,10 @@
 //                 const fileManager = await client.load('file-management-ability', 'broker');
 //
 //                 // Call through broker transport (WebSocket/broker communication)
-//                 const result = await fileManager.send_file_to_remote_server(params);
+//                 const result = await fileManager.invoke('send_file_to_remote_server', params);
 //
 //                 // Disconnect after use
-//                 await fileManager.__disconnect();
+//                 await fileManager.disconnect();
 //
 //                 logger.info(MODULE_AGENT, `Upload completed: ${result.message}`, timer.elapsed('main'));
 //

@@ -34,9 +34,9 @@ export function registerStartContainerTool(client: KadiClient) {
 
       try {
         const abilityPath = getArcadeDBAbilityPath();
-        const arcadeAbility = await client.load('arcadedb-ability', 'native', { path: abilityPath });
-        const result = await arcadeAbility.start_container(params);
-        await arcadeAbility.__disconnect();
+        const arcadeAbility = await client.loadNative('arcadedb-ability', { path: abilityPath });
+        const result = await arcadeAbility.invoke('start_container', params);
+        await arcadeAbility.disconnect();
         logger.info(MODULE_AGENT, `Start container completed: ${result.message}`, timer.elapsed('main'));
         return result;
       } catch (error: unknown) {
@@ -73,9 +73,9 @@ export function registerStopContainerTool(client: KadiClient) {
 
       try {
         const abilityPath = getArcadeDBAbilityPath();
-        const arcadeAbility = await client.load('arcadedb-ability', 'native', { path: abilityPath });
-        const result = await arcadeAbility.stop_container(params);
-        await arcadeAbility.__disconnect();
+        const arcadeAbility = await client.loadNative('arcadedb-ability', { path: abilityPath });
+        const result = await arcadeAbility.invoke('stop_container', params);
+        await arcadeAbility.disconnect();
         logger.info(MODULE_AGENT, `Stop container completed: ${result.message}`, timer.elapsed('main'));
         return result;
       } catch (error: unknown) {
@@ -122,9 +122,9 @@ export function registerGetContainerStatusTool(client: KadiClient) {
 
       try {
         const abilityPath = getArcadeDBAbilityPath();
-        const arcadeAbility = await client.load('arcadedb-ability', 'native', { path: abilityPath });
-        const result = await arcadeAbility.get_container_status(params);
-        await arcadeAbility.__disconnect();
+        const arcadeAbility = await client.loadNative('arcadedb-ability', { path: abilityPath });
+        const result = await arcadeAbility.invoke('get_container_status', params);
+        await arcadeAbility.disconnect();
         logger.info(MODULE_AGENT, `Get container status completed`, timer.elapsed('main'));
         return result;
       } catch (error: unknown) {

@@ -37,9 +37,9 @@ export function registerImportDataTool(client: KadiClient) {
 
       try {
         const abilityPath = getArcadeDBAbilityPath();
-        const arcadeAbility = await client.load('arcadedb-ability', 'native', { path: abilityPath });
-        const result = await arcadeAbility.import_data(params);
-        await arcadeAbility.__disconnect();
+        const arcadeAbility = await client.loadNative('arcadedb-ability', { path: abilityPath });
+        const result = await arcadeAbility.invoke('import_data', params);
+        await arcadeAbility.disconnect();
         logger.info(MODULE_AGENT, `Import data completed`, timer.elapsed('main'));
         return result;
       } catch (error: unknown) {
@@ -80,9 +80,9 @@ export function registerExportDataTool(client: KadiClient) {
 
       try {
         const abilityPath = getArcadeDBAbilityPath();
-        const arcadeAbility = await client.load('arcadedb-ability', 'native', { path: abilityPath });
-        const result = await arcadeAbility.export_data(params);
-        await arcadeAbility.__disconnect();
+        const arcadeAbility = await client.loadNative('arcadedb-ability', { path: abilityPath });
+        const result = await arcadeAbility.invoke('export_data', params);
+        await arcadeAbility.disconnect();
         logger.info(MODULE_AGENT, `Export data completed`, timer.elapsed('main'));
         return result;
       } catch (error: unknown) {

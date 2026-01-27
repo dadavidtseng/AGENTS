@@ -50,15 +50,15 @@ export function registerUploadFileTool(client: KadiClient) {
 
         logger.info(MODULE_AGENT, `Loading ability from path: ${abilityPath}`, timer.elapsed('main'));
 
-        const cloudManager = await client.load('cloud-file-manager-ability', 'native', {
-          path: abilityPath
+        const cloudManager = await client.loadNative('cloud-file-manager-ability', {
+          path: process.env.CLOUD_FILE_MANAGER_ABILITY_PATH!
         });
 
         // Call through native transport proxy
-        const result = await cloudManager.cloud_upload_file(params);
+        const result = await cloudManager.invoke('cloud_upload_file', params);
 
         // Disconnect after use
-        await cloudManager.__disconnect();
+        await cloudManager.disconnect();
 
         logger.info(MODULE_AGENT, `Upload completed successfully`, timer.elapsed('main'));
 

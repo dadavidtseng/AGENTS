@@ -84,11 +84,11 @@ export function registerEchoTool(client: KadiClient): void {
     // TEMPLATE PATTERN: Publish event for operation
     // TODO: Replace 'echo.processed' with your domain-specific event topic
     // TODO: Replace 'template-agent-typescript' with your agent name
-    client.publishEvent('echo.processed', {
+    await client.publish('echo.processed', {
       operation: 'echo',
       text_length: result.length,
       agent: 'template-agent-typescript'
-    });
+    }, { broker: 'default', network: 'global' });
 
     return result;
   });

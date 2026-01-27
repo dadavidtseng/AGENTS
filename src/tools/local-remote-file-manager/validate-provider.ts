@@ -25,16 +25,16 @@ export function registerValidateProvider(client: KadiClient) {
     logger.info(MODULE_AGENT, `Validating provider: ${params.providerName}`, timer.elapsed('main'));
 
     const abilityPath = getLocalRemoteFileManagerAbilityPath();
-    const ability = await client.load('local-remote-file-manager-ability', 'native', {
-      path: abilityPath
+    const ability = await client.loadNative('local-remote-file-manager-ability', {
+      path: process.env.LOCAL_REMOTE_FILE_MANAGER_ABILITY_PATH!
     });
 
     try {
-      const result = await ability.validate_provider(params);
+      const result = await ability.invoke('validate_provider', params);
       logger.info(MODULE_AGENT, `Provider validation: ${result.isValid ? 'valid' : 'invalid'}`, timer.elapsed('main'));
       return result;
     } finally {
-      await ability.__disconnect();
+      await ability.disconnect();
     }
   });
 }

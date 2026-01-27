@@ -80,34 +80,45 @@ export function registerListToolsTool(client: KadiClient): void {
       };
 
       // 1. Get local tools (registered on this agent)
-      const localTools = client.getAllRegisteredTools();
+      const localTools = client.readAgentJson().tools;
 
       // 2. Get network tools from broker
-      const protocol = client.getBrokerProtocol();
-      const networkResult = await (protocol as any).connection.sendRequest({
-        jsonrpc: '2.0',
-        method: 'kadi.ability.list',
-        params: {
-          networks: config.networks,
-          includeProviders: false
-        },
-        id: `list_tools_${Date.now()}`
-      }) as {
-        tools: Array<{
-          name: string;
-          description?: string;
-        }>;
-      };
+      let networkTools: Array<{ name: string; description: string }> = [];
+
+      try {
+        // Check if client is connected to any broker
+        if (client.isConnected()) {
+          // Use kadi-core v0.6.0+ API to discover tools from broker
+          const response = await client.invokeRemote<{ tools: Array<{
+            name: string;
+            description?: string;
+            inputSchema?: Record<string, unknown>;
+            tags?: string[];
+          }> }>('kadi.ability.list', { includeProviders: false });
+
+          if (response?.tools && Array.isArray(response.tools)) {
+            networkTools = response.tools.map(tool => ({
+              name: tool.name,
+              description: tool.description || 'No description'
+            }));
+            logger.debug(MODULE_AGENT, `Discovered ${networkTools.length} network tools from broker`, timer.elapsed('main'));
+          }
+        } else {
+          logger.debug(MODULE_AGENT, 'No broker connection available for network tool discovery', timer.elapsed('main'));
+        }
+      } catch (error) {
+        logger.warn(MODULE_AGENT, 'Failed to query network tools from broker (continuing with local tools only)', timer.elapsed('main'), error as Error | string);
+      }
 
       // 3. Deduplicate: prefer local tools over network tools
-      const localNames = new Set(localTools.map(t => t.definition.name));
-      const uniqueNetworkTools = networkResult.tools.filter(t => !localNames.has(t.name));
+      const localNames = new Set(localTools.map(t => t.name));
+      const uniqueNetworkTools = networkTools.filter(t => !localNames.has(t.name));
 
       // 4. Combine all tools
       const allTools = [
         ...localTools.map(t => ({
-          name: t.definition.name,
-          description: t.definition.description || 'No description'
+          name: t.name,
+          description: t.description || 'No description'
         })),
         ...uniqueNetworkTools.map(t => ({
           name: t.name,
@@ -142,10 +153,10 @@ export function registerListToolsTool(client: KadiClient): void {
       logger.error(MODULE_AGENT, 'Error listing tools', "+0ms", error);
 
       // Fallback: return only local tools if broker query fails
-      const localTools = client.getAllRegisteredTools();
+      const localTools = client.readAgentJson().tools;
       const tools = localTools.map(t => ({
-        name: t.definition.name,
-        description: t.definition.description || 'No description'
+        name: t.name,
+        description: t.description || 'No description'
       }));
 
       const details = tools.map(t => `• *${t.name}*: ${t.description}`).join('\n');

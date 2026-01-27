@@ -34,9 +34,9 @@ export function registerCreateDatabaseTool(client: KadiClient) {
 
       try {
         const abilityPath = getArcadeDBAbilityPath();
-        const arcadeAbility = await client.load('arcadedb-ability', 'native', { path: abilityPath });
-        const result = await arcadeAbility.create_database(params);
-        await arcadeAbility.__disconnect();
+        const arcadeAbility = await client.loadNative('arcadedb-ability', { path: abilityPath });
+        const result = await arcadeAbility.invoke('create_database', params);
+        await arcadeAbility.disconnect();
         logger.info(MODULE_AGENT, `Create database completed: ${result.message}`, timer.elapsed('main'));
         return result;
       } catch (error: unknown) {
@@ -72,9 +72,9 @@ export function registerListDatabasesTool(client: KadiClient) {
 
       try {
         const abilityPath = getArcadeDBAbilityPath();
-        const arcadeAbility = await client.load('arcadedb-ability', 'native', { path: abilityPath });
-        const result = await arcadeAbility.list_databases(params);
-        await arcadeAbility.__disconnect();
+        const arcadeAbility = await client.loadNative('arcadedb-ability', { path: abilityPath });
+        const result = await arcadeAbility.invoke('list_databases', params);
+        await arcadeAbility.disconnect();
         logger.info(MODULE_AGENT, `List databases completed`, timer.elapsed('main'));
         return result;
       } catch (error: unknown) {
@@ -112,9 +112,9 @@ export function registerDropDatabaseTool(client: KadiClient) {
 
       try {
         const abilityPath = getArcadeDBAbilityPath();
-        const arcadeAbility = await client.load('arcadedb-ability', 'native', { path: abilityPath });
-        const result = await arcadeAbility.drop_database(params);
-        await arcadeAbility.__disconnect();
+        const arcadeAbility = await client.loadNative('arcadedb-ability', { path: abilityPath });
+        const result = await arcadeAbility.invoke('drop_database', params);
+        await arcadeAbility.disconnect();
         logger.info(MODULE_AGENT, `Drop database completed: ${result.message}`, timer.elapsed('main'));
         return result;
       } catch (error: unknown) {

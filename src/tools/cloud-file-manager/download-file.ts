@@ -42,12 +42,12 @@ export function registerDownloadFileTool(client: KadiClient) {
 
       try {
         const abilityPath = getCloudFileManagerAbilityPath();
-        const cloudManager = await client.load('cloud-file-manager-ability', 'native', {
-          path: abilityPath
+        const cloudManager = await client.loadNative('cloud-file-manager-ability', {
+          path: process.env.CLOUD_FILE_MANAGER_ABILITY_PATH!
         });
 
-        const result = await cloudManager.cloud_download_file(params);
-        await cloudManager.__disconnect();
+        const result = await cloudManager.invoke('cloud_download_file', params);
+        await cloudManager.disconnect();
 
         logger.info(MODULE_AGENT, `Download completed successfully`, timer.elapsed('main'));
 

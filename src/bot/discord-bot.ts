@@ -61,14 +61,17 @@ export class DiscordBot extends BaseBot {
     /**
      * Start Discord bot - initialize protocol and subscribe to events
      */
-    start(): void {
+    /**
+     * Start the Discord bot and subscribe to mentions
+     */
+    async start(): Promise<void> {
         logger.info(MODULE_DISCORD_BOT, 'Starting Discord bot (event-driven mode)...', timer.elapsed('main'));
 
-        // Initialize protocol from BaseBot
-        this.initializeProtocol();
+        // Initialize ability response subscription from BaseBot
+        await this.initializeAbilityResponseSubscription();
 
         // Subscribe to Discord mention events
-        this.subscribeToMentions();
+        await this.subscribeToMentions();
     }
 
     /**
@@ -81,13 +84,13 @@ export class DiscordBot extends BaseBot {
     /**
      * Subscribe to Discord mention events via KĀDI event bus
      */
-    private subscribeToMentions(): void {
+    private async subscribeToMentions(): Promise<void> {
         const topic = `discord.mention.${this.botUserId}`;
 
         logger.info(MODULE_DISCORD_BOT, `Subscriber: Registering subscription {topic: ${topic}, botUserId: ${this.botUserId}}`, timer.elapsed('main'));
 
         try {
-            this.client.subscribeToEvent(topic, async (event: unknown) => {
+            await this.client.subscribe(topic, async (event: unknown) => {
                 // Check circuit breaker before processing
                 if (this.checkCircuitBreaker()) {
                     logger.warn(MODULE_DISCORD_BOT, 'Subscriber: Event processing skipped {reason: circuit breaker OPEN}', timer.elapsed('main'));
@@ -128,7 +131,7 @@ export class DiscordBot extends BaseBot {
 
                 // Process mention using existing logic
                 await this.handleMention(discordMention);
-            });
+            }, { broker: 'default' });
 
             logger.info(MODULE_DISCORD_BOT, `Subscriber: Subscription registered successfully {topic: ${topic}}`, timer.elapsed('main'));
         } catch (error: any) {
@@ -166,7 +169,7 @@ export class DiscordBot extends BaseBot {
             logger.warn(MODULE_DISCORD_BOT, `Circuit breaker OPEN - skipping mention from @${mention.user}`, timer.elapsed('main'));
 
             // Publish error event
-            this.client.publishEvent('artist.task.failed', {
+            await this.client.publish('artist.task.failed', {
                 error: 'Circuit breaker open',
                 errorType: 'circuit_breaker',
                 context: {
@@ -176,7 +179,7 @@ export class DiscordBot extends BaseBot {
                 },
                 agent: 'agent-artist',
                 timestamp: new Date().toISOString(),
-            });
+            }, { broker: 'default', network: 'global' });
 
             // Send user-friendly error message
             await this.sendDiscordReply(
@@ -278,7 +281,7 @@ export class DiscordBot extends BaseBot {
                         this.recordFailure(error);
 
                         // Publish detailed error event
-                        this.client.publishEvent('artist.task.failed', {
+                        await this.client.publish('artist.task.failed', {
                             error: errorResult.error.message,
                             errorType: errorResult.error.type,
                             isTransient: errorResult.error.type === 'RATE_LIMIT' || errorResult.error.type === 'TIMEOUT' || errorResult.error.type === 'NETWORK_ERROR',
@@ -291,7 +294,7 @@ export class DiscordBot extends BaseBot {
                             },
                             agent: 'agent-artist',
                             timestamp: new Date().toISOString(),
-                        });
+                        }, { broker: 'default', network: 'global' });
 
                         // Send user-friendly error message (no stack traces)
                         const userMessage = 'Sorry, I encountered an issue generating a response. The issue has been logged.';
@@ -320,7 +323,7 @@ export class DiscordBot extends BaseBot {
                         this.recordFailure(error);
 
                         // Publish detailed error event
-                        this.client.publishEvent('artist.task.failed', {
+                        await this.client.publish('artist.task.failed', {
                             error: errorResult.error.message,
                             errorType: errorResult.error.type,
                             isTransient: errorResult.error.type === 'RATE_LIMIT' || errorResult.error.type === 'TIMEOUT' || errorResult.error.type === 'NETWORK_ERROR',
@@ -333,7 +336,7 @@ export class DiscordBot extends BaseBot {
                             },
                             agent: 'agent-artist',
                             timestamp: new Date().toISOString(),
-                        });
+                        }, { broker: 'default', network: 'global' });
 
                         // Send user-friendly error message (no stack traces)
                         const userMessage = 'Sorry, I encountered an issue generating a response. The issue has been logged.';
@@ -449,7 +452,7 @@ export class DiscordBot extends BaseBot {
             this.recordFailure(error);
 
             // Publish detailed error event
-            this.client.publishEvent('artist.task.failed', {
+            await this.client.publish('artist.task.failed', {
                 error: error.message || String(error),
                 errorType,
                 isTransient,
@@ -462,7 +465,7 @@ export class DiscordBot extends BaseBot {
                 },
                 agent: 'agent-artist',
                 timestamp: new Date().toISOString(),
-            });
+            }, { broker: 'default', network: 'global' });
 
             // Send appropriate error message to Discord (no stack traces)
             const userMessage = isTransient
@@ -530,10 +533,7 @@ export class DiscordBot extends BaseBot {
         message_id: string,
         text: string
     ): Promise<void> {
-        if (!this.protocol) {
-            logger.error(MODULE_DISCORD_BOT, 'Cannot send Discord reply: protocol not initialized', timer.elapsed('main'));
-            return;
-        }
+        // Protocol check removed - using invokeToolWithRetry() directly (kadi-core v0.6.0)
 
         const MAX_DISCORD_MESSAGE_LENGTH = 2000;
 
@@ -656,36 +656,40 @@ export class DiscordBot extends BaseBot {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     private async queryNetworkTools(): Promise<Anthropic.Tool[]> {
         try {
-            const networks = this.client.config.networks || [];
+            // Check if client is connected to any broker
+            if (!this.client.isConnected()) {
+                logger.debug(MODULE_DISCORD_BOT, 'No broker connection available for network tool discovery', timer.elapsed('main'));
+                return [];
+            }
 
-            // Get broker protocol to access connection
-            const protocol = this.client.getBrokerProtocol();
+            // Use kadi-core v0.6.0+ API to discover tools from broker
+            // The broker returns tools with their schemas in the format:
+            // { tools: [{ name, description, inputSchema, tags, providers }] }
+            const response = await this.client.invokeRemote<{ tools: Array<{
+                name: string;
+                description?: string;
+                inputSchema?: Record<string, unknown>;
+                tags?: string[];
+            }> }>('kadi.ability.list', { includeProviders: false });
 
-            // Query broker for tools on connected networks
-            const result = await (protocol as any).connection.sendRequest({
-                jsonrpc: '2.0',
-                method: 'kadi.ability.list',
-                params: {
-                    networks,
-                    includeProviders: false  // We don't need provider info for Claude
-                },
-                id: `tools_${Date.now()}`
-            }) as {
-                tools: Array<{
-                    name: string;
-                    description?: string;
-                    inputSchema?: any;
-                }>;
-            };
+            if (!response?.tools || !Array.isArray(response.tools)) {
+                logger.warn(MODULE_DISCORD_BOT, 'Invalid response from kadi.ability.list', timer.elapsed('main'));
+                return [];
+            }
 
-            logger.info(MODULE_DISCORD_BOT, `Discovered ${result.tools.length} network tools from broker`, timer.elapsed('main'));
-
-            // Convert to Anthropic format
-            return result.tools.map((tool: any) => ({
+            // Convert broker tools to Anthropic format
+            const networkTools: Anthropic.Tool[] = response.tools.map(tool => ({
                 name: tool.name,
                 description: tool.description || '',
-                input_schema: (tool.inputSchema || {type: 'object'}) as Anthropic.Tool.InputSchema
+                input_schema: tool.inputSchema as Anthropic.Tool.InputSchema || {
+                    type: 'object',
+                    properties: {},
+                    required: []
+                }
             }));
+
+            logger.debug(MODULE_DISCORD_BOT, `Discovered ${networkTools.length} network tools from broker`, timer.elapsed('main'));
+            return networkTools;
         } catch (error) {
             logger.error(MODULE_DISCORD_BOT, 'Failed to query network tools from broker', timer.elapsed('main'), error as Error | string);
             return [];  // Fallback to empty array on error
@@ -707,10 +711,10 @@ export class DiscordBot extends BaseBot {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     private async getAvailableTools(): Promise<Anthropic.Tool[]> {
         // 1. Get locally registered tools (tools on THIS agent)
-        const localTools = this.client.getAllRegisteredTools().map(tool => ({
-            name: tool.definition.name,
-            description: tool.definition.description || '',
-            input_schema: tool.definition.inputSchema as Anthropic.Tool.InputSchema
+        const localTools = this.client.readAgentJson().tools.map(tool => ({
+            name: tool.name,
+            description: tool.description || '',
+            input_schema: tool.inputSchema as Anthropic.Tool.InputSchema
         }));
 
         // 2. Query broker for tools available on connected networks

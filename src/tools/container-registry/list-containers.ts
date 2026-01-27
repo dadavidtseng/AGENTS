@@ -42,12 +42,12 @@ export function registerListContainersTool(client: KadiClient) {
       try {
         const abilityPath = getContainerRegistryAbilityPath();
 
-        const registryAbility = await client.load('container-registry-ability', 'native', {
-          path: abilityPath
+        const registryAbility = await client.loadNative('container-registry-ability', {
+          path: process.env.CONTAINER_REGISTRY_ABILITY_PATH!
         });
 
-        const result = await registryAbility.list_containers(params);
-        await registryAbility.__disconnect();
+        const result = await registryAbility.invoke('list_containers', params);
+        await registryAbility.disconnect();
 
         logger.info(MODULE_AGENT, `List containers completed: ${result.message}`, timer.elapsed('main'));
 

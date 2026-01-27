@@ -34,9 +34,9 @@ export function registerCreateBackupTool(client: KadiClient) {
 
       try {
         const abilityPath = getArcadeDBAbilityPath();
-        const arcadeAbility = await client.load('arcadedb-ability', 'native', { path: abilityPath });
-        const result = await arcadeAbility.create_backup(params);
-        await arcadeAbility.__disconnect();
+        const arcadeAbility = await client.loadNative('arcadedb-ability', { path: abilityPath });
+        const result = await arcadeAbility.invoke('create_backup', params);
+        await arcadeAbility.disconnect();
         logger.info(MODULE_AGENT, `Create backup completed`, timer.elapsed('main'));
         return result;
       } catch (error: unknown) {
@@ -75,9 +75,9 @@ export function registerRestoreBackupTool(client: KadiClient) {
 
       try {
         const abilityPath = getArcadeDBAbilityPath();
-        const arcadeAbility = await client.load('arcadedb-ability', 'native', { path: abilityPath });
-        const result = await arcadeAbility.restore_backup(params);
-        await arcadeAbility.__disconnect();
+        const arcadeAbility = await client.loadNative('arcadedb-ability', { path: abilityPath });
+        const result = await arcadeAbility.invoke('restore_backup', params);
+        await arcadeAbility.disconnect();
         logger.info(MODULE_AGENT, `Restore backup completed`, timer.elapsed('main'));
         return result;
       } catch (error: unknown) {
@@ -118,9 +118,9 @@ export function registerListBackupsTool(client: KadiClient) {
 
       try {
         const abilityPath = getArcadeDBAbilityPath();
-        const arcadeAbility = await client.load('arcadedb-ability', 'native', { path: abilityPath });
-        const result = await arcadeAbility.list_backups(params);
-        await arcadeAbility.__disconnect();
+        const arcadeAbility = await client.loadNative('arcadedb-ability', { path: abilityPath });
+        const result = await arcadeAbility.invoke('list_backups', params);
+        await arcadeAbility.disconnect();
         logger.info(MODULE_AGENT, `List backups completed`, timer.elapsed('main'));
         return result;
       } catch (error: unknown) {

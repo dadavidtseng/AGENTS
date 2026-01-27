@@ -53,12 +53,12 @@ export function registerGetDockerCommandsTool(client: KadiClient) {
       try {
         const abilityPath = getContainerRegistryAbilityPath();
 
-        const registryAbility = await client.load('container-registry-ability', 'native', {
-          path: abilityPath
+        const registryAbility = await client.loadNative('container-registry-ability', {
+          path: process.env.CONTAINER_REGISTRY_ABILITY_PATH!
         });
 
-        const result = await registryAbility.get_docker_commands(params);
-        await registryAbility.__disconnect();
+        const result = await registryAbility.invoke('get_docker_commands', params);
+        await registryAbility.disconnect();
 
         logger.info(MODULE_AGENT, `Get Docker commands completed: ${result.message}`, timer.elapsed('main'));
 

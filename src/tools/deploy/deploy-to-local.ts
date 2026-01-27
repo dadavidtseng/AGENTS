@@ -42,12 +42,12 @@ export function registerDeployToLocalTool(client: KadiClient) {
 
       try {
         const abilityPath = getDeployAbilityPath();
-        const deployManager = await client.load('deploy-ability', 'native', {
-          path: abilityPath
+        const deployManager = await client.loadNative('deploy-ability', {
+          path: process.env.DEPLOY_ABILITY_PATH!
         });
 
-        const result = await deployManager.deploy_to_local(params);
-        await deployManager.__disconnect();
+        const result = await deployManager.invoke('deploy_to_local', params);
+        await deployManager.disconnect();
 
         if (result.success) {
           logger.info(

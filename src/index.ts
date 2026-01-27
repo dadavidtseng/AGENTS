@@ -91,7 +91,7 @@ const config = {
   brokerUrl: process.env.KADI_BROKER_URL || 'ws://localhost:8080',
 
   /** Networks to join (comma-separated in env var) */
-  networks: (process.env.KADI_NETWORKS || 'global,slack,discord,file-ops,deployment,tunnel').split(',')
+  networks: (process.env.KADI_NETWORK || 'global,text,git,slack,discord').split(',')
 };
 
 // ============================================================================
@@ -127,8 +127,10 @@ const config = {
 const client = new KadiClient({
   name: process.env.AGENT_NAME || 'template-agent-typescript',
   version: process.env.AGENT_VERSION || '0.0.1',
-  role: 'agent',
-  broker: config.brokerUrl,
+  brokers: {
+    default: config.brokerUrl
+  },
+  defaultBroker: 'default',
   networks: config.networks
 });
 
@@ -165,13 +167,13 @@ registerAllTools(client);
  *
  * @param client - KĀDI client instance for event subscription
  */
-function subscribeToTaskAssignments(client: KadiClient): void {
+async function subscribeToTaskAssignments(client: KadiClient): Promise<void> {
   const topic = 'artist.task.assigned';
 
   logger.info(MODULE_AGENT, `Task Handler: Registering subscription {topic: ${topic}}`, timer.elapsed('main'));
 
   try {
-    client.subscribeToEvent(topic, async (event: unknown) => {
+    await client.subscribe(topic, async (event: unknown) => {
       // Extract event data from KĀDI envelope
       const eventData = (event as any)?.data || event;
 
@@ -179,7 +181,7 @@ function subscribeToTaskAssignments(client: KadiClient): void {
 
       // Handle task assignment
       await handleTaskAssignment(client, eventData);
-    });
+    }, { broker: 'default' });
 
     logger.info(MODULE_AGENT, `Task Handler: Subscription registered successfully {topic: ${topic}}`, timer.elapsed('main'));
   } catch (error: any) {
@@ -232,7 +234,8 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
 
     // Handle provider response
     if (!result.success) {
-      logger.error(MODULE_AGENT, `AI filename determination failed: ${result.error.message}`, "+0ms");
+      const error = result as { success: false; error: { message: string } };
+      logger.error(MODULE_AGENT, `AI filename determination failed: ${error.error.message}`, "+0ms");
       logger.warn(MODULE_AGENT, 'Falling back to default filename pattern', timer.elapsed('main'));
       return `art-${taskId.substring(0, 8)}.txt`;
     }
@@ -273,21 +276,11 @@ async function handleTaskAssignment(client: KadiClient, task: any): Promise<void
     logger.info(MODULE_AGENT, `   Description: ${task.description}`, timer.elapsed('main'));
 
     // Step 0: Call shrimp_execute_task to mark task as in_progress
-    const protocol = client.getBrokerProtocol();
-    if (!protocol) {
-      throw new Error('Protocol not initialized');
-    }
-
     logger.info(MODULE_AGENT, `Marking task as in_progress in shrimp task manager`, timer.elapsed('main'));
     try {
-      await protocol.invokeTool({
-        targetAgent: 'mcp-server-shrimp-agent-playground',
-        toolName: 'shrimp_execute_task',
-        toolInput: {
-          taskId: task.taskId
-        },
-        timeout: 30000
-      });
+      await client.invokeRemote('shrimp_execute_task', {
+        taskId: task.taskId
+      }, { timeout: 30000 });
       logger.info(MODULE_AGENT, `Task marked as in_progress`, timer.elapsed('main'));
     } catch (error) {
       logger.warn(MODULE_AGENT, `Failed to mark task as in_progress (continuing anyway)`, timer.elapsed('main'), error);
@@ -304,70 +297,50 @@ async function handleTaskAssignment(client: KadiClient, task: any): Promise<void
     }
 
     // Publish file creation event
-    client.publishEvent('artist.file.created', {
+    await client.publish('artist.file.created', {
       taskId: task.taskId,
       fileName,
       filePath,
       timestamp: new Date().toISOString(),
       agent: 'agent-artist'
-    });
+    }, { broker: 'default', network: 'global' });
 
     // Create art file using filesystem and git MCP servers
     const artContent = `# Artwork for Task ${task.taskId}\n\nCreated: ${new Date().toISOString()}\nDescription: ${task.description}\n\n[Artistic content would go here]`;
 
     // Step 1: Write file using filesystem server
     logger.info(MODULE_AGENT, `Writing file: ${filePath}`, timer.elapsed('main'));
-    await protocol.invokeTool({
-      targetAgent: 'fs',
-      toolName: 'fs_write_file',
-      toolInput: {
-        path: filePath,
-        content: artContent
-      },
-      timeout: 30000
-    });
+    await client.invokeRemote('fs_write_file', {
+      path: filePath,
+      content: artContent
+    }, { timeout: 30000 });
 
     logger.info(MODULE_AGENT, `File written: ${fileName}`, timer.elapsed('main'));
 
     // Step 2: Set git working directory to worktree
     logger.info(MODULE_AGENT, `Setting git working directory: ${worktreePath}`, timer.elapsed('main'));
-    await protocol.invokeTool({
-      targetAgent: 'git',
-      toolName: 'git_git_set_working_dir',
-      toolInput: {
-        path: worktreePath
-      },
-      timeout: 30000
-    });
+    await client.invokeRemote('git_git_set_working_dir', {
+      path: worktreePath
+    }, { timeout: 30000 });
 
     // Step 3: Stage file with git add
     logger.info(MODULE_AGENT, `Staging file: ${fileName}`, timer.elapsed('main'));
-    await protocol.invokeTool({
-      targetAgent: 'git',
-      toolName: 'git_git_add',
-      toolInput: {
-        files: [fileName]
-      },
-      timeout: 30000
-    });
+    await client.invokeRemote('git_git_add', {
+      files: [fileName]
+    }, { timeout: 30000 });
 
     // Step 4: Commit changes
     logger.info(MODULE_AGENT, `Committing changes`, timer.elapsed('main'));
-    const commitResult: any = await protocol.invokeTool({
-      targetAgent: 'git',
-      toolName: 'git_git_commit',
-      toolInput: {
-        message: `feat: create artwork for task ${task.taskId}`
-      },
-      timeout: 30000
-    });
+    const commitResult: any = await client.invokeRemote('git_git_commit', {
+      message: `feat: create artwork for task ${task.taskId}`
+    }, { timeout: 30000 });
 
     logger.debug(MODULE_AGENT, `Commit result:`, JSON.stringify(commitResult, null, 2));
     const commitSha = commitResult?.structuredContent?.commitHash || commitResult?.commitHash || 'unknown';
     logger.info(MODULE_AGENT, `Created and committed art file: ${fileName} (commit: ${commitSha.substring(0, 7)})`, timer.elapsed('main'));
 
     // Publish task completion event
-    client.publishEvent('artist.task.completed', {
+    await client.publish('artist.task.completed', {
       taskId: task.taskId,
       status: 'completed',
       filesCreated: [fileName],
@@ -375,19 +348,19 @@ async function handleTaskAssignment(client: KadiClient, task: any): Promise<void
       commitSha: commitSha,
       timestamp: new Date().toISOString(),
       agent: 'agent-artist'
-    });
+    }, { broker: 'default', network: 'global' });
 
     logger.info(MODULE_AGENT, `Task ${task.taskId} completed successfully`, timer.elapsed('main'));
   } catch (error: any) {
     logger.error(MODULE_AGENT, `Failed to process task ${task.taskId}`, "+0ms", error);
 
     // Publish failure event
-    client.publishEvent('artist.task.failed', {
+    await client.publish('artist.task.failed', {
       taskId: task.taskId,
       error: error.message || String(error),
       timestamp: new Date().toISOString(),
       agent: 'agent-artist'
-    });
+    }, { broker: 'default', network: 'global' });
   }
 }
 
@@ -440,14 +413,14 @@ async function main() {
 
     // TEMPLATE PATTERN: Print tool information BEFORE blocking serve() call
     // Dynamically list all registered tools
-    const registeredTools = client.getAllRegisteredTools();
+    const registeredTools = client.readAgentJson().tools;
     logger.info(MODULE_AGENT, `Available Tools: ${registeredTools.length} registered`, timer.elapsed('main'));
 
     if (registeredTools.length > 0) {
       logger.info(MODULE_AGENT, '  Local Tools:', timer.elapsed('main'));
       for (const tool of registeredTools) {
-        const description = tool.definition.description || 'No description';
-        logger.info(MODULE_AGENT, `    • ${tool.definition.name} - ${description}`, timer.elapsed('main'));
+        const description = tool.description || 'No description';
+        logger.info(MODULE_AGENT, `    • ${tool.name} - ${description}`, timer.elapsed('main'));
       }
       logger.info(MODULE_AGENT, '', timer.elapsed('main'));
     }
@@ -575,7 +548,7 @@ async function main() {
     logger.info(MODULE_AGENT, 'Subscribing to artist task assignments...', timer.elapsed('main'));
     setTimeout(async () => {
       try {
-        subscribeToTaskAssignments(client);
+        await subscribeToTaskAssignments(client);
         logger.info(MODULE_AGENT, 'Subscribed to artist.task.assigned events', timer.elapsed('main'));
       } catch (error) {
         logger.error(MODULE_AGENT, 'Failed to subscribe to task assignments', "+0ms", error as Error | string);

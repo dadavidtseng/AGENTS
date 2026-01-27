@@ -31,12 +31,12 @@ export function registerGetAvailableServicesTool(client: KadiClient) {
 
       try {
         const abilityPath = getCloudFileManagerAbilityPath();
-        const cloudManager = await client.load('cloud-file-manager-ability', 'native', {
-          path: abilityPath
+        const cloudManager = await client.loadNative('cloud-file-manager-ability', {
+          path: process.env.CLOUD_FILE_MANAGER_ABILITY_PATH!
         });
 
-        const result = await cloudManager.cloud_get_available_services({});
-        await cloudManager.__disconnect();
+        const result = await cloudManager.invoke('cloud_get_available_services', {});
+        await cloudManager.disconnect();
 
         logger.info(MODULE_AGENT, `Get available services completed: ${result.services?.length || 0} services`, timer.elapsed('main'));
         return result;

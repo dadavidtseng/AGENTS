@@ -25,16 +25,16 @@ export function registerGetUsageStats(client: KadiClient) {
     logger.info(MODULE_AGENT, 'Getting usage stats', timer.elapsed('main'));
 
     const abilityPath = getLocalRemoteFileManagerAbilityPath();
-    const ability = await client.load('local-remote-file-manager-ability', 'native', {
-      path: abilityPath
+    const ability = await client.loadNative('local-remote-file-manager-ability', {
+      path: process.env.LOCAL_REMOTE_FILE_MANAGER_ABILITY_PATH!
     });
 
     try {
-      const result = await ability.get_usage_stats(params);
+      const result = await ability.invoke('get_usage_stats', params);
       logger.info(MODULE_AGENT, 'Usage stats retrieved', timer.elapsed('main'));
       return result;
     } finally {
-      await ability.__disconnect();
+      await ability.disconnect();
     }
   });
 }

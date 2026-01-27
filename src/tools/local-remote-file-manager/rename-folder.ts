@@ -27,16 +27,16 @@ export function registerRenameFolder(client: KadiClient) {
     logger.info(MODULE_AGENT, `Renaming folder: ${params.oldPath} -> ${params.newName}`, timer.elapsed('main'));
 
     const abilityPath = getLocalRemoteFileManagerAbilityPath();
-    const ability = await client.load('local-remote-file-manager-ability', 'native', {
-      path: abilityPath
+    const ability = await client.loadNative('local-remote-file-manager-ability', {
+      path: process.env.LOCAL_REMOTE_FILE_MANAGER_ABILITY_PATH!
     });
 
     try {
-      const result = await ability.rename_folder(params);
+      const result = await ability.invoke('rename_folder', params);
       logger.info(MODULE_AGENT, `Folder renamed to: ${result.newPath}`, timer.elapsed('main'));
       return result;
     } finally {
-      await ability.__disconnect();
+      await ability.disconnect();
     }
   });
 }

@@ -34,12 +34,12 @@ export function registerCreateFolderTool(client: KadiClient) {
 
       try {
         const abilityPath = getCloudFileManagerAbilityPath();
-        const cloudManager = await client.load('cloud-file-manager-ability', 'native', {
-          path: abilityPath
+        const cloudManager = await client.loadNative('cloud-file-manager-ability', {
+          path: process.env.CLOUD_FILE_MANAGER_ABILITY_PATH!
         });
 
-        const result = await cloudManager.cloud_create_folder(params);
-        await cloudManager.__disconnect();
+        const result = await cloudManager.invoke('cloud_create_folder', params);
+        await cloudManager.disconnect();
 
         logger.info(MODULE_AGENT, `Create folder completed successfully`, timer.elapsed('main'));
         return result;
