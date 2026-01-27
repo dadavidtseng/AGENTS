@@ -11,6 +11,7 @@
  */
 
 import { KadiClient } from '@kadi.build/core';
+import { logger, MODULE_AGENT, timer } from 'agents-library';
 
 /**
  * Task completion notification data
@@ -46,7 +47,7 @@ const DEDUP_WINDOW_MS = 5000; // 5 second deduplication window
  * Subscribes to task.ready_for_approval events and routes to appropriate channel
  */
 export async function setupTaskCompletionNotifier(client: KadiClient): Promise<void> {
-  client.subscribeToEvent('task.ready_for_approval', async (event: any) => {
+  await client.subscribe('task.ready_for_approval', async (event: any) => {
     try {
       const data: TaskCompletionData = event.data;
 
@@ -55,7 +56,7 @@ export async function setupTaskCompletionNotifier(client: KadiClient): Promise<v
       const lastNotified = recentlyNotified.get(data.taskId);
 
       if (lastNotified && (now - lastNotified) < DEDUP_WINDOW_MS) {
-        console.log(`⏭️  Skipping duplicate notification for task ${data.taskId} (sent ${now - lastNotified}ms ago)`);
+        logger.info(MODULE_AGENT, `Skipping duplicate notification for task ${data.taskId} (sent ${now - lastNotified}ms ago)`, timer.elapsed('main'));
         return;
       }
 
@@ -69,14 +70,14 @@ export async function setupTaskCompletionNotifier(client: KadiClient): Promise<v
         }
       }
 
-      console.log(`📣 Sending task completion notification for task ${data.taskId}`);
+      logger.info(MODULE_AGENT, `Sending task completion notification for task ${data.taskId}`, timer.elapsed('main'));
       await sendCompletionNotification(client, data);
     } catch (error) {
-      console.error('❌ Failed to send task completion notification:', error);
+      logger.error(MODULE_AGENT, 'Failed to send task completion notification', timer.elapsed('main'), error as Error | string);
     }
   });
 
-  console.log('✅ Subscribed to task.ready_for_approval events');
+  logger.info(MODULE_AGENT, 'Subscribed to task.ready_for_approval events', timer.elapsed('main'));
 }
 
 /**
@@ -100,7 +101,7 @@ async function sendCompletionNotification(
       sendDesktopNotification(data);
       break;
     default:
-      console.warn(`⚠️  Unknown channel type: ${channelType}, defaulting to desktop`);
+      logger.warn(MODULE_AGENT, `Unknown channel type: ${channelType}, defaulting to desktop`, timer.elapsed('main'));
       sendDesktopNotification(data);
   }
 }
@@ -113,8 +114,6 @@ async function sendSlackNotification(
   data: TaskCompletionData
 ): Promise<void> {
   try {
-    const protocol = client.getBrokerProtocol();
-
     const message = formatNotificationMessage(data);
 
     const toolInput: any = {
@@ -127,16 +126,13 @@ async function sendSlackNotification(
       toolInput.thread_ts = data.channel.threadTs;
     }
 
-    await protocol.invokeTool({
-      targetAgent: 'mcp-server-slack',
-      toolName: 'slack_send_message',
-      toolInput,
+    await client.invokeRemote('slack_send_message', toolInput, {
       timeout: 10000
     });
 
-    console.log(`✅ Sent Slack notification for task ${data.taskId}${data.channel?.threadTs ? ' (in thread)' : ''}`);
+    logger.info(MODULE_AGENT, `Sent Slack notification for task ${data.taskId}${data.channel?.threadTs ? ' (in thread)' : ''}`, timer.elapsed('main'));
   } catch (error) {
-    console.error(`❌ Failed to send Slack notification:`, error);
+    logger.error(MODULE_AGENT, `Failed to send Slack notification`, timer.elapsed('main'), error as Error | string);
     // Fallback to desktop notification
     sendDesktopNotification(data);
   }
@@ -150,23 +146,18 @@ async function sendDiscordNotification(
   data: TaskCompletionData
 ): Promise<void> {
   try {
-    const protocol = client.getBrokerProtocol();
-
     const message = formatNotificationMessage(data);
 
-    await protocol.invokeTool({
-      targetAgent: 'mcp-server-discord',
-      toolName: 'discord_send_message',
-      toolInput: {
-        channel: data.channel?.channelId || 'general',
-        content: message  // Discord uses 'content' not 'text'
-      },
+    await client.invokeRemote('discord_send_message', {
+      channel: data.channel?.channelId || 'general',
+      content: message  // Discord uses 'content' not 'text'
+    }, {
       timeout: 10000
     });
 
-    console.log(`✅ Sent Discord notification for task ${data.taskId}`);
+    logger.info(MODULE_AGENT, `Sent Discord notification for task ${data.taskId}`, timer.elapsed('main'));
   } catch (error) {
-    console.error(`❌ Failed to send Discord notification:`, error);
+    logger.error(MODULE_AGENT, `Failed to send Discord notification`, timer.elapsed('main'), error as Error | string);
     // Fallback to desktop notification
     sendDesktopNotification(data);
   }
@@ -176,11 +167,11 @@ async function sendDiscordNotification(
  * Send notification to Claude Desktop (console log)
  */
 function sendDesktopNotification(data: TaskCompletionData): void {
-  console.log('\n' + '='.repeat(80));
-  console.log('📋 TASK COMPLETION NOTIFICATION');
-  console.log('='.repeat(80));
-  console.log(formatNotificationMessage(data));
-  console.log('='.repeat(80) + '\n');
+  logger.info(MODULE_AGENT, '\n' + '='.repeat(80), timer.elapsed('main'));
+  logger.info(MODULE_AGENT, '📋 TASK COMPLETION NOTIFICATION', timer.elapsed('main'));
+  logger.info(MODULE_AGENT, '='.repeat(80), timer.elapsed('main'));
+  logger.info(MODULE_AGENT, formatNotificationMessage(data), timer.elapsed('main'));
+  logger.info(MODULE_AGENT, '='.repeat(80) + '\n', timer.elapsed('main'));
 }
 
 /**

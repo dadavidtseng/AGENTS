@@ -10,10 +10,7 @@
     "build": "tsc",
     "type-check": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
-    "test": "vitest",
-    "miner": "tsx src/MinerAgent.ts",
-    "miner:watch": "tsx watch src/MinerAgent.ts",
-    "builder": "tsx src/BuilderAgent.ts"
+    "test": "vitest"
   },
   "keywords": [
     "kadi",

@@ -41,7 +41,9 @@
  */
 
 import type { KadiClient } from '@kadi.build/core';
-import { registerSimpleMinerTools } from './simpleminer.js';
+import { logger, timer, MODULE_TOOLS } from 'agents-library';
+import { registerEchoTool } from './echo.js';
+import { registerListToolsTool } from './list-tools.js';
 
 /**
  * Tool Registry Array
@@ -50,7 +52,8 @@ import { registerSimpleMinerTools } from './simpleminer.js';
  * They will be called automatically during agent initialization.
  */
 export const toolRegistry: Array<(client: KadiClient) => void> = [
-  registerSimpleMinerTools,
+  registerEchoTool,
+  registerListToolsTool,
 ];
 
 /**
@@ -60,16 +63,16 @@ export const toolRegistry: Array<(client: KadiClient) => void> = [
  * You don't need to modify this function - just add your tools to the array above.
  */
 export function registerAllTools(client: KadiClient): void {
-  console.log(`📦 Registering ${toolRegistry.length} custom tool(s)...`);
+  timer.start('tools-registry');
+  logger.info(MODULE_TOOLS, `Registering ${toolRegistry.length} custom tool(s)...`, timer.elapsed('tools-registry'));
 
   for (const registerTool of toolRegistry) {
     registerTool(client);
   }
 
   if (toolRegistry.length > 0) {
-    console.log(`✅ Registered ${toolRegistry.length} custom tool(s)`);
+    logger.info(MODULE_TOOLS, `Registered ${toolRegistry.length} custom tool(s)`, timer.elapsed('tools-registry'));
   } else {
-    console.log('ℹ️  No custom tools registered (add tools to src/tools/ to extend functionality)');
+    logger.info(MODULE_TOOLS, 'No custom tools registered (add tools to src/tools/ to extend functionality)', timer.elapsed('tools-registry'));
   }
-  console.log();
 }

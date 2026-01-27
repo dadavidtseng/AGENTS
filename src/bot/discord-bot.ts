@@ -20,7 +20,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import {DiscordMentionEventSchema} from '../types/discord-events.js';
-import {BaseBot, BaseBotConfig} from 'agents-library';
+import {BaseBot, BaseBotConfig, logger, MODULE_DISCORD_BOT, timer} from 'agents-library';
 
 // ============================================================================
 // Types
@@ -51,36 +51,36 @@ export class DiscordBot extends BaseBot {
     /**
      * Start Discord bot - initialize protocol and subscribe to events
      */
-    start(): void {
-        console.log('🤖 Starting Discord bot (event-driven mode)...');
+    async start(): Promise<void> {
+        logger.info(MODULE_DISCORD_BOT, 'Starting Discord bot (event-driven mode)...', timer.elapsed('main'));
 
-        // Initialize protocol from BaseBot
-        this.initializeProtocol();
+        // Initialize ability response subscription from BaseBot
+        await this.initializeAbilityResponseSubscription();
 
         // Subscribe to Discord mention events
-        this.subscribeToMentions();
+        await this.subscribeToMentions();
     }
 
     /**
      * Stop Discord bot
      */
     stop(): void {
-        console.log('🛑 Discord bot stopped');
+        logger.info(MODULE_DISCORD_BOT, 'Discord bot stopped', timer.elapsed('main'));
     }
 
     /**
      * Subscribe to Discord mention events via KĀDI event bus
      */
-    private subscribeToMentions(): void {
+    private async subscribeToMentions(): Promise<void> {
         const topic = `discord.mention.${this.botUserId}`;
 
-        console.log(`[KĀDI] Subscriber: Registering subscription {topic: ${topic}, botUserId: ${this.botUserId}}`);
+        logger.info(MODULE_DISCORD_BOT, `Subscriber: Registering subscription {topic: ${topic}, botUserId: ${this.botUserId}}`, timer.elapsed('main'));
 
         try {
-            this.client.subscribeToEvent(topic, async (event: unknown) => {
+            await this.client.subscribe(topic, async (event: any) => {
                 // Check circuit breaker before processing
                 if (this.checkCircuitBreaker()) {
-                    console.warn('[KĀDI] Subscriber: Event processing skipped {reason: circuit breaker OPEN}');
+                    logger.warn(MODULE_DISCORD_BOT, 'Subscriber: Event processing skipped {reason: circuit breaker OPEN}', timer.elapsed('main'));
                     return;
                 }
 
@@ -93,7 +93,7 @@ export class DiscordBot extends BaseBot {
 
                 if (!validationResult.success) {
                     const errorDetails = validationResult.error.issues.map((e: any) => `${e.path.join('.')}: ${e.message}`).join(', ');
-                    console.error(`[KĀDI] Subscriber: Event validation failed {errors: [${errorDetails}]}`);
+                    logger.error(MODULE_DISCORD_BOT, `Subscriber: Event validation failed {errors: [${errorDetails}]}`, timer.elapsed('main'));
                     return;
                 }
 
@@ -104,7 +104,7 @@ export class DiscordBot extends BaseBot {
                     ? mention.text.substring(0, 50) + '...'
                     : mention.text;
 
-                console.log(`[KĀDI] Subscriber: Event received {mentionId: ${mention.id}, user: ${mention.username}, channel: ${mention.channelName}, guild: ${mention.guild}, textPreview: "${textPreview}", timestamp: ${mention.timestamp}}`);
+                logger.info(MODULE_DISCORD_BOT, `Subscriber: Event received {mentionId: ${mention.id}, user: ${mention.username}, channel: ${mention.channelName}, guild: ${mention.guild}, textPreview: \"${textPreview}\", timestamp: ${mention.timestamp}}`, timer.elapsed('main'));
 
                 // Convert to DiscordMention format for existing processing logic
                 const discordMention: DiscordMention = {
@@ -118,13 +118,13 @@ export class DiscordBot extends BaseBot {
 
                 // Process mention using existing logic (non-blocking to prevent event queue backup)
                 this.handleMention(discordMention).catch(error => {
-                    console.error(`[KĀDI] Subscriber: Error handling mention {mentionId: ${discordMention.id}, error: ${error.message}}`);
+                    logger.error(MODULE_DISCORD_BOT, `Subscriber: Error handling mention {mentionId: ${discordMention.id}}`, timer.elapsed('main'), error);
                 });
             });
 
-            console.log(`[KĀDI] Subscriber: Subscription registered successfully {topic: ${topic}}`);
+            logger.info(MODULE_DISCORD_BOT, `Subscriber: Subscription registered successfully {topic: ${topic}}`, timer.elapsed('main'));
         } catch (error: any) {
-            console.error(`[KĀDI] Subscriber: Subscription registration failed {topic: ${topic}, error: ${error.message || 'Unknown error'}}`);
+            logger.error(MODULE_DISCORD_BOT, `Subscriber: Subscription registration failed {topic: ${topic}}`, timer.elapsed('main'), error);
         }
     }
 
@@ -133,12 +133,12 @@ export class DiscordBot extends BaseBot {
      */
     protected async handleMention(mention: DiscordMention): Promise<void> {
         try {
-            console.log(`💬 Processing mention from @${mention.user}: "${mention.text}"`);
+            logger.info(MODULE_DISCORD_BOT, `Processing mention from @${mention.user}: \"${mention.text}\"`, timer.elapsed('main'));
 
             // Process mention using existing logic
             await this.processMention(mention);
         } catch (error: any) {
-            console.error(`❌ Error handling mention from @${mention.user}:`, error);
+            logger.error(MODULE_DISCORD_BOT, `Error handling mention from @${mention.user}`, timer.elapsed('main'), error);
 
             // Send error message to Discord
             await this.sendDiscordReply(
@@ -238,7 +238,7 @@ CRITICAL: When responding to users after using tools:
                             channelId: mention.channel,
                             userId: mention.user
                         });
-                        console.log(`📍 Recorded Discord channel context for task ${result.taskId}`);
+                        logger.info(MODULE_DISCORD_BOT, `Recorded Discord channel context for task ${result.taskId}`, timer.elapsed('main'));
                     }
 
                     // If this is plan_task, save the result
@@ -332,9 +332,9 @@ CRITICAL: When responding to users after using tools:
             // Reply to Discord
             await this.sendDiscordReply(mention.channel, mention.id, finalText);
 
-            console.log(`✅ Replied to @${mention.user}`);
+            logger.info(MODULE_DISCORD_BOT, `Replied to @${mention.user}`, timer.elapsed('main'));
         } catch (error: any) {
-            console.error(`❌ Error processing mention from @${mention.user}:`, error);
+            logger.error(MODULE_DISCORD_BOT, `Error processing mention from @${mention.user}`, timer.elapsed('main'), error);
 
             // Send error message to Discord
             await this.sendDiscordReply(
@@ -352,45 +352,37 @@ CRITICAL: When responding to users after using tools:
         toolName: string,
         input: Record<string, unknown>
     ): Promise<any> {
-        if (!this.protocol) {
-            return {success: false, error: 'Protocol not initialized'};
-        }
-
         try {
-            console.log(`🔧 Executing tool: ${toolName}`);
-            console.log(`📝 Tool input: ${JSON.stringify(input).substring(0, 200)}...`);
+            logger.info(MODULE_DISCORD_BOT, `Executing tool: ${toolName}`, timer.elapsed('main'));
+            logger.debug(MODULE_DISCORD_BOT, `Tool input: ${JSON.stringify(input).substring(0, 200)}...`, timer.elapsed('main'));
 
             // Determine target agent based on tool name
             const targetAgent = this.resolveTargetAgent(toolName);
-            console.log(`🎯 Target agent: ${targetAgent}`);
+            logger.info(MODULE_DISCORD_BOT, `Target agent: ${targetAgent}`, timer.elapsed('main'));
 
             let result: any;
 
             // Handle local tools (registered on this agent)
             if (targetAgent === 'local') {
-                console.log(`🏠 Invoking local tool handler...`);
+                logger.info(MODULE_DISCORD_BOT, `Invoking local tool handler...`, timer.elapsed('main'));
                 // Get the tool handler from the client's registered tools
-                const toolHandlers = this.client.getAllRegisteredTools();
-                const toolHandler = toolHandlers.find(t => t.definition.name === toolName);
+                const agentInfo = this.client.readAgentJson();
+                const toolDef = agentInfo.tools.find((t: any) => t.name === toolName);
 
-                if (!toolHandler) {
+                if (!toolDef) {
                     throw new Error(`Local tool ${toolName} not found in registered tools`);
                 }
 
-                // Invoke the tool handler directly
-                result = await toolHandler.handler(input);
+                // For local tools, we need to invoke them through the client
+                // Since we don't have direct access to handlers, use invokeRemote
+                result = await this.client.invokeRemote(toolName, input, { timeout: 30000 });
             } else {
-                // Handle network tools via broker protocol
-                result = await this.protocol.invokeTool({
-                    targetAgent,
-                    toolName,
-                    toolInput: input,
-                    timeout: 30000,
-                });
+                // Handle network tools via client.invokeRemote
+                result = await this.client.invokeRemote(toolName, input, { timeout: 30000 });
             }
 
             const resultStr = result ? JSON.stringify(result) : 'undefined';
-            console.log(`📤 Tool result received: ${resultStr.substring(0, 300)}...`);
+            logger.debug(MODULE_DISCORD_BOT, `Tool result received: ${resultStr.substring(0, 300)}...`, timer.elapsed('main'));
 
             // Handle MCP tool response format
             if (result && typeof result === 'object') {
@@ -401,6 +393,12 @@ CRITICAL: When responding to users after using tools:
                         .map((item: any) => item.text)
                         .join('\n');
                     return textContent || JSON.stringify(result);
+                }
+
+                // Handle list_tools special format with presentation layer
+                if (result.presentation && result.presentation.details) {
+                    // Return formatted presentation for list_tools
+                    return `${result.presentation.summary}\n\n${result.presentation.details}`;
                 }
 
                 // Some tools return { result: { ... } }
@@ -414,7 +412,7 @@ CRITICAL: When responding to users after using tools:
 
             return result;
         } catch (error: any) {
-            console.error(`❌ Tool execution failed (${toolName}):`, error);
+            logger.error(MODULE_DISCORD_BOT, `Tool execution failed (${toolName})`, timer.elapsed('main'), error);
 
             // Extract useful error message for Claude
             const errorMessage = error.message || String(error);
@@ -433,10 +431,6 @@ CRITICAL: When responding to users after using tools:
         message_id: string,
         text: string
     ): Promise<void> {
-        if (!this.protocol) {
-            console.error('❌ Cannot send Discord reply: protocol not initialized');
-            return;
-        }
 
         const MAX_DISCORD_MESSAGE_LENGTH = 2000;
 
@@ -456,11 +450,11 @@ CRITICAL: When responding to users after using tools:
         }
 
         // Split long message into chunks
-        console.log(`📄 Message too long (${text.length} chars), splitting into chunks...`);
+        logger.info(MODULE_DISCORD_BOT, `Message too long (${text.length} chars), splitting into chunks...`, timer.elapsed('main'));
 
         const chunks = this.splitMessage(text, MAX_DISCORD_MESSAGE_LENGTH);
 
-        console.log(`📤 Sending ${chunks.length} message chunks to Discord`);
+        logger.info(MODULE_DISCORD_BOT, `Sending ${chunks.length} message chunks to Discord`, timer.elapsed('main'));
 
         // Send first chunk as a reply to the original message
         await this.invokeToolWithRetry({
@@ -555,68 +549,42 @@ CRITICAL: When responding to users after using tools:
      */
     private async queryNetworkTools(): Promise<Anthropic.Tool[]> {
         try {
-            const networks = this.client.config.networks || [];
+            // Check if client is connected to any broker
+            if (!this.client.isConnected()) {
+                logger.debug(MODULE_DISCORD_BOT, 'No broker connection available for network tool discovery', timer.elapsed('main'));
+                return [];
+            }
 
-            // Get broker protocol to access connection
-            const protocol = this.client.getBrokerProtocol();
+            // Use kadi-core v0.6.0+ API to discover tools from broker
+            // The broker returns tools with their schemas in the format:
+            // { tools: [{ name, description, inputSchema, tags, providers }] }
+            const response = await this.client.invokeRemote<{ tools: Array<{
+                name: string;
+                description?: string;
+                inputSchema?: Record<string, unknown>;
+                tags?: string[];
+            }> }>('kadi.ability.list', { includeProviders: false });
 
-            // Query broker for tools on connected networks
-            const result = await (protocol as any).connection.sendRequest({
-                jsonrpc: '2.0',
-                method: 'kadi.ability.list',
-                params: {
-                    networks,
-                    includeProviders: false  // We don't need provider info for Claude
-                },
-                id: `tools_${Date.now()}`
-            }) as {
-                tools: Array<{
-                    name: string;
-                    description?: string;
-                    inputSchema?: any;
-                }>;
-            };
+            if (!response?.tools || !Array.isArray(response.tools)) {
+                logger.warn(MODULE_DISCORD_BOT, 'Invalid response from kadi.ability.list', timer.elapsed('main'));
+                return [];
+            }
 
-            console.log(`🔍 Discovered ${result.tools.length} network tools from broker`);
-
-            // Convert to Anthropic format with schema validation
-            const convertedTools = result.tools.map((tool: any) => {
-                let inputSchema = tool.inputSchema || { type: 'object' };
-
-                // Validate and fix schema for JSON Schema draft 2020-12 compatibility
-                // Anthropic requires schemas to be valid according to draft 2020-12
-                if (inputSchema && typeof inputSchema === 'object') {
-                    // Remove $schema if present (Anthropic adds its own)
-                    delete inputSchema.$schema;
-
-                    // Remove _kadi property (contains circular references from KadiClient)
-                    // This fixes the "[Circular]" error for list_tools and other tools
-                    if (inputSchema.properties && typeof inputSchema.properties === 'object') {
-                        delete (inputSchema.properties as any)._kadi;
-                    }
-
-                    // Ensure type is present
-                    if (!inputSchema.type) {
-                        inputSchema.type = 'object';
-                    }
-
-                    // Ensure properties is an object (not undefined)
-                    if (inputSchema.type === 'object' && !inputSchema.properties) {
-                        inputSchema.properties = {};
-                    }
+            // Convert broker tools to Anthropic format
+            const networkTools: Anthropic.Tool[] = response.tools.map(tool => ({
+                name: tool.name,
+                description: tool.description || '',
+                input_schema: tool.inputSchema as Anthropic.Tool.InputSchema || {
+                    type: 'object',
+                    properties: {},
+                    required: []
                 }
+            }));
 
-                return {
-                    name: tool.name,
-                    description: tool.description || '',
-                    input_schema: inputSchema as Anthropic.Tool.InputSchema
-                };
-            });
-
-            console.log(`✅ Converted ${convertedTools.length} network tools to Anthropic format`);
-            return convertedTools;
+            logger.debug(MODULE_DISCORD_BOT, `Discovered ${networkTools.length} network tools from broker`, timer.elapsed('main'));
+            return networkTools;
         } catch (error) {
-            console.error('❌ Failed to query network tools from broker:', error);
+            logger.error(MODULE_DISCORD_BOT, 'Failed to query network tools from broker', timer.elapsed('main'), error as Error | string);
             return [];  // Fallback to empty array on error
         }
     }
@@ -633,10 +601,11 @@ CRITICAL: When responding to users after using tools:
      */
     private async getAvailableTools(): Promise<Anthropic.Tool[]> {
         // 1. Get locally registered tools (tools on THIS agent)
-        const localTools = this.client.getAllRegisteredTools().map(tool => ({
-            name: tool.definition.name,
-            description: tool.definition.description || '',
-            input_schema: tool.definition.inputSchema as Anthropic.Tool.InputSchema
+        const agentInfo = this.client.readAgentJson();
+        const localTools = agentInfo.tools.map((tool: any) => ({
+            name: tool.name,
+            description: tool.description || '',
+            input_schema: tool.inputSchema as Anthropic.Tool.InputSchema
         }));
 
         // 2. Query broker for tools available on connected networks
@@ -647,7 +616,7 @@ CRITICAL: When responding to users after using tools:
         const uniqueNetworkTools = networkTools.filter(t => !localToolNames.has(t.name));
 
         // 4. Combine and return (local tools first, then unique network tools)
-        console.log(`📋 Available tools: ${localTools.length} local + ${uniqueNetworkTools.length} network (${networkTools.length - uniqueNetworkTools.length} duplicates removed) = ${localTools.length + uniqueNetworkTools.length} total`);
+        logger.info(MODULE_DISCORD_BOT, `Available tools: ${localTools.length} local + ${uniqueNetworkTools.length} network (${networkTools.length - uniqueNetworkTools.length} duplicates removed) = ${localTools.length + uniqueNetworkTools.length} total`, timer.elapsed('main'));
 
         return [...localTools, ...uniqueNetworkTools];
     }
