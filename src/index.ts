@@ -20,19 +20,22 @@
  */
 
 import 'dotenv/config';
-import { createWorkerAgent } from 'agents-library';
+import { createWorkerAgent, logger, MODULE_AGENT, timer } from 'agents-library';
 
 async function main() {
+  // Start main timer for application lifetime tracking
+  timer.start('main');
+
   // Validate required environment variables
   const brokerUrl = process.env.KADI_BROKER_URL;
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
 
   if (!brokerUrl) {
-    console.error('❌ KADI_BROKER_URL environment variable is required');
+    logger.error(MODULE_AGENT, 'KADI_BROKER_URL environment variable is required', timer.elapsed('main'));
     process.exit(1);
   }
   if (!anthropicApiKey) {
-    console.error('❌ ANTHROPIC_API_KEY environment variable is required');
+    logger.error(MODULE_AGENT, 'ANTHROPIC_API_KEY environment variable is required', timer.elapsed('main'));
     process.exit(1);
   }
 
@@ -55,19 +58,21 @@ async function main() {
 
   // Graceful shutdown
   process.on('SIGINT', async () => {
-    console.log('\n🛑 Shutting down artist agent...');
+    logger.info(MODULE_AGENT, 'Shutting down artist agent...', timer.elapsed('main'));
     await agent.stop();
+    logger.info(MODULE_AGENT, 'Shutdown complete', timer.elapsed('main'));
     process.exit(0);
   });
 
   process.on('SIGTERM', async () => {
-    console.log('\n🛑 Shutting down artist agent...');
+    logger.info(MODULE_AGENT, 'Shutting down artist agent...', timer.elapsed('main'));
     await agent.stop();
+    logger.info(MODULE_AGENT, 'Shutdown complete', timer.elapsed('main'));
     process.exit(0);
   });
 }
 
 main().catch((error) => {
-  console.error('💥 Fatal error:', error);
+  logger.error(MODULE_AGENT, 'Fatal error', timer.elapsed('main'), error);
   process.exit(1);
 });
