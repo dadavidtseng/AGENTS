@@ -267,6 +267,8 @@ export interface Task {
   analysis?: TaskAnalysis;
   /** Task reflection for quality review and improvement (optional) */
   reflection?: TaskReflection;
+  /** Additional metadata (flexible for future extensions) */
+  metadata?: Record<string, any>;
 }
 
 /**
