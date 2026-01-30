@@ -25,15 +25,18 @@
   - _Requirements: Requirement 3 (Task Generation and Planning)_
   - _Prompt: Role: MCP Tool Developer with TypeScript expertise | Task: Create questPlanTask.ts tool following the pattern of questAnalyzeTask.ts to implement Step 1 of the four-step workflow (plan → analyze → reflect → split) | Restrictions: Must follow existing tool patterns, return structured prompt format, integrate with quest workflow | Success: Tool returns comprehensive planning prompt, integrates seamlessly with workflow, follows existing code patterns_
 
-- [ ] 1.3. Verify existing four-step workflow tools
+- [ ] 1.3. Fix and verify four-step workflow tools
   - File: C:\GitHub\mcp-server-quest\src\tools\questAnalyzeTask.ts, questReflectTask.ts, questSplitTasks.ts
-  - Verify questAnalyzeTask returns analysis prompt and stores analysis in task.analysis
-  - Verify questReflectTask returns reflection prompt and stores reflection in task.reflection
-  - Verify questSplitTasks validates dependencies, creates tasks with UUIDs, detects circular dependencies
-  - Purpose: Ensure workflow tools work as designed
-  - _Leverage: Existing workflow tools in mcp-server-quest_
+  - Fix questAnalyzeTask to work with concepts (remove questId/taskId requirements, accept summary + initialConcept)
+  - Fix questReflectTask to work with concepts (remove questId/taskId requirements, accept summary + analysis)
+  - Fix questSplitTasks to accept globalAnalysisResult parameter and store in task.analysis field
+  - Update quest_plan_task prompt to mandate calling all workflow steps in order
+  - Verify workflow executes completely: plan → analyze → reflect → split
+  - Verify tasks are created with analysis/reflection data attached
+  - Purpose: Fix workflow design issues to match mcp-shrimp-task-manager reference implementation
+  - _Leverage: C:\GitHub-Reference\mcp-shrimp-task-manager as reference implementation_
   - _Requirements: Requirement 3 (Task Generation and Planning)_
-  - _Prompt: Role: QA Engineer with MCP and TypeScript expertise | Task: Verify existing four-step workflow tools (questAnalyzeTask, questReflectTask, questSplitTasks) function correctly, checking prompt generation, data storage, dependency validation, and circular dependency detection | Restrictions: Do not modify tools, only verify functionality | Success: All tools function correctly, dependency validation works, circular dependencies detected, data stored properly_
+  - _Prompt: Role: MCP Tool Developer with TypeScript expertise | Task: Fix four-step workflow tools to match mcp-shrimp-task-manager pattern where analyze/reflect work with concepts before tasks exist, split_tasks accepts globalAnalysisResult, and quest_plan_task mandates calling all steps | Restrictions: Must maintain MCP protocol compliance, follow existing code patterns, ensure backward compatibility where possible | Success: Workflow executes completely (plan → analyze → reflect → split), tasks created with analysis attached, no validation errors, matches reference implementation behavior_
 
 - [ ] 1.4. Verify quest CRUD tools
   - File: C:\GitHub\mcp-server-quest\src\tools\questCreate.ts, questGetStatus.ts, questSubmitApproval.ts
