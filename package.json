@@ -8,20 +8,26 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "dev:mcp": "tsx src/mcp-server.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "node --test tests/**/*.test.ts"
+    "start:mcp": "node dist/mcp-server.js",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "test:watch": "vitest --watch",
+    "test:ui": "vitest --ui"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "latest",
-    "@anthropic-ai/sdk": "latest",
-    "fastify": "latest",
     "@fastify/static": "latest",
-    "@fastify/websocket": "latest"
+    "@fastify/websocket": "latest",
+    "@modelcontextprotocol/sdk": "latest",
+    "fastify": "latest"
   },
   "devDependencies": {
-    "typescript": "^5.3.0",
+    "@types/node": "latest",
+    "@vitest/coverage-v8": "^4.0.18",
     "tsx": "latest",
-    "@types/node": "latest"
+    "typescript": "^5.3.0",
+    "vitest": "^4.0.18"
   }
 }
