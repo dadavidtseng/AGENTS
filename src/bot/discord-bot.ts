@@ -21,6 +21,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import {DiscordMentionEventSchema} from '../types/discord-events.js';
 import {BaseBot, BaseBotConfig, logger, MODULE_DISCORD_BOT, timer} from 'agents-library';
+import type { Message, ProviderError } from 'agents-library';
+import type { MemoryError } from 'agents-library';
 
 // ============================================================================
 // Types
@@ -36,7 +38,8 @@ interface DiscordMention {
 }
 
 interface DiscordBotConfig extends BaseBotConfig {
-    // No additional config needed - extends BaseBotConfig
+    providerManager?: any; // ProviderManager from agents-library
+    memoryService?: any;   // MemoryService from agents-library
 }
 
 // ============================================================================
@@ -46,6 +49,19 @@ interface DiscordBotConfig extends BaseBotConfig {
 export class DiscordBot extends BaseBot {
     constructor(config: DiscordBotConfig) {
         super(config);
+        
+        // Log service availability (services are stored in BaseBot)
+        if (this.providerManager) {
+            logger.info(MODULE_DISCORD_BOT, 'ProviderManager initialized and available', timer.elapsed('main'));
+        } else {
+            logger.warn(MODULE_DISCORD_BOT, 'ProviderManager not provided - using direct Anthropic client', timer.elapsed('main'));
+        }
+        
+        if (this.memoryService) {
+            logger.info(MODULE_DISCORD_BOT, 'MemoryService initialized and available', timer.elapsed('main'));
+        } else {
+            logger.warn(MODULE_DISCORD_BOT, 'MemoryService not provided - memory features disabled', timer.elapsed('main'));
+        }
     }
 
     /**
@@ -152,273 +168,470 @@ export class DiscordBot extends BaseBot {
     /**
      * Process a single Discord mention with Claude API
      */
-    private async processMention(mention: DiscordMention): Promise<void> {
-        try {
-            // Get list of available KADI tools (dynamically from client and broker)
-            const availableTools = await this.getAvailableTools();
-
-            // Call Claude API
-            let response = await this.anthropic.messages.create({
-                model: process.env.BOT_CLAUDE_MODEL || 'claude-3-haiku-20240307',
-                max_tokens: parseInt(process.env.BOT_CLAUDE_MAX_TOKENS || '4096'),
-                tools: availableTools,
-                system: `You are KADI Bot, an AI assistant that helps manage tasks using the KADI protocol.
-
-CRITICAL: When using the list_active_tasks tool, ALWAYS format the results as follows:
-1. Display tasks in numerical order (sorted by task ID)
-2. Use this exact format for each task:
-   [Task ID] - [Task Name]
-3. Include a header showing the total count
-4. Example format:
-
-   Active Tasks (Total: 3):
-   1. 08532952-04c1-4afb-93bd-ed674446bfd8 - Implement Monitoring and Auditing
-   2. 14bc4c95-fd88-4680-957f-5185ad522501 - Create placeholder task for testing purposes
-   3. 5166ce3c-fdc6-42f6-a1e6-d9975ba38bdc - Placeholder Task for Testing
-
-Do NOT summarize or paraphrase task lists - always show the complete numbered list with IDs and names.
-
-CRITICAL: When approving a task using the approve_completion tool:
-1. Extract the task ID from the user's message
-2. Provide a meaningful summary (e.g., "Task approved by user via Discord")
-3. Provide a score between 0-100 (default to 90 if user doesn't specify)
-4. Example: User says "I approve task abc-123" -> call approve_completion with:
-   - taskId: "abc-123"
-   - summary: "Task approved by user via Discord"
-   - score: 90
-
-CRITICAL: When responding to users after using tools:
-- Be concise and user-friendly
-- For approve_completion: Say "✅ Task [taskId] has been approved!" (not technical details about the function)
-- For assign_task: Say "✅ Task assigned to [role] agent"
-- Avoid mentioning technical details like "the function was used" or internal implementation details`,
-                messages: [
-                    {
-                        role: 'user',
-                        content: mention.text,
-                    },
-                ],
-            });
-
-            // Handle tool use loop
-            let conversationMessages: any[] = [
-                {role: 'user', content: mention.text},
-            ];
-
-            // Track if plan_task, list_active_tasks, or get_task_status was called and their results
-            let planTaskResult: any = null;
-            let listTasksResult: any = null;
-            let taskStatusResult: any = null;
-
-            while (response.stop_reason === 'tool_use') {
-                // Extract tool calls
-                const toolBlocks = response.content.filter((block) => block.type === 'tool_use');
-
-                // Add assistant response to conversation
-                conversationMessages.push({
-                    role: 'assistant',
-                    content: response.content,
-                });
-
-                // Execute tool calls
-                const toolResults = [];
-                for (const toolBlock of toolBlocks) {
-                    if (toolBlock.type !== 'tool_use') continue;
-
-                    const result = await this.executeKadiTool(
-                        toolBlock.name,
-                        toolBlock.input as Record<string, unknown>
-                    );
-
-                    // If this is assign_task, record channel context for notifications
-                    if (toolBlock.name === 'assign_task' && result && typeof result === 'object' && result.taskId) {
-                        const { taskChannelMap } = await import('../index.js');
-                        taskChannelMap.set(result.taskId, {
-                            type: 'discord',
-                            channelId: mention.channel,
-                            userId: mention.user
-                        });
-                        logger.info(MODULE_DISCORD_BOT, `Recorded Discord channel context for task ${result.taskId}`, timer.elapsed('main'));
-                    }
-
-                    // If this is plan_task, save the result
-                    if (toolBlock.name === 'plan_task' && result && typeof result === 'object' && result.message) {
-                        planTaskResult = result;
-                    }
-
-                    // If this is list_active_tasks, save the result and format it
-                    if (toolBlock.name === 'list_active_tasks' && result && typeof result === 'object' && result.tasks) {
-                        listTasksResult = result;
-                    }
-
-                    // If this is get_task_status, save the result and format it
-                    if (toolBlock.name === 'get_task_status' && result && typeof result === 'object' && result.taskId) {
-                        taskStatusResult = result;
-                    }
-
-                    toolResults.push({
-                        type: 'tool_result',
-                        tool_use_id: toolBlock.id,
-                        content: JSON.stringify(result),
-                    });
-                }
-
-                // Add tool results to conversation
-                conversationMessages.push({
-                    role: 'user',
-                    content: toolResults,
-                });
-
-                // Get next Claude response
-                response = await this.anthropic.messages.create({
-                    model: process.env.BOT_CLAUDE_MODEL || 'claude-3-haiku-20240307',
-                    max_tokens: parseInt(process.env.BOT_CLAUDE_MAX_TOKENS || '4096'),
-                    tools: availableTools,
-                    messages: conversationMessages,
-                });
-            }
-
-            // Determine final response text
-            let finalText: string;
-
-            if (planTaskResult && planTaskResult.message) {
-                // Use the pre-formatted message from plan_task directly
-                finalText = planTaskResult.message;
-            } else if (listTasksResult && listTasksResult.tasks) {
-                // Format list_active_tasks results directly
-                const tasks = listTasksResult.tasks;
-                const total = listTasksResult.total || tasks.length;
-
-                // Sort tasks by ID
-                const sortedTasks = [...tasks].sort((a: any, b: any) => a.id.localeCompare(b.id));
-
-                // Format as numbered list
-                finalText = `Active Tasks (Total: ${total}):\n`;
-                sortedTasks.forEach((task: any, index: number) => {
-                    finalText += `${index + 1}. ${task.id} - ${task.name}\n`;
-                });
-            } else if (taskStatusResult && taskStatusResult.taskId) {
-                // Format get_task_status results directly
-                finalText = `Task Status:\n`;
-                finalText += `ID: ${taskStatusResult.taskId}\n`;
-                finalText += `Name: ${taskStatusResult.description}\n`;
-                finalText += `Status: ${taskStatusResult.status}\n`;
-                if (taskStatusResult.role) {
-                    finalText += `Role: ${taskStatusResult.role}\n`;
-                }
-                if (taskStatusResult.progress) {
-                    finalText += `\nProgress:\n`;
-                    if (taskStatusResult.progress.filesCreated && taskStatusResult.progress.filesCreated.length > 0) {
-                        finalText += `  - Files Created: ${taskStatusResult.progress.filesCreated.join(', ')}\n`;
-                    }
-                    if (taskStatusResult.progress.filesModified && taskStatusResult.progress.filesModified.length > 0) {
-                        finalText += `  - Files Modified: ${taskStatusResult.progress.filesModified.join(', ')}\n`;
-                    }
-                    if (taskStatusResult.progress.commitSha) {
-                        finalText += `  - Commit SHA: ${taskStatusResult.progress.commitSha}\n`;
-                    }
-                    if (taskStatusResult.progress.errorMessage) {
-                        finalText += `  - Error: ${taskStatusResult.progress.errorMessage}\n`;
-                    }
-                }
-            } else {
-                // For other tools, use Claude's response
-                finalText = response.content
-                    .filter((block) => block.type === 'text')
-                    .map((block: any) => block.text)
-                    .join('\n');
-            }
-
-            // Reply to Discord
-            await this.sendDiscordReply(mention.channel, mention.id, finalText);
-
-            logger.info(MODULE_DISCORD_BOT, `Replied to @${mention.user}`, timer.elapsed('main'));
-        } catch (error: any) {
-            logger.error(MODULE_DISCORD_BOT, `Error processing mention from @${mention.user}`, timer.elapsed('main'), error);
-
-            // Send error message to Discord
-            await this.sendDiscordReply(
-                mention.channel,
-                mention.id,
-                'Sorry, I encountered an error processing your message. Please try again later.'
-            );
-        }
-    }
-
     /**
-     * Execute a KADI tool via broker
+     * Process a single Discord mention with ProviderManager and MemoryService
      */
-    private async executeKadiTool(
-        toolName: string,
-        input: Record<string, unknown>
-    ): Promise<any> {
-        try {
-            logger.info(MODULE_DISCORD_BOT, `Executing tool: ${toolName}`, timer.elapsed('main'));
-            logger.debug(MODULE_DISCORD_BOT, `Tool input: ${JSON.stringify(input).substring(0, 200)}...`, timer.elapsed('main'));
-
-            // Determine target agent based on tool name
-            const targetAgent = this.resolveTargetAgent(toolName);
-            logger.info(MODULE_DISCORD_BOT, `Target agent: ${targetAgent}`, timer.elapsed('main'));
-
-            let result: any;
-
-            // Handle local tools (registered on this agent)
-            if (targetAgent === 'local') {
-                logger.info(MODULE_DISCORD_BOT, `Invoking local tool handler...`, timer.elapsed('main'));
-                // Get the tool handler from the client's registered tools
-                const agentInfo = this.client.readAgentJson();
-                const toolDef = agentInfo.tools.find((t: any) => t.name === toolName);
-
-                if (!toolDef) {
-                    throw new Error(`Local tool ${toolName} not found in registered tools`);
-                }
-
-                // For local tools, we need to invoke them through the client
-                // Since we don't have direct access to handlers, use invokeRemote
-                result = await this.client.invokeRemote(toolName, input, { timeout: 30000 });
-            } else {
-                // Handle network tools via client.invokeRemote
-                result = await this.client.invokeRemote(toolName, input, { timeout: 30000 });
-            }
-
-            const resultStr = result ? JSON.stringify(result) : 'undefined';
-            logger.debug(MODULE_DISCORD_BOT, `Tool result received: ${resultStr.substring(0, 300)}...`, timer.elapsed('main'));
-
-            // Handle MCP tool response format
-            if (result && typeof result === 'object') {
-                // MCP tools return { content: [{ type: 'text', text: '...' }] }
-                if (Array.isArray(result.content)) {
-                    const textContent = result.content
-                        .filter((item: any) => item.type === 'text')
-                        .map((item: any) => item.text)
-                        .join('\n');
-                    return textContent || JSON.stringify(result);
-                }
-
-                // Handle list_tools special format with presentation layer
-                if (result.presentation && result.presentation.details) {
-                    // Return formatted presentation for list_tools
-                    return `${result.presentation.summary}\n\n${result.presentation.details}`;
-                }
-
-                // Some tools return { result: { ... } }
-                if (result.result !== undefined) {
-                    return result.result;
-                }
-
-                // Return the whole result object as fallback
-                return result;
-            }
-
-            return result;
-        } catch (error: any) {
-            logger.error(MODULE_DISCORD_BOT, `Tool execution failed (${toolName})`, timer.elapsed('main'), error);
-
-            // Extract useful error message for Claude
-            const errorMessage = error.message || String(error);
-            return `Error executing tool: ${errorMessage}`;
-        }
+    private async processMention(mention: DiscordMention): Promise<void> {
+    // Check if services are available
+    if (!this.providerManager || !this.memoryService) {
+      logger.error(MODULE_DISCORD_BOT, 'ProviderManager or MemoryService not available', timer.elapsed('main'));
+      await this.sendDiscordReply(
+        mention.channel,
+        mention.id,
+        'Sorry, the bot is not properly configured. Please contact the administrator.'
+      );
+      return;
     }
+
+    // Check circuit breaker before processing
+    if (this.checkCircuitBreaker()) {
+      logger.warn(MODULE_DISCORD_BOT, `Circuit breaker OPEN - skipping mention from @${mention.user}`, timer.elapsed('main'));
+
+      // Send user-friendly error message
+      await this.sendDiscordReply(
+        mention.channel,
+        mention.id,
+        '⚠️ Service temporarily unavailable due to repeated failures. Please try again in a few minutes.'
+      );
+      return;
+    }
+
+    try {
+      // Step 1: Retrieve conversation context from MemoryService
+      const contextResult = await this.memoryService.retrieveContext(mention.user, mention.channel);
+
+      if (!contextResult.success) {
+        const errorResult = contextResult as { success: false; error: MemoryError };
+        logger.warn(MODULE_DISCORD_BOT, `Failed to retrieve context: ${errorResult.error.message}`, timer.elapsed('main'));
+      }
+
+      const context = contextResult.success ? contextResult.data : [];
+
+      // Step 2: Build messages array (context + new user message)
+      const messages: Message[] = [
+        ...context.map(msg => ({
+          role: msg.role,
+          content: msg.content,
+        })),
+        {
+          role: 'user' as const,
+          content: mention.text,
+        },
+      ];
+
+      // Step 3: Detect model from message using regex /\[([^\]]+)\]/
+      const modelMatch = mention.text.match(/\[([^\]]+)\]/);
+      const detectedModel = modelMatch ? modelMatch[1] : undefined;
+
+      if (detectedModel) {
+        logger.info(MODULE_DISCORD_BOT, `Model detected from message: ${detectedModel}`, timer.elapsed('main'));
+      }
+
+      // Step 4: Get available tools and convert to OpenAI format
+      const anthropicTools = await this.getAvailableTools();
+      const openaiTools = this.convertToolsToOpenAIFormat(anthropicTools);
+
+      // Log tool count for debugging
+      logger.info(MODULE_DISCORD_BOT, `Tools being sent to LLM (${openaiTools.length} total)`, timer.elapsed('main'));
+      logger.info(MODULE_DISCORD_BOT, `Passing ${openaiTools.length} tools to LLM`, timer.elapsed('main'));
+
+      // Step 5: Tool calling loop - keep calling until we get a final text response
+      let maxIterations = 10;
+      let iteration = 0;
+      let finalResponse: string | null = null;
+      let toolsExecuted = false; // Track if tools have been executed
+
+      while (iteration < maxIterations && !finalResponse) {
+        iteration++;
+
+        logger.info(MODULE_DISCORD_BOT, `=== Iteration ${iteration} ===`, timer.elapsed('main'));
+        logger.info(MODULE_DISCORD_BOT, `Sending ${messages.length} messages to LLM with model: ${detectedModel || 'default'}${toolsExecuted ? ' (tools disabled - already executed)' : ''}`, timer.elapsed('main'));
+
+        // Log message roles for debugging
+        const msgSummary = messages.map(m => `${m.role}${m.tool_call_id ? `(tool:${m.tool_call_id.substring(0,8)})` : ''}`).join(', ');
+        logger.info(MODULE_DISCORD_BOT, `Message roles: [${msgSummary}]`, timer.elapsed('main'));
+
+        // Generate response using ProviderManager
+        // IMPORTANT: Use non-streaming when tools are present (streaming doesn't support tool calls)
+        // Use streaming only for final text responses (better UX with slow models)
+        const hasTools = !toolsExecuted && openaiTools.length > 0;
+        let botResponse = '';
+
+        if (hasTools) {
+          // Non-streaming mode for tool calls
+          logger.info(MODULE_DISCORD_BOT, `Using NON-STREAMING mode (tools present)`, timer.elapsed('main'));
+
+          const result = await this.providerManager.chat(messages, {
+            model: detectedModel,
+            tools: openaiTools,
+            tool_choice: 'auto',
+          });
+
+          // Handle error or success
+          if (!result.success) {
+            // Explicit type cast to error branch
+            const errorResult = result as { success: false; error: ProviderError };
+            logger.error(MODULE_DISCORD_BOT, `Provider failed: ${errorResult.error.message}`, timer.elapsed('main'));
+
+            // Record failure for circuit breaker
+            const error = new Error(errorResult.error.message);
+            this.recordFailure(error);
+
+            // Send user-friendly error message (no stack traces)
+            const userMessage = 'Sorry, I encountered an issue generating a response. The issue has been logged.';
+            await this.sendDiscordReply(mention.channel, mention.id, userMessage);
+            return;
+          }
+
+          botResponse = result.data;
+          logger.info(MODULE_DISCORD_BOT, `Non-streaming response complete (${botResponse.length} chars)`, timer.elapsed('main'));
+        } else {
+          // Streaming mode for final text responses
+          logger.info(MODULE_DISCORD_BOT, `Using STREAMING mode (no tools)`, timer.elapsed('main'));
+
+          const streamResult = await this.providerManager.streamChat(messages, {
+            model: detectedModel,
+          });
+
+          // Handle stream error or success
+          if (!streamResult.success) {
+            // Explicit type cast to error branch
+            const errorResult = streamResult as { success: false; error: ProviderError };
+            logger.error(MODULE_DISCORD_BOT, `Provider failed: ${errorResult.error.message}`, timer.elapsed('main'));
+
+            // Record failure for circuit breaker
+            const error = new Error(errorResult.error.message);
+            this.recordFailure(error);
+
+            // Send user-friendly error message (no stack traces)
+            const userMessage = 'Sorry, I encountered an issue generating a response. The issue has been logged.';
+            await this.sendDiscordReply(mention.channel, mention.id, userMessage);
+            return;
+          }
+
+          // Buffer the streamed response
+          try {
+            for await (const chunk of streamResult.data) {
+              botResponse += chunk;
+            }
+            logger.info(MODULE_DISCORD_BOT, `Streamed response complete (${botResponse.length} chars)`, timer.elapsed('main'));
+          } catch (streamError: any) {
+            logger.error(MODULE_DISCORD_BOT, `Stream error: ${streamError.message}`, timer.elapsed('main'));
+            await this.sendDiscordReply(mention.channel, mention.id, 'Sorry, the response stream was interrupted.');
+            return;
+          }
+        }
+
+        // Check if response contains tool calls
+        const toolCallData = this.parseToolCalls(botResponse);
+
+        if (toolCallData && toolCallData.toolCalls.length > 0) {
+          // LLM wants to execute tools
+          logger.info(MODULE_DISCORD_BOT, `LLM requested ${toolCallData.toolCalls.length} tool call(s)`, timer.elapsed('main'));
+
+          // Add assistant message with tool calls to conversation
+          messages.push({
+            role: 'assistant',
+            content: toolCallData.message || null,
+            tool_calls: toolCallData.toolCalls,
+          });
+
+          // Execute each tool and collect results
+          for (const toolCall of toolCallData.toolCalls) {
+            const toolResult = await this.executeToolCall(toolCall);
+
+            logger.info(MODULE_DISCORD_BOT, `Tool ${toolCall.function.name} result: ${toolResult.substring(0, 200)}...`, timer.elapsed('main'));
+            logger.info(MODULE_DISCORD_BOT, `Tool call ID: ${toolCall.id}`, timer.elapsed('main'));
+
+            // Check if tool result indicates task completion
+            const isTaskComplete = this.checkToolResultForCompletion(toolResult);
+            if (isTaskComplete) {
+              logger.info(MODULE_DISCORD_BOT, `Tool result indicates TASK COMPLETED - will not offer tools in next iteration`, timer.elapsed('main'));
+              toolsExecuted = true;
+            }
+
+            // PRESERVE: Discord-specific task tracking
+            // If this is assign_task, record channel context for notifications
+            if (toolCall.function.name === 'assign_task') {
+              try {
+                const resultObj = JSON.parse(toolResult);
+                if (resultObj && resultObj.taskId) {
+                  const { taskChannelMap } = await import('../index.js');
+                  taskChannelMap.set(resultObj.taskId, {
+                    type: 'discord',
+                    channelId: mention.channel,
+                    userId: mention.user
+                  });
+                  logger.info(MODULE_DISCORD_BOT, `Recorded Discord channel context for task ${resultObj.taskId}`, timer.elapsed('main'));
+                }
+              } catch (e) {
+                // Ignore parse errors
+              }
+            }
+
+            // Add tool result to conversation using OpenAI tool format
+            messages.push({
+              role: 'tool',
+              content: toolResult,
+              tool_call_id: toolCall.id,
+            });
+          }
+
+          logger.info(MODULE_DISCORD_BOT, `Messages array now has ${messages.length} messages, continuing to iteration ${iteration + 1}`, timer.elapsed('main'));
+
+          // Continue loop - tools will be disabled in next iteration if toolsExecuted is true
+          continue;
+        }
+
+        // No tool calls - this is the final text response
+        logger.info(MODULE_DISCORD_BOT, `Received final text response (no tool calls), breaking loop`, timer.elapsed('main'));
+        finalResponse = botResponse;
+        break;
+      }
+
+      logger.info(MODULE_DISCORD_BOT, `Completed iteration ${iteration}, maxIterations: ${maxIterations}, finalResponse: ${finalResponse ? 'YES' : 'NO'}`, timer.elapsed('main'));
+
+      // Check if we got a final response
+      if (!finalResponse) {
+        logger.error(MODULE_DISCORD_BOT, `Tool calling loop exceeded maximum iterations (${maxIterations})`, timer.elapsed('main'));
+        await this.sendDiscordReply(mention.channel, mention.id, 'Sorry, I encountered an issue completing your request.');
+        return;
+      }
+
+      const botResponse = finalResponse;
+
+      // Step 6: Store messages in MemoryService
+      // Store user message
+      await this.memoryService.storeMessage(mention.user, mention.channel, {
+        role: 'user',
+        content: mention.text,
+        timestamp: Date.now(),
+      });
+
+      // Store bot response
+      await this.memoryService.storeMessage(mention.user, mention.channel, {
+        role: 'assistant',
+        content: botResponse,
+        timestamp: Date.now(),
+      });
+
+      // Step 7: Send response to channel (PRESERVE: Discord-specific reply)
+      logger.info(MODULE_DISCORD_BOT, `Sending final response (${botResponse.length} chars) to Discord...`, timer.elapsed('main'));
+      await this.sendDiscordReply(mention.channel, mention.id, botResponse);
+
+      logger.info(MODULE_DISCORD_BOT, `Replied to @${mention.user}`, timer.elapsed('main'));
+
+      // Record success for circuit breaker
+      this.recordSuccess();
+    } catch (error: any) {
+      logger.error(MODULE_DISCORD_BOT, `Error processing mention from @${mention.user}`, timer.elapsed('main'), error);
+
+      // Classify error type
+      const errorType = this.classifyError(error);
+      const isTransient = errorType === 'network' || errorType === 'timeout' || errorType === 'rate_limit';
+
+      // Record failure for circuit breaker
+      this.recordFailure(error);
+
+      // Send appropriate error message to Discord (no stack traces)
+      const userMessage = isTransient
+        ? 'Sorry, I encountered a temporary issue. Please try again in a moment.'
+        : 'Sorry, I encountered an error processing your message. The issue has been logged.';
+
+      try {
+        await this.sendDiscordReply(mention.channel, mention.id, userMessage);
+      } catch (replyError: any) {
+        logger.error(MODULE_DISCORD_BOT, 'Failed to send error reply', timer.elapsed('main'), replyError);
+      }
+    }
+  }
+
+  /**
+   * Convert Anthropic tools to OpenAI format for ProviderManager
+   */
+  private convertToolsToOpenAIFormat(anthropicTools: Anthropic.Tool[]): Array<{
+    type: 'function';
+    function: {
+      name: string;
+      description: string;
+      parameters: any;
+    };
+  }> {
+    return anthropicTools.map(tool => ({
+      type: 'function' as const,
+      function: {
+        name: tool.name,
+        description: tool.description || '',
+        parameters: tool.input_schema,
+      },
+    }));
+  }
+
+  /**
+   * Parse tool calls from LLM response
+   */
+  private parseToolCalls(response: string): { toolCalls: any[]; message: string } | null {
+    if (!response.startsWith('__TOOL_CALLS__')) {
+      return null;
+    }
+
+    try {
+      const jsonStr = response.substring('__TOOL_CALLS__'.length);
+      const data = JSON.parse(jsonStr);
+      return {
+        toolCalls: data.tool_calls || [],
+        message: data.message || ''
+      };
+    } catch (error) {
+      logger.error(MODULE_DISCORD_BOT, 'Failed to parse tool calls', timer.elapsed('main'), error as Error);
+      return null;
+    }
+  }
+
+  /**
+   * Execute a single tool call with retry logic
+   */
+  private async executeToolCall(toolCall: any): Promise<string> {
+    const toolName = toolCall.function.name;
+    const toolArgs = JSON.parse(toolCall.function.arguments);
+
+    logger.info(MODULE_DISCORD_BOT, `Executing tool: ${toolName}`, timer.elapsed('main'));
+
+    try {
+      // Determine target agent based on tool name
+      const targetAgent = this.resolveTargetAgent(toolName);
+
+      // Use invokeToolWithRetry for resilient tool execution
+      const result = await this.invokeToolWithRetry({
+        targetAgent,
+        toolName,
+        toolInput: toolArgs,
+        timeout: 30000,
+      });
+
+      // Check if result is async pending - wait for actual result
+      if (result && typeof result === 'object' &&
+          result.status === 'pending' && result.requestId) {
+        logger.info(MODULE_DISCORD_BOT, `Tool ${toolName} returned pending, waiting for async result: ${result.requestId}`, timer.elapsed('main'));
+
+        try {
+          const asyncResult = await this.waitForAbilityResponse(result.requestId, 30000);
+          logger.info(MODULE_DISCORD_BOT, `Async result received for ${toolName}`, timer.elapsed('main'));
+          return JSON.stringify(asyncResult);
+        } catch (asyncError: any) {
+          logger.error(MODULE_DISCORD_BOT, `Async tool timeout for ${toolName}: ${asyncError.message}`, timer.elapsed('main'));
+          return JSON.stringify({ error: `Tool timeout: ${asyncError.message}` });
+        }
+      }
+
+      return JSON.stringify(result);
+    } catch (error: any) {
+      logger.error(MODULE_DISCORD_BOT, `Tool execution failed: ${toolName}`, timer.elapsed('main'), error);
+      return JSON.stringify({ error: error.message || String(error) });
+    }
+  }
+
+  /**
+   * Check if tool result indicates task completion
+   * Returns true if the tool result contains completion markers
+   */
+  private checkToolResultForCompletion(toolResult: string): boolean {
+    try {
+      // Try to parse as JSON first
+      try {
+        const parsed = JSON.parse(toolResult);
+
+        // Check for new standard: status field
+        if (parsed.status === 'complete') {
+          logger.info(MODULE_DISCORD_BOT, 'Tool completion detected via status field', timer.elapsed('main'));
+          return true;
+        }
+
+        // Legacy: check for success + completion markers
+        const completionMarkers = [
+          'TASK COMPLETED',
+          'No further action needed',
+          '✅',
+          'task is complete',
+          'operation complete'
+        ];
+
+        const resultLower = toolResult.toLowerCase();
+        const hasCompletionMarker = completionMarkers.some(marker =>
+          resultLower.includes(marker.toLowerCase())
+        );
+
+        if (parsed.success === true && hasCompletionMarker) {
+          logger.info(MODULE_DISCORD_BOT, 'Tool completion detected via legacy markers', timer.elapsed('main'));
+          return true;
+        }
+      } catch {
+        // Not JSON, check raw text markers
+        const completionMarkers = [
+          'TASK COMPLETED',
+          'No further action needed',
+          '✅',
+          'task is complete',
+          'operation complete'
+        ];
+
+        const resultLower = toolResult.toLowerCase();
+        const hasCompletionMarker = completionMarkers.some(marker =>
+          resultLower.includes(marker.toLowerCase())
+        );
+
+        if (hasCompletionMarker) {
+          logger.info(MODULE_DISCORD_BOT, 'Tool completion detected via text markers', timer.elapsed('main'));
+          return true;
+        }
+      }
+
+      return false;
+    } catch (error) {
+      logger.warn(MODULE_DISCORD_BOT, `Error checking tool result for completion: ${error}`, timer.elapsed('main'));
+      return false;
+    }
+  }
+
+  /**
+   * Classify error type for circuit breaker and retry logic
+   */
+  private classifyError(error: any): string {
+    const message = error.message?.toLowerCase() || '';
+
+    // Network-related errors (transient)
+    if (message.includes('econnrefused') || message.includes('enotfound') ||
+        message.includes('network') || message.includes('socket')) {
+      return 'network';
+    }
+
+    // Timeout errors (transient)
+    if (message.includes('timeout') || message.includes('timed out')) {
+      return 'timeout';
+    }
+
+    // Rate limiting (transient)
+    if (message.includes('rate limit') || message.includes('429') ||
+        message.includes('too many requests')) {
+      return 'rate_limit';
+    }
+
+    // API errors (non-transient)
+    if (message.includes('api') || message.includes('invalid') ||
+        message.includes('unauthorized') || message.includes('403')) {
+      return 'api_error';
+    }
+
+    // Validation errors (non-transient)
+    if (message.includes('validation') || message.includes('invalid input') ||
+        message.includes('schema')) {
+      return 'validation_error';
+    }
+
+    // Unknown error type
+    return 'unknown';
+  }
+
 
     /**
      * Send reply to Discord via MCP_Discord_Server

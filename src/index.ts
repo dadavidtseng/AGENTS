@@ -363,59 +363,109 @@ async function main() {
         process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
         process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-        // Start Slack Bot after connection is established (async after serve starts)
-        const shouldEnableSlackBot = (process.env.ENABLE_SLACK_BOT === 'true' || process.env.ENABLE_SLACK_BOT === undefined) &&
-            process.env.ANTHROPIC_API_KEY &&
-            process.env.ANTHROPIC_API_KEY !== 'YOUR_ANTHROPIC_API_KEY_HERE';
-        if (shouldEnableSlackBot) {
-            logger.info(MODULE_AGENT, 'Slack bot will start after broker connection...', timer.elapsed('main'));
-            logger.info(MODULE_AGENT, '', timer.elapsed('main'));
+        // Initialize shared services for bots (ProviderManager and MemoryService)
+        const shouldEnableBots = (process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'YOUR_ANTHROPIC_API_KEY_HERE');
 
-            // Give serve() a moment to establish connection, then start Slack bot
+        if (shouldEnableBots) {
+            // Wait for broker connection before initializing services
             setTimeout(async () => {
                 try {
-                    const {SlackBot} = await import('./bot/slack-bot.js');
-                    slackBot = new SlackBot({
-                        client,
-                        anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
-                        botUserId: process.env.SLACK_BOT_USER_ID!,
-                    });
-                    slackBot.start();
-                    logger.info(MODULE_AGENT, 'Slack bot started (subscribed to Slack mention events)', timer.elapsed('main'));
+                    // Step 1: Load environment variables
+                    const anthropicApiKey = process.env.ANTHROPIC_API_KEY!;
+                    const modelManagerBaseUrl = process.env.MODEL_MANAGER_BASE_URL;
+                    const modelManagerApiKey = process.env.MODEL_MANAGER_API_KEY;
+                    const memoryDataPath = process.env.MEMORY_DATA_PATH || './data/memory';
+                    const arcadedbUrl = process.env.ARCADEDB_URL;
+                    const arcadedbPassword = process.env.ARCADEDB_ROOT_PASSWORD || 'root';
+
+                    logger.info(MODULE_AGENT, 'Initializing shared services for bots...', timer.elapsed('main'));
+
+                    // Step 2: Import service classes
+                    const { 
+                        ProviderManager, 
+                        AnthropicProvider, 
+                        ModelManagerProvider,
+                        MemoryService
+                    } = await import('agents-library');
+
+                    // Step 3: Instantiate providers
+                    const anthropicProvider = new AnthropicProvider(anthropicApiKey);
+                    const providers: any[] = [anthropicProvider];
+
+                    // Add ModelManagerProvider if configured
+                    if (modelManagerBaseUrl && modelManagerApiKey) {
+                        const modelManagerProvider = new ModelManagerProvider(modelManagerBaseUrl, modelManagerApiKey);
+                        providers.push(modelManagerProvider);
+                        logger.info(MODULE_AGENT, '   - ModelManager provider configured', timer.elapsed('main'));
+                    }
+
+                    // Step 4: Create ProviderManager with configuration
+                    const providerManager = new ProviderManager(
+                        providers,
+                        {
+                            primaryProvider: 'anthropic',
+                            fallbackProvider: providers.length > 1 ? 'model-manager' : undefined,
+                            retryAttempts: 3,
+                            retryDelayMs: 1000,
+                            healthCheckIntervalMs: 60000,
+                        }
+                    );
+
+                    logger.info(MODULE_AGENT, '   - ProviderManager initialized with ' + providers.length + ' provider(s)', timer.elapsed('main'));
+
+                    // Step 5: Create and initialize MemoryService
+                    const memoryService = new MemoryService(
+                        memoryDataPath,
+                        arcadedbUrl,
+                        arcadedbPassword,
+                        providerManager
+                    );
+
+                    await memoryService.initialize();
+                    logger.info(MODULE_AGENT, '   - MemoryService initialized', timer.elapsed('main'));
+
+                    // Store services for graceful shutdown
+                    (global as any).__providerManager = providerManager;
+                    (global as any).__memoryService = memoryService;
+
+                    // Step 6: Start Slack Bot if enabled
+                    const shouldEnableSlackBot = (process.env.ENABLE_SLACK_BOT === 'true' || process.env.ENABLE_SLACK_BOT === undefined);
+                    if (shouldEnableSlackBot) {
+                        logger.info(MODULE_AGENT, 'Starting Slack bot...', timer.elapsed('main'));
+                        const { SlackBot } = await import('./bot/slack-bot.js');
+                        slackBot = new SlackBot({
+                            client,
+                            anthropicApiKey,
+                            botUserId: process.env.SLACK_BOT_USER_ID!,
+                            providerManager,
+                            memoryService,
+                        });
+                        slackBot.start();
+                        logger.info(MODULE_AGENT, 'Slack bot started (subscribed to Slack mention events)', timer.elapsed('main'));
+                    }
+
+                    // Step 7: Start Discord Bot if enabled
+                    const shouldEnableDiscordBot = (process.env.ENABLE_DISCORD_BOT === 'true' || process.env.ENABLE_DISCORD_BOT === undefined);
+                    if (shouldEnableDiscordBot) {
+                        logger.info(MODULE_AGENT, 'Starting Discord bot...', timer.elapsed('main'));
+                        const { DiscordBot } = await import('./bot/discord-bot.js');
+                        discordBot = new DiscordBot({
+                            client,
+                            anthropicApiKey,
+                            botUserId: process.env.DISCORD_BOT_USER_ID!,
+                            providerManager,
+                            memoryService,
+                        });
+                        discordBot.start();
+                        logger.info(MODULE_AGENT, 'Discord bot started (subscribed to Discord mention events)', timer.elapsed('main'));
+                    }
+
                 } catch (error) {
-                    logger.error(MODULE_AGENT, 'Failed to start Slack bot', "+0ms", error as Error | string);
+                    logger.error(MODULE_AGENT, 'Failed to initialize services or bots', "+0ms", error as Error | string);
                 }
             }, 2000); // Wait 2 seconds for broker connection
         } else {
-            logger.info(MODULE_AGENT, 'Slack bot disabled (set ENABLE_SLACK_BOT=true and configure ANTHROPIC_API_KEY to enable)', timer.elapsed('main'));
-            logger.info(MODULE_AGENT, '', timer.elapsed('main'));
-        }
-
-        // Start Discord Bot after connection is established (async after serve starts)
-        const shouldEnableDiscordBot = (process.env.ENABLE_DISCORD_BOT === 'true' || process.env.ENABLE_DISCORD_BOT === undefined) &&
-            process.env.ANTHROPIC_API_KEY &&
-            process.env.ANTHROPIC_API_KEY !== 'YOUR_ANTHROPIC_API_KEY_HERE';
-        if (shouldEnableDiscordBot) {
-            logger.info(MODULE_AGENT, 'Discord bot will start after broker connection...', timer.elapsed('main'));
-            logger.info(MODULE_AGENT, '', timer.elapsed('main'));
-
-            // Give serve() a moment to establish connection, then start Discord bot
-            setTimeout(async () => {
-                try {
-                    const {DiscordBot} = await import('./bot/discord-bot.js');
-                    discordBot = new DiscordBot({
-                        client,
-                        anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
-                        botUserId: process.env.DISCORD_BOT_USER_ID!,
-                    });
-                    discordBot.start();
-                    logger.info(MODULE_AGENT, 'Discord bot started (subscribed to Discord mention events)', timer.elapsed('main'));
-                } catch (error) {
-                    logger.error(MODULE_AGENT, 'Failed to start Discord bot', "+0ms", error as Error | string);
-                }
-            }, 2000); // Wait 2 seconds for broker connection
-        } else {
-            logger.info(MODULE_AGENT, 'Discord bot disabled (set ENABLE_DISCORD_BOT=true and configure ANTHROPIC_API_KEY to enable)', timer.elapsed('main'));
+            logger.info(MODULE_AGENT, 'Bots disabled (configure ANTHROPIC_API_KEY to enable)', timer.elapsed('main'));
             logger.info(MODULE_AGENT, '', timer.elapsed('main'));
         }
 

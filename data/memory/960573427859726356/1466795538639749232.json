@@ -1,0 +1,12 @@
+[
+  {
+    "role": "user",
+    "content": "[gpt-5] List all your tools",
+    "timestamp": 1769781724398
+  },
+  {
+    "role": "assistant",
+    "content": "I have 39 tools available:\n\n- echo\n- list_tools\n- slack_send_message\n- slack_send_reply\n- quest_quest_create\n- quest_quest_revise\n- quest_quest_request_approval\n- quest_quest_submit_approval\n- quest_quest_split_tasks\n- quest_quest_list\n- quest_quest_get_details\n- quest_quest_assign_tasks\n- quest_quest_get_task_details\n- quest_quest_update_task_status\n- quest_quest_submit_task_result\n- quest_quest_verify_task\n- quest_quest_register_agent\n- quest_quest_list_agents\n- quest_quest_create_from_template\n- quest_quest_list_templates\n- quest_quest_cancel_quest\n- quest_quest_delete_quest\n- quest_quest_delete_task\n- quest_quest_log_implementation\n- quest_quest_get_status\n- quest_quest_approval_status\n- quest_quest_delete_approval\n- quest_quest_analyze_task\n- quest_quest_query_tasks\n- quest_quest_update_task\n- quest_quest_reflect_task\n- quest_quest_clear_completed\n- quest_quest_agent_heartbeat\n- quest_quest_unregister_agent\n- quest_quest_workflow_guide\n- quest_quest_research_mode\n- discord_server_send_message\n- discord_server_send_reply\n- addNumber\n\nWant brief descriptions or parameters for any of these?",
+    "timestamp": 1769781724400
+  }
+]

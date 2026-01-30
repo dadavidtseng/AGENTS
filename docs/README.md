@@ -37,7 +37,7 @@ cd my-custom-agent
 npm install
 
 # Configure environment
-cp .env.template .env
+cp .env.example .env
 # Edit .env with your configuration (broker URL, API keys, etc.)
 
 # Run in development mode
