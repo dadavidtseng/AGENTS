@@ -234,7 +234,8 @@ export class ModelManagerProvider implements LLMProvider {
       }
 
       // Regular text response
-      if (!message.content) {
+      // Allow empty string as valid response, only error if content is null/undefined
+      if (message.content === null || message.content === undefined) {
         this.consecutiveFailures++;
         return err(
           this.createError(
@@ -275,6 +276,8 @@ export class ModelManagerProvider implements LLMProvider {
         messages: messages.map((msg) => ({
           role: msg.role,
           content: msg.content,
+          ...(msg.tool_call_id && { tool_call_id: msg.tool_call_id }),
+          ...(msg.tool_calls && { tool_calls: msg.tool_calls }),
         })),
         max_completion_tokens: options?.maxTokens || this.defaultMaxTokens,
         temperature: options?.temperature,
@@ -413,7 +416,7 @@ export class ModelManagerProvider implements LLMProvider {
               const jsonStr = trimmed.substring(6);
               const chunk = JSON.parse(jsonStr) as OpenAIStreamChunk;
               const delta = chunk.choices[0]?.delta;
-              if (delta?.content) {
+              if (delta?.content !== undefined && delta?.content !== null) {
                 yield delta.content;
               }
             } catch (e) {

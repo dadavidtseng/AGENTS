@@ -31,6 +31,8 @@ import chokidar, { type FSWatcher } from 'chokidar';
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
+import { logger, MODULE_AGENT } from './utils/logger.js';
+import { timer } from './utils/timer.js';
 
 // ============================================================================
 // BaseShadowAgent Class
@@ -259,6 +261,9 @@ export class BaseShadowAgent {
    * ```
    */
   constructor(config: ShadowAgentConfig) {
+    // Start timer for performance tracking
+    timer.start('shadow-factory');
+
     // Store configuration
     this.config = config;
     this.role = config.role;
@@ -279,12 +284,12 @@ export class BaseShadowAgent {
       networks: config.networks
     });
 
-    console.log(`🔧 BaseShadowAgent initialized for role: ${this.role}`);
-    console.log(`   Worker worktree: ${this.workerWorktreePath}`);
-    console.log(`   Shadow worktree: ${this.shadowWorktreePath}`);
-    console.log(`   Worker branch: ${this.workerBranch}`);
-    console.log(`   Shadow branch: ${this.shadowBranch}`);
-    console.log(`   Debounce delay: ${this.debounceMs}ms`);
+    logger.info(MODULE_AGENT, `🔧 BaseShadowAgent initialized for role: ${this.role}`, timer.elapsed('shadow-factory'));
+    logger.info(MODULE_AGENT, `   Worker worktree: ${this.workerWorktreePath}`, timer.elapsed('shadow-factory'));
+    logger.info(MODULE_AGENT, `   Shadow worktree: ${this.shadowWorktreePath}`, timer.elapsed('shadow-factory'));
+    logger.info(MODULE_AGENT, `   Worker branch: ${this.workerBranch}`, timer.elapsed('shadow-factory'));
+    logger.info(MODULE_AGENT, `   Shadow branch: ${this.shadowBranch}`, timer.elapsed('shadow-factory'));
+    logger.info(MODULE_AGENT, `   Debounce delay: ${this.debounceMs}ms`, timer.elapsed('shadow-factory'));
   }
 
   /**
@@ -310,27 +315,27 @@ export class BaseShadowAgent {
    * ```
    */
   async start(): Promise<void> {
-    console.log(`🚀 Starting shadow agent for role: ${this.role}`);
+    logger.info(MODULE_AGENT, `🚀 Starting shadow agent for role: ${this.role}`, timer.elapsed('shadow-factory'));
 
     // Connect to KĀDI broker and wait for ready state
-    console.log('   → Connecting to KĀDI broker...');
+    logger.info(MODULE_AGENT, '   → Connecting to KĀDI broker...', timer.elapsed('shadow-factory'));
     try {
       await this.client.connect();
-      console.log('   ✅ Connected to KĀDI broker');
+      logger.info(MODULE_AGENT, '   ✅ Connected to KĀDI broker', timer.elapsed('shadow-factory'));
     } catch (error: any) {
-      console.error('❌ Broker connection error:', error);
+      logger.error(MODULE_AGENT, '❌ Broker connection error', timer.elapsed('shadow-factory'), error);
       process.exit(1);
     }
 
     // Setup filesystem watcher for worker worktree
     await this.setupFilesystemWatcher();
-    console.log('✅ Filesystem watcher initialized');
+    logger.info(MODULE_AGENT, '✅ Filesystem watcher initialized', timer.elapsed('shadow-factory'));
 
     // Setup git ref watcher for worker branch
     await this.setupGitRefWatcher();
-    console.log('✅ Git ref watcher initialized');
+    logger.info(MODULE_AGENT, '✅ Git ref watcher initialized', timer.elapsed('shadow-factory'));
 
-    console.log('✅ Shadow agent started and monitoring');
+    logger.info(MODULE_AGENT, '✅ Shadow agent started and monitoring', timer.elapsed('shadow-factory'));
   }
 
   /**
@@ -353,48 +358,48 @@ export class BaseShadowAgent {
    * ```
    */
   async stop(): Promise<void> {
-    console.log(`🛑 Stopping shadow agent for role: ${this.role}`);
+    logger.info(MODULE_AGENT, `🛑 Stopping shadow agent for role: ${this.role}`, timer.elapsed('shadow-factory'));
 
     // Stop filesystem watcher
     if (this.fsWatcher) {
-      console.log('🛑 Stopping filesystem watcher...');
+      logger.info(MODULE_AGENT, '🛑 Stopping filesystem watcher...', timer.elapsed('shadow-factory'));
       await this.fsWatcher.close();
       this.fsWatcher = null;
-      console.log('✅ Filesystem watcher stopped');
+      logger.info(MODULE_AGENT, '✅ Filesystem watcher stopped', timer.elapsed('shadow-factory'));
     }
 
     // Stop git ref watcher
     if (this.refWatcher) {
-      console.log('🛑 Stopping git ref watcher...');
+      logger.info(MODULE_AGENT, '🛑 Stopping git ref watcher...', timer.elapsed('shadow-factory'));
       this.refWatcher.close();
       this.refWatcher = null;
-      console.log('✅ Git ref watcher stopped');
+      logger.info(MODULE_AGENT, '✅ Git ref watcher stopped', timer.elapsed('shadow-factory'));
     }
 
     // Clear ref debounce timeout
     if (this.refDebounceTimeout) {
-      console.log('🛑 Clearing ref debounce timeout...');
+      logger.info(MODULE_AGENT, '🛑 Clearing ref debounce timeout...', timer.elapsed('shadow-factory'));
       clearTimeout(this.refDebounceTimeout);
       this.refDebounceTimeout = null;
-      console.log('✅ Ref debounce timeout cleared');
+      logger.info(MODULE_AGENT, '✅ Ref debounce timeout cleared', timer.elapsed('shadow-factory'));
     }
 
     // Clear all pending debounce timers
     if (this.debounceMap.size > 0) {
-      console.log(`🛑 Clearing ${this.debounceMap.size} pending debounce timers...`);
+      logger.info(MODULE_AGENT, `🛑 Clearing ${this.debounceMap.size} pending debounce timers...`, timer.elapsed('shadow-factory'));
       for (const timeout of this.debounceMap.values()) {
         clearTimeout(timeout);
       }
       this.debounceMap.clear();
-      console.log('✅ Debounce timers cleared');
+      logger.info(MODULE_AGENT, '✅ Debounce timers cleared', timer.elapsed('shadow-factory'));
     }
 
     // Disconnect KĀDI client
-    console.log('   → Disconnecting from KĀDI broker...');
+    logger.info(MODULE_AGENT, '   → Disconnecting from KĀDI broker...', timer.elapsed('shadow-factory'));
     await this.client.disconnect();
-    console.log('   ✅ Disconnected from KĀDI broker');
+    logger.info(MODULE_AGENT, '   ✅ Disconnected from KĀDI broker', timer.elapsed('shadow-factory'));
 
-    console.log('✅ Shadow agent stopped');
+    logger.info(MODULE_AGENT, '✅ Shadow agent stopped', timer.elapsed('shadow-factory'));
   }
 
   /**
@@ -431,7 +436,7 @@ export class BaseShadowAgent {
    * ```
    */
   protected async setupFilesystemWatcher(): Promise<void> {
-    console.log(`👁️  Setting up filesystem watcher: ${this.workerWorktreePath}`);
+    logger.info(MODULE_AGENT, `👁️  Setting up filesystem watcher: ${this.workerWorktreePath}`, timer.elapsed('shadow-factory'));
 
     // Create chokidar watcher with configuration
     this.fsWatcher = chokidar.watch(this.workerWorktreePath, {
@@ -452,7 +457,7 @@ export class BaseShadowAgent {
 
     // Event: File created
     this.fsWatcher.on('add', (filePath: string) => {
-      console.log(`➕ File created: ${filePath}`);
+      logger.info(MODULE_AGENT, `➕ File created: ${filePath}`, timer.elapsed('shadow-factory'));
 
       // Debounce to avoid rapid-fire commits
       if (this.debounceMap.has(filePath)) {
@@ -460,7 +465,7 @@ export class BaseShadowAgent {
       }
 
       const timeout = setTimeout(async () => {
-        console.log(`📝 Processing created file: ${filePath}`);
+        logger.info(MODULE_AGENT, `📝 Processing created file: ${filePath}`, timer.elapsed('shadow-factory'));
         const relativePath = path.relative(this.workerWorktreePath, filePath);
         await this.createShadowBackup('Created', relativePath);
         this.debounceMap.delete(filePath);
@@ -471,7 +476,7 @@ export class BaseShadowAgent {
 
     // Event: File modified
     this.fsWatcher.on('change', (filePath: string) => {
-      console.log(`✏️  File modified: ${filePath}`);
+      logger.info(MODULE_AGENT, `✏️  File modified: ${filePath}`, timer.elapsed('shadow-factory'));
 
       // Debounce to avoid rapid-fire commits
       if (this.debounceMap.has(filePath)) {
@@ -479,7 +484,7 @@ export class BaseShadowAgent {
       }
 
       const timeout = setTimeout(async () => {
-        console.log(`📝 Processing modified file: ${filePath}`);
+        logger.info(MODULE_AGENT, `📝 Processing modified file: ${filePath}`, timer.elapsed('shadow-factory'));
         const relativePath = path.relative(this.workerWorktreePath, filePath);
         await this.createShadowBackup('Modified', relativePath);
         this.debounceMap.delete(filePath);
@@ -490,7 +495,7 @@ export class BaseShadowAgent {
 
     // Event: File deleted
     this.fsWatcher.on('unlink', (filePath: string) => {
-      console.log(`🗑️  File deleted: ${filePath}`);
+      logger.info(MODULE_AGENT, `🗑️  File deleted: ${filePath}`, timer.elapsed('shadow-factory'));
 
       // Debounce to avoid rapid-fire commits
       if (this.debounceMap.has(filePath)) {
@@ -498,7 +503,7 @@ export class BaseShadowAgent {
       }
 
       const timeout = setTimeout(async () => {
-        console.log(`📝 Processing deleted file: ${filePath}`);
+        logger.info(MODULE_AGENT, `📝 Processing deleted file: ${filePath}`, timer.elapsed('shadow-factory'));
         const relativePath = path.relative(this.workerWorktreePath, filePath);
         await this.createShadowBackup('Deleted', relativePath);
         this.debounceMap.delete(filePath);
@@ -509,13 +514,13 @@ export class BaseShadowAgent {
 
     // Event: Watcher error
     this.fsWatcher.on('error', (error: unknown) => {
-      console.error('❌ Filesystem watcher error:', error);
+      logger.error(MODULE_AGENT, '❌ Filesystem watcher error', timer.elapsed('shadow-factory'), error as Error);
       // Non-fatal - watcher continues operating
     });
 
     // Event: Watcher ready
     this.fsWatcher.on('ready', () => {
-      console.log('✅ Filesystem watcher ready');
+      logger.info(MODULE_AGENT, '✅ Filesystem watcher ready', timer.elapsed('shadow-factory'));
     });
   }
 
@@ -565,21 +570,21 @@ export class BaseShadowAgent {
       this.workerBranch
     );
 
-    console.log(`👁️  Setting up git ref watcher: ${refFilePath}`);
+    logger.info(MODULE_AGENT, `👁️  Setting up git ref watcher: ${refFilePath}`, timer.elapsed('shadow-factory'));
 
     // Verify ref file exists before watching
     if (!fs.existsSync(refFilePath)) {
-      console.warn(`⚠️  Ref file not found: ${refFilePath}`);
-      console.warn(`   Worker branch may not exist yet. Skipping ref watcher setup.`);
+      logger.warn(MODULE_AGENT, `⚠️  Ref file not found: ${refFilePath}`, timer.elapsed('shadow-factory'));
+      logger.warn(MODULE_AGENT, `   Worker branch may not exist yet. Skipping ref watcher setup.`, timer.elapsed('shadow-factory'));
       return;
     }
 
     // Read initial commit SHA
     try {
       this.previousCommitSha = fs.readFileSync(refFilePath, 'utf-8').trim();
-      console.log(`📋 Initial commit SHA: ${this.previousCommitSha.substring(0, 7)}`);
+      logger.info(MODULE_AGENT, `📋 Initial commit SHA: ${this.previousCommitSha.substring(0, 7)}`, timer.elapsed('shadow-factory'));
     } catch (error: any) {
-      console.error(`❌ Failed to read initial commit SHA: ${error.message}`);
+      logger.error(MODULE_AGENT, `❌ Failed to read initial commit SHA: ${error.message}`, timer.elapsed('shadow-factory'), error);
       this.previousCommitSha = null;
     }
 
@@ -591,7 +596,7 @@ export class BaseShadowAgent {
           return;
         }
 
-        console.log(`🔄 Git ref change detected: ${eventType}`);
+        logger.info(MODULE_AGENT, `🔄 Git ref change detected: ${eventType}`, timer.elapsed('shadow-factory'));
 
         // Clear previous debounce timeout
         if (this.refDebounceTimeout) {
@@ -606,13 +611,13 @@ export class BaseShadowAgent {
 
             // Check if SHA actually changed (ignore non-commit ref updates)
             if (currentSha === this.previousCommitSha) {
-              console.log(`ℹ️  Ref updated but SHA unchanged - skipping`);
+              logger.info(MODULE_AGENT, `ℹ️  Ref updated but SHA unchanged - skipping`, timer.elapsed('shadow-factory'));
               return;
             }
 
-            console.log(`🔄 Worker commit detected on ${this.workerBranch}`);
-            console.log(`   Previous SHA: ${this.previousCommitSha?.substring(0, 7) || 'none'}`);
-            console.log(`   Current SHA:  ${currentSha.substring(0, 7)}`);
+            logger.info(MODULE_AGENT, `🔄 Worker commit detected on ${this.workerBranch}`, timer.elapsed('shadow-factory'));
+            logger.info(MODULE_AGENT, `   Previous SHA: ${this.previousCommitSha?.substring(0, 7) || 'none'}`, timer.elapsed('shadow-factory'));
+            logger.info(MODULE_AGENT, `   Current SHA:  ${currentSha.substring(0, 7)}`, timer.elapsed('shadow-factory'));
 
             // Update tracked SHA
             this.previousCommitSha = currentSha;
@@ -621,23 +626,23 @@ export class BaseShadowAgent {
             await this.createShadowBackup('COMMIT', `Commit ${currentSha.substring(0, 7)}`);
 
           } catch (error: any) {
-            console.error(`❌ Failed to process ref change: ${error.message}`);
+            logger.error(MODULE_AGENT, `❌ Failed to process ref change: ${error.message}`, timer.elapsed('shadow-factory'), error);
             // Non-fatal - watcher continues operating
           }
         }, this.debounceMs);
       });
 
-      console.log('✅ Git ref watcher ready');
+      logger.info(MODULE_AGENT, '✅ Git ref watcher ready', timer.elapsed('shadow-factory'));
 
     } catch (error: any) {
-      console.error(`❌ Failed to setup git ref watcher: ${error.message}`);
+      logger.error(MODULE_AGENT, `❌ Failed to setup git ref watcher: ${error.message}`, timer.elapsed('shadow-factory'), error);
       this.refWatcher = null;
       // Non-fatal - agent continues with filesystem watching only
     }
 
     // Handle watcher errors
     this.refWatcher?.on('error', (error: unknown) => {
-      console.error('❌ Git ref watcher error:', error);
+      logger.error(MODULE_AGENT, '❌ Git ref watcher error', timer.elapsed('shadow-factory'), error as Error);
       // Non-fatal - watcher may auto-recover
     });
   }
@@ -664,18 +669,18 @@ export class BaseShadowAgent {
    * ```
    */
   protected async createShadowBackup(operation: string, fileName: string): Promise<void> {
-    console.log(`📦 Creating shadow backup: ${operation} - ${fileName}`);
+    logger.info(MODULE_AGENT, `📦 Creating shadow backup: ${operation} - ${fileName}`, timer.elapsed('shadow-factory'));
 
     // Check circuit breaker state before attempting git operations
     if (this.checkCircuitBreaker()) {
-      console.warn(`⚠️  Circuit breaker open - skipping backup operation`);
+      logger.warn(MODULE_AGENT, `⚠️  Circuit breaker open - skipping backup operation`, timer.elapsed('shadow-factory'));
       return;
     }
 
     try {
       // For COMMIT operations, parse worker commit and copy changed files
       if (operation === 'COMMIT') {
-        console.log(`📋 Processing worker commit mirror...`);
+        logger.info(MODULE_AGENT, `📋 Processing worker commit mirror...`, timer.elapsed('shadow-factory'));
 
         // Step 1: Get latest commit hash from worker worktree
         const commitHash = execSync('git log -1 --format=%H', {
@@ -683,7 +688,7 @@ export class BaseShadowAgent {
           encoding: 'utf-8'
         }).trim();
 
-        console.log(`   Worker commit SHA: ${commitHash.substring(0, 7)}`);
+        logger.info(MODULE_AGENT, `   Worker commit SHA: ${commitHash.substring(0, 7)}`, timer.elapsed('shadow-factory'));
 
         // Step 2: Get commit message from worker
         const commitMessage = execSync('git log -1 --format=%B', {
@@ -691,7 +696,7 @@ export class BaseShadowAgent {
           encoding: 'utf-8'
         }).trim();
 
-        console.log(`   Worker commit message: ${commitMessage}`);
+        logger.info(MODULE_AGENT, `   Worker commit message: ${commitMessage}`, timer.elapsed('shadow-factory'));
 
         // Step 3: Get list of changed files using git diff
         let changedFiles: string[] = [];
@@ -702,11 +707,11 @@ export class BaseShadowAgent {
           }).trim();
 
           changedFiles = diffOutput ? diffOutput.split('\n').filter(f => f.trim()) : [];
-          console.log(`   Changed files: ${changedFiles.length} file(s)`);
+          logger.info(MODULE_AGENT, `   Changed files: ${changedFiles.length} file(s)`, timer.elapsed('shadow-factory'));
         } catch (diffError: any) {
           // Handle case where there's no parent commit (initial commit)
           if (diffError.message.includes('unknown revision')) {
-            console.log(`   Initial commit detected - getting all files`);
+            logger.info(MODULE_AGENT, `   Initial commit detected - getting all files`, timer.elapsed('shadow-factory'));
             const allFilesOutput = execSync('git ls-tree -r HEAD --name-only', {
               cwd: this.workerWorktreePath,
               encoding: 'utf-8'
@@ -731,10 +736,10 @@ export class BaseShadowAgent {
           // Copy file
           try {
             fs.copyFileSync(srcPath, destPath);
-            console.log(`   ✓ Copied: ${file}`);
+            logger.info(MODULE_AGENT, `   ✓ Copied: ${file}`, timer.elapsed('shadow-factory'));
           } catch (copyError: any) {
             // File may have been deleted - that's ok, git will handle it
-            console.log(`   ℹ️  Could not copy ${file}: ${copyError.message}`);
+            logger.info(MODULE_AGENT, `   ℹ️  Could not copy ${file}: ${copyError.message}`, timer.elapsed('shadow-factory'));
           }
         }
 
@@ -758,7 +763,7 @@ export class BaseShadowAgent {
           encoding: 'utf-8'
         }).trim();
 
-        console.log(`✅ Shadow commit created: ${shadowCommitHash.substring(0, 7)}`);
+        logger.info(MODULE_AGENT, `✅ Shadow commit created: ${shadowCommitHash.substring(0, 7)}`, timer.elapsed('shadow-factory'));
 
         // Record success and reset failure count
         this.recordGitSuccess();
@@ -768,7 +773,7 @@ export class BaseShadowAgent {
 
       } else {
         // For file operations (Created, Modified, Deleted), handle individual file
-        console.log(`📋 Processing file operation: ${operation} - ${fileName}`);
+        logger.info(MODULE_AGENT, `📋 Processing file operation: ${operation} - ${fileName}`, timer.elapsed('shadow-factory'));
 
         const srcPath = path.join(this.workerWorktreePath, fileName);
         const destPath = path.join(this.shadowWorktreePath, fileName);
@@ -782,7 +787,7 @@ export class BaseShadowAgent {
         // Copy file if it exists (for Created/Modified operations)
         if (operation !== 'Deleted' && fs.existsSync(srcPath)) {
           fs.copyFileSync(srcPath, destPath);
-          console.log(`   ✓ Copied: ${fileName}`);
+          logger.info(MODULE_AGENT, `   ✓ Copied: ${fileName}`, timer.elapsed('shadow-factory'));
         }
 
         // Stage changes in shadow worktree
@@ -816,7 +821,7 @@ export class BaseShadowAgent {
           encoding: 'utf-8'
         }).trim();
 
-        console.log(`✅ Shadow backup commit created: ${commitHash.substring(0, 7)}`);
+        logger.info(MODULE_AGENT, `✅ Shadow backup commit created: ${commitHash.substring(0, 7)}`, timer.elapsed('shadow-factory'));
 
         // Record success and reset failure count
         this.recordGitSuccess();
@@ -826,7 +831,7 @@ export class BaseShadowAgent {
       }
 
     } catch (error: any) {
-      console.error(`❌ Shadow backup failed: ${error.message}`);
+      logger.error(MODULE_AGENT, `❌ Shadow backup failed: ${error.message}`, timer.elapsed('shadow-factory'), error);
 
       // Record failure and potentially open circuit breaker
       this.recordGitFailure('createShadowBackup', error);
@@ -898,7 +903,7 @@ export class BaseShadowAgent {
 
     // Publish event using KadiClient
     await this.client.publish(topic, payload, { broker: 'default', network: 'global' });
-    console.log(`📤 Published backup ${success ? 'success' : 'failure'} event to ${topic}`);
+    logger.info(MODULE_AGENT, `📤 Published backup ${success ? 'success' : 'failure'} event to ${topic}`, timer.elapsed('shadow-factory'));
   }
 
   /**
@@ -932,17 +937,17 @@ export class BaseShadowAgent {
    */
   protected recordGitFailure(operation: string, error: Error): void {
     this.gitFailureCount++;
-    console.error(`❌ Git operation failed (${this.gitFailureCount}/${this.MAX_GIT_FAILURES}): ${operation}`, error.message);
+    logger.error(MODULE_AGENT, `❌ Git operation failed (${this.gitFailureCount}/${this.MAX_GIT_FAILURES}): ${operation}`, timer.elapsed('shadow-factory'), error);
 
     if (this.gitFailureCount >= this.MAX_GIT_FAILURES) {
       this.gitCircuitOpen = true;
-      console.error(`🚨 Circuit breaker opened - too many git failures`);
+      logger.error(MODULE_AGENT, `🚨 Circuit breaker opened - too many git failures`, timer.elapsed('shadow-factory'));
 
       // Auto-reset circuit after timeout
       setTimeout(() => {
         this.gitCircuitOpen = false;
         this.gitFailureCount = 0;
-        console.log(`🔄 Circuit breaker reset - retrying git operations`);
+        logger.info(MODULE_AGENT, `🔄 Circuit breaker reset - retrying git operations`, timer.elapsed('shadow-factory'));
       }, this.CIRCUIT_RESET_TIME);
     }
   }

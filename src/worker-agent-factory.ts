@@ -29,6 +29,8 @@ import {
   TaskCompletedEvent,
   TaskFailedEvent
 } from './types/event-schemas.js';
+import { logger, MODULE_AGENT } from './utils/logger.js';
+import { timer } from './utils/timer.js';
 
 // ============================================================================
 // Configuration Validation Schema
@@ -238,6 +240,9 @@ export class BaseWorkerAgent {
    * ```
    */
   constructor(config: WorkerAgentConfig) {
+    // Start factory timer for lifetime tracking
+    timer.start('factory');
+
     // Store full configuration
     this.config = config;
 
@@ -308,40 +313,40 @@ export class BaseWorkerAgent {
    * ```
    */
   protected async initializeClient(): Promise<void> {
-    console.log('');
-    console.log('🔌 Initializing KĀDI client...');
+    logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
+    logger.info(MODULE_AGENT, '🔌 Initializing KĀDI client...', timer.elapsed('factory'));
 
     try {
       // Step 1: Start client connection to broker
-      console.log('   → Connecting to broker...');
+      logger.info(MODULE_AGENT, '   → Connecting to broker...', timer.elapsed('factory'));
 
       try {
         await this.client.connect();
-        console.log('   ✅ Connected to broker');
+        logger.info(MODULE_AGENT, '   ✅ Connected to broker', timer.elapsed('factory'));
       } catch (error: any) {
-        console.error(`❌ Client connection error: ${error.message || String(error)}`);
+        logger.error(MODULE_AGENT, `Client connection error: ${error.message || String(error)}`, timer.elapsed('factory'), error);
         throw error;
       }
 
       // Step 2: Initialize ability response subscription
-      console.log('   → Initializing ability response subscription...');
+      logger.info(MODULE_AGENT, '   → Initializing ability response subscription...', timer.elapsed('factory'));
       await this.baseBot['initializeAbilityResponseSubscription']();
-      console.log('   ✅ Ability response subscription initialized');
+      logger.info(MODULE_AGENT, '   ✅ Ability response subscription initialized', timer.elapsed('factory'));
 
-      console.log('');
-      console.log('✅ KĀDI client initialized successfully');
-      console.log(`   Networks: ${this.networks.join(', ')}`);
-      console.log(`   Protocol: Ready`);
-      console.log('');
+      logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, '✅ KĀDI client initialized successfully', timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Networks: ${this.networks.join(', ')}`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Protocol: Ready`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
 
       // Note: client.serve() continues running in background to handle incoming requests
       // We don't await it because it never resolves (blocks indefinitely)
 
     } catch (error: any) {
-      console.error('');
-      console.error('❌ Failed to initialize KĀDI client');
-      console.error(`   Error: ${error.message || String(error)}`);
-      console.error('');
+      logger.error(MODULE_AGENT, '', timer.elapsed('factory'));
+      logger.error(MODULE_AGENT, 'Failed to initialize KĀDI client', timer.elapsed('factory'), error);
+      logger.error(MODULE_AGENT, `   Error: ${error.message || String(error)}`, timer.elapsed('factory'));
+      logger.error(MODULE_AGENT, '', timer.elapsed('factory'));
       throw error;
     }
   }
@@ -373,24 +378,24 @@ export class BaseWorkerAgent {
     // Construct topic dynamically from role (no hardcoding)
     const topic = `${this.role}.task.assigned`;
 
-    console.log('');
-    console.log(`📡 Subscribing to task assignments...`);
-    console.log(`   Topic: ${topic}`);
+    logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
+    logger.info(MODULE_AGENT, `📡 Subscribing to task assignments...`, timer.elapsed('factory'));
+    logger.info(MODULE_AGENT, `   Topic: ${topic}`, timer.elapsed('factory'));
 
     try {
       // Subscribe to event topic with bound callback
       // Using .bind(this) to preserve instance context in callback
       await this.client.subscribe(topic, this.handleTaskAssignment.bind(this), { broker: 'default' });
 
-      console.log(`   ✅ Subscribed successfully`);
-      console.log('');
+      logger.info(MODULE_AGENT, `   ✅ Subscribed successfully`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
 
     } catch (error: any) {
-      console.error('');
-      console.error(`❌ Failed to subscribe to task assignments`);
-      console.error(`   Topic: ${topic}`);
-      console.error(`   Error: ${error.message || String(error)}`);
-      console.error('');
+      logger.error(MODULE_AGENT, '', timer.elapsed('factory'));
+      logger.error(MODULE_AGENT, `Failed to subscribe to task assignments`, timer.elapsed('factory'), error);
+      logger.error(MODULE_AGENT, `   Topic: ${topic}`, timer.elapsed('factory'));
+      logger.error(MODULE_AGENT, `   Error: ${error.message || String(error)}`, timer.elapsed('factory'));
+      logger.error(MODULE_AGENT, '', timer.elapsed('factory'));
       throw error;
     }
   }
@@ -433,53 +438,53 @@ export class BaseWorkerAgent {
       // Broker may wrap events in { data: {...} } envelope
       const eventData = (event as any)?.data || event;
 
-      console.log('');
-      console.log('📬 Task assignment received');
-      console.log(`   Raw event: ${JSON.stringify(eventData).substring(0, 200)}...`);
+      logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, '📬 Task assignment received', timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Raw event: ${JSON.stringify(eventData).substring(0, 200)}...`, timer.elapsed('factory'));
 
       // Validate event with Zod schema
       const validatedEvent: TaskAssignedEvent = TaskAssignedEventSchema.parse(eventData);
 
-      console.log(`   ✅ Event validated`);
-      console.log(`   Task ID: ${validatedEvent.taskId}`);
-      console.log(`   Role: ${validatedEvent.role}`);
-      console.log(`   Description: ${validatedEvent.description.substring(0, 80)}${validatedEvent.description.length > 80 ? '...' : ''}`);
+      logger.info(MODULE_AGENT, `   ✅ Event validated`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Task ID: ${validatedEvent.taskId}`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Role: ${validatedEvent.role}`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Description: ${validatedEvent.description.substring(0, 80)}${validatedEvent.description.length > 80 ? '...' : ''}`, timer.elapsed('factory'));
 
       // Check if task is for this agent's role
       if (validatedEvent.role !== this.role) {
-        console.warn(`   ⚠️  Task role mismatch: expected ${this.role}, got ${validatedEvent.role}`);
-        console.warn(`   Rejecting task (wrong role)`);
-        console.log('');
+        logger.warn(MODULE_AGENT, `   ⚠️  Task role mismatch: expected ${this.role}, got ${validatedEvent.role}`, timer.elapsed('factory'));
+        logger.warn(MODULE_AGENT, `   Rejecting task (wrong role)`, timer.elapsed('factory'));
+        logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
         return;
       }
 
       // Execute task
       await this.executeTask(validatedEvent);
-      console.log('');
+      logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
 
     } catch (error: any) {
       // Validation error or other error - log and reject gracefully
       if (error.name === 'ZodError') {
         // Zod validation error - detailed error logging
-        console.error('');
-        console.error('❌ Invalid task assignment event (Zod validation failed)');
-        console.error(`   Validation errors:`);
+        logger.error(MODULE_AGENT, '', timer.elapsed('factory'));
+        logger.error(MODULE_AGENT, 'Invalid task assignment event (Zod validation failed)', timer.elapsed('factory'), error);
+        logger.error(MODULE_AGENT, `   Validation errors:`, timer.elapsed('factory'));
 
         // Log each validation issue
         for (const issue of error.issues || []) {
-          console.error(`   - ${issue.path.join('.')}: ${issue.message}`);
+          logger.error(MODULE_AGENT, `   - ${issue.path.join('.')}: ${issue.message}`, timer.elapsed('factory'));
         }
 
-        console.error(`   Raw event: ${JSON.stringify((event as any)?.data || event).substring(0, 300)}...`);
-        console.error('   Event rejected (invalid format)');
-        console.error('');
+        logger.error(MODULE_AGENT, `   Raw event: ${JSON.stringify((event as any)?.data || event).substring(0, 300)}...`, timer.elapsed('factory'));
+        logger.error(MODULE_AGENT, '   Event rejected (invalid format)', timer.elapsed('factory'));
+        logger.error(MODULE_AGENT, '', timer.elapsed('factory'));
       } else {
         // Other error (execution error, etc.)
-        console.error('');
-        console.error('❌ Error handling task assignment');
-        console.error(`   Error: ${error.message || String(error)}`);
-        console.error(`   Stack: ${error.stack || 'No stack trace'}`);
-        console.error('');
+        logger.error(MODULE_AGENT, '', timer.elapsed('factory'));
+        logger.error(MODULE_AGENT, 'Error handling task assignment', timer.elapsed('factory'), error);
+        logger.error(MODULE_AGENT, `   Error: ${error.message || String(error)}`, timer.elapsed('factory'));
+        logger.error(MODULE_AGENT, `   Stack: ${error.stack || 'No stack trace'}`, timer.elapsed('factory'));
+        logger.error(MODULE_AGENT, '', timer.elapsed('factory'));
       }
 
       // Don't throw - reject event gracefully and continue processing
@@ -513,13 +518,13 @@ export class BaseWorkerAgent {
    * ```
    */
   protected async executeTask(task: TaskAssignedEvent): Promise<void> {
-    console.log(`🎨 Processing ${this.role} task: ${task.taskId}`);
-    console.log(`   Description: ${task.description}`);
+    logger.info(MODULE_AGENT, `🎨 Processing ${this.role} task: ${task.taskId}`, timer.elapsed('factory'));
+    logger.info(MODULE_AGENT, `   Description: ${task.description}`, timer.elapsed('factory'));
 
     try {
       // Step 1: Change to worktree directory
       const originalCwd = process.cwd();
-      console.log(`📂 Changing to worktree: ${this.worktreePath}`);
+      logger.info(MODULE_AGENT, `📂 Changing to worktree: ${this.worktreePath}`, timer.elapsed('factory'));
       process.chdir(this.worktreePath);
 
       try {
@@ -532,10 +537,10 @@ export class BaseWorkerAgent {
           throw new Error(`Invalid file path: must be within worktree ${this.worktreePath}`);
         }
 
-        console.log(`📝 Target file: ${fileName}`);
+        logger.info(MODULE_AGENT, `📝 Target file: ${fileName}`, timer.elapsed('factory'));
 
         // Step 3: Generate content with Claude API
-        console.log(`🤖 Generating content with Claude AI...`);
+        logger.info(MODULE_AGENT, `🤖 Generating content with Claude AI...`, timer.elapsed('factory'));
 
         const stream = await this.anthropic.messages.stream({
           model: this.claudeModel,
@@ -566,15 +571,15 @@ Respond with ONLY the file content, no explanations or markdown code blocks.`
           }
         }
 
-        console.log(`   ✅ Content generated (${content.length} characters)`);
+        logger.info(MODULE_AGENT, `   ✅ Content generated (${content.length} characters)`, timer.elapsed('factory'));
 
         // Step 4: Write file to worktree
-        console.log(`💾 Writing file: ${filePath}`);
+        logger.info(MODULE_AGENT, `💾 Writing file: ${filePath}`, timer.elapsed('factory'));
 
         const fs = await import('fs/promises');
         await fs.writeFile(filePath, content, 'utf-8');
 
-        console.log(`   ✅ File written: ${fileName}`);
+        logger.info(MODULE_AGENT, `   ✅ File written: ${fileName}`, timer.elapsed('factory'));
 
         // Step 5: Commit changes with git
         const commitSha = await this.commitChanges(task.taskId, [fileName]);
@@ -587,7 +592,7 @@ Respond with ONLY the file content, no explanations or markdown code blocks.`
           commitSha
         );
 
-        console.log(`✅ Task ${task.taskId} execution completed`);
+        logger.info(MODULE_AGENT, `✅ Task ${task.taskId} execution completed`, timer.elapsed('factory'));
 
       } finally {
         // Always restore original working directory
@@ -595,9 +600,9 @@ Respond with ONLY the file content, no explanations or markdown code blocks.`
       }
 
     } catch (error: any) {
-      console.error(`❌ Failed to execute task ${task.taskId}`);
-      console.error(`   Error: ${error.message || String(error)}`);
-      console.error(`   Stack: ${error.stack || 'No stack trace'}`);
+      logger.error(MODULE_AGENT, `Failed to execute task ${task.taskId}`, timer.elapsed('factory'), error);
+      logger.error(MODULE_AGENT, `   Error: ${error.message || String(error)}`, timer.elapsed('factory'));
+      logger.error(MODULE_AGENT, `   Stack: ${error.stack || 'No stack trace'}`, timer.elapsed('factory'));
 
       // Publish failure event
       await this.publishFailure(task.taskId, error);
@@ -634,13 +639,13 @@ Respond with ONLY the file content, no explanations or markdown code blocks.`
   protected async determineFilename(task: TaskAssignedEvent): Promise<string> {
     // Check if custom behavior is provided
     if (this.config.customBehaviors?.determineFilename) {
-      console.log(`🔧 Using custom filename behavior`);
+      logger.info(MODULE_AGENT, `🔧 Using custom filename behavior`, timer.elapsed('factory'));
       const customFilename = await this.config.customBehaviors.determineFilename(task.taskId, task.description);
       return this.sanitizeFilename(customFilename);
     }
 
     // Use Claude API to determine filename
-    console.log(`🤖 Using Claude AI to determine filename...`);
+    logger.info(MODULE_AGENT, `🤖 Using Claude AI to determine filename...`, timer.elapsed('factory'));
 
     try {
       const response = await this.anthropic.messages.create({
@@ -669,12 +674,12 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
       const filename = (response.content[0] as any).text.trim();
       const sanitized = this.sanitizeFilename(filename);
 
-      console.log(`   ✅ AI determined filename: ${sanitized}`);
+      logger.info(MODULE_AGENT, `   ✅ AI determined filename: ${sanitized}`, timer.elapsed('factory'));
       return sanitized;
 
     } catch (error: any) {
-      console.error(`   ❌ AI filename determination failed: ${error.message}`);
-      console.log(`   ⚠️  Falling back to default filename pattern`);
+      logger.error(MODULE_AGENT, `   AI filename determination failed: ${error.message}`, timer.elapsed('factory'), error);
+      logger.warn(MODULE_AGENT, `   ⚠️  Falling back to default filename pattern`, timer.elapsed('factory'));
       return `${this.role}-${task.taskId.substring(0, 8)}.txt`;
     }
   }
@@ -729,24 +734,24 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
     const { promisify } = await import('util');
     const execAsync = promisify(exec);
 
-    console.log(`📦 Committing changes for task ${taskId}`);
-    console.log(`   Files: ${files.join(', ')}`);
+    logger.info(MODULE_AGENT, `📦 Committing changes for task ${taskId}`, timer.elapsed('factory'));
+    logger.info(MODULE_AGENT, `   Files: ${files.join(', ')}`, timer.elapsed('factory'));
 
     try {
       // Step 1: Stage files with git add
       const addCommand = `git add ${files.join(' ')}`;
-      console.log(`   → Running: ${addCommand}`);
+      logger.info(MODULE_AGENT, `   → Running: ${addCommand}`, timer.elapsed('factory'));
 
       await execAsync(addCommand, { cwd: this.worktreePath });
-      console.log(`   ✅ Files staged`);
+      logger.info(MODULE_AGENT, `   ✅ Files staged`, timer.elapsed('factory'));
 
       // Step 2: Generate commit message
       const commitMessage = this.formatCommitMessage(taskId, files);
-      console.log(`   → Commit message: ${commitMessage}`);
+      logger.info(MODULE_AGENT, `   → Commit message: ${commitMessage}`, timer.elapsed('factory'));
 
       // Step 3: Commit changes
       const commitCommand = `git commit -m "${commitMessage}"`;
-      console.log(`   → Running: git commit`);
+      logger.info(MODULE_AGENT, `   → Running: git commit`, timer.elapsed('factory'));
 
       const { stdout } = await execAsync(commitCommand, { cwd: this.worktreePath });
 
@@ -755,8 +760,8 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
       const shaMatch = stdout.match(/\[[\w-]+\s+([a-f0-9]+)\]/);
       const commitSha = shaMatch ? shaMatch[1] : 'unknown';
 
-      console.log(`   ✅ Changes committed (SHA: ${commitSha.substring(0, 7)})`);
-      console.log(`   Full output: ${stdout.trim()}`);
+      logger.info(MODULE_AGENT, `   ✅ Changes committed (SHA: ${commitSha.substring(0, 7)})`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Full output: ${stdout.trim()}`, timer.elapsed('factory'));
 
       return commitSha;
 
@@ -772,8 +777,8 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
         errorMessage.includes('unable to access');
 
       if (isTransient) {
-        console.warn(`   ⚠️  Transient git error detected: ${error.message}`);
-        console.warn(`   Retrying with exponential backoff...`);
+        logger.warn(MODULE_AGENT, `   ⚠️  Transient git error detected: ${error.message}`, timer.elapsed('factory'));
+        logger.warn(MODULE_AGENT, `   Retrying with exponential backoff...`, timer.elapsed('factory'));
 
         // Retry with exponential backoff for transient errors
         // Note: In production, this should use baseBot.retryWithBackoff
@@ -783,7 +788,7 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
 
         for (let attempt = 1; attempt <= retries; attempt++) {
           try {
-            console.log(`   Retry attempt ${attempt}/${retries} (delay: ${delay}ms)`);
+            logger.info(MODULE_AGENT, `   Retry attempt ${attempt}/${retries} (delay: ${delay}ms)`, timer.elapsed('factory'));
             await new Promise(resolve => setTimeout(resolve, delay));
 
             // Retry git add
@@ -797,13 +802,13 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
             const retryShaMatch = retryStdout.match(/\[[\w-]+\s+([a-f0-9]+)\]/);
             const retryCommitSha = retryShaMatch ? retryShaMatch[1] : 'unknown';
 
-            console.log(`   ✅ Git operation succeeded on retry ${attempt}`);
+            logger.info(MODULE_AGENT, `   ✅ Git operation succeeded on retry ${attempt}`, timer.elapsed('factory'));
             return retryCommitSha; // Success - return SHA
 
           } catch (retryError: any) {
             if (attempt === retries) {
               // Final attempt failed
-              console.error(`   ❌ All retry attempts exhausted`);
+              logger.error(MODULE_AGENT, `   All retry attempts exhausted`, timer.elapsed('factory'), retryError);
               throw retryError;
             }
             delay *= 2; // Exponential backoff
@@ -815,10 +820,10 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
 
       } else {
         // Permanent error - fail immediately
-        console.error(`❌ Git operation failed (permanent error)`);
-        console.error(`   Error: ${error.message || String(error)}`);
-        console.error(`   Command output: ${error.stdout || 'none'}`);
-        console.error(`   Command stderr: ${error.stderr || 'none'}`);
+        logger.error(MODULE_AGENT, `Git operation failed (permanent error)`, timer.elapsed('factory'), error);
+        logger.error(MODULE_AGENT, `   Error: ${error.message || String(error)}`, timer.elapsed('factory'));
+        logger.error(MODULE_AGENT, `   Command output: ${error.stdout || 'none'}`, timer.elapsed('factory'));
+        logger.error(MODULE_AGENT, `   Command stderr: ${error.stderr || 'none'}`, timer.elapsed('factory'));
         throw error;
       }
     }
@@ -905,20 +910,20 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
     };
 
     try {
-      console.log(`📢 Publishing completion event`);
-      console.log(`   Topic: ${topic}`);
-      console.log(`   Task ID: ${taskId}`);
-      console.log(`   Commit SHA: ${commitSha.substring(0, 7)}`);
+      logger.info(MODULE_AGENT, `📢 Publishing completion event`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Topic: ${topic}`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Task ID: ${taskId}`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Commit SHA: ${commitSha.substring(0, 7)}`, timer.elapsed('factory'));
 
       await this.client.publish(topic, payload, { broker: 'default', network: 'global' });
 
-      console.log(`   ✅ Completion event published`);
+      logger.info(MODULE_AGENT, `   ✅ Completion event published`, timer.elapsed('factory'));
 
     } catch (error: any) {
       // Handle publishing failures gracefully - don't throw
-      console.error(`❌ Failed to publish completion event (non-fatal)`);
-      console.error(`   Error: ${error.message || String(error)}`);
-      console.error(`   Task execution succeeded despite event publishing failure`);
+      logger.error(MODULE_AGENT, `Failed to publish completion event (non-fatal)`, timer.elapsed('factory'), error);
+      logger.error(MODULE_AGENT, `   Error: ${error.message || String(error)}`, timer.elapsed('factory'));
+      logger.error(MODULE_AGENT, `   Task execution succeeded despite event publishing failure`, timer.elapsed('factory'));
       // Don't throw - event publishing failure should not fail the task
     }
   }
@@ -959,19 +964,19 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
     };
 
     try {
-      console.log(`📢 Publishing failure event`);
-      console.log(`   Topic: ${topic}`);
-      console.log(`   Task ID: ${taskId}`);
-      console.log(`   Error: ${error.message.substring(0, 100)}${error.message.length > 100 ? '...' : ''}`);
+      logger.info(MODULE_AGENT, `📢 Publishing failure event`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Topic: ${topic}`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Task ID: ${taskId}`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Error: ${error.message.substring(0, 100)}${error.message.length > 100 ? '...' : ''}`, timer.elapsed('factory'));
 
       await this.client.publish(topic, payload, { broker: 'default', network: 'global' });
 
-      console.log(`   ✅ Failure event published`);
+      logger.info(MODULE_AGENT, `   ✅ Failure event published`, timer.elapsed('factory'));
 
     } catch (publishError: any) {
       // Handle publishing failures gracefully - don't throw
-      console.error(`❌ Failed to publish failure event (non-fatal)`);
-      console.error(`   Error: ${publishError.message || String(publishError)}`);
+      logger.error(MODULE_AGENT, `Failed to publish failure event (non-fatal)`, timer.elapsed('factory'), publishError);
+      logger.error(MODULE_AGENT, `   Error: ${publishError.message || String(publishError)}`, timer.elapsed('factory'));
       // Don't throw - cascading event publishing failure is worse than no event
     }
   }
@@ -1002,14 +1007,14 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
    * ```
    */
   public async start(): Promise<void> {
-    console.log('='.repeat(60));
-    console.log(`🚀 Starting Worker Agent: ${this.role}`);
-    console.log('='.repeat(60));
-    console.log(`Broker URL: ${this.config.brokerUrl}`);
-    console.log(`Networks: ${this.networks.join(', ')}`);
-    console.log(`Worktree Path: ${this.worktreePath}`);
-    console.log(`Claude Model: ${this.claudeModel}`);
-    console.log('='.repeat(60));
+    logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('factory'));
+    logger.info(MODULE_AGENT, `Starting Worker Agent: ${this.role}`, timer.elapsed('factory'));
+    logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('factory'));
+    logger.info(MODULE_AGENT, `Broker URL: ${this.config.brokerUrl}`, timer.elapsed('factory'));
+    logger.info(MODULE_AGENT, `Networks: ${this.networks.join(', ')}`, timer.elapsed('factory'));
+    logger.info(MODULE_AGENT, `Worktree Path: ${this.worktreePath}`, timer.elapsed('factory'));
+    logger.info(MODULE_AGENT, `Claude Model: ${this.claudeModel}`, timer.elapsed('factory'));
+    logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('factory'));
 
     // Initialize KĀDI client and connect to broker
     await this.initializeClient();
@@ -1039,30 +1044,30 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
    * ```
    */
   public async stop(): Promise<void> {
-    console.log('='.repeat(60));
-    console.log(`🛑 Stopping Worker Agent: ${this.role}`);
-    console.log('='.repeat(60));
+    logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('factory'));
+    logger.info(MODULE_AGENT, `Stopping Worker Agent: ${this.role}`, timer.elapsed('factory'));
+    logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('factory'));
 
     try {
       // TODO: Unsubscribe from events in next task
 
       // Disconnect KĀDI client
-      console.log('   → Disconnecting KĀDI client...');
+      logger.info(MODULE_AGENT, '   → Disconnecting KĀDI client...', timer.elapsed('factory'));
       await this.client.disconnect();
-      console.log('   ✅ KĀDI client disconnected');
+      logger.info(MODULE_AGENT, '   ✅ KĀDI client disconnected', timer.elapsed('factory'));
 
       // Clear protocol reference
       this.protocol = null;
 
-      console.log('');
-      console.log('✅ Worker agent stopped successfully');
-      console.log('='.repeat(60));
+      logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, '✅ Worker agent stopped successfully', timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('factory'));
 
     } catch (error: any) {
-      console.error('');
-      console.error('❌ Error during shutdown');
-      console.error(`   Error: ${error.message || String(error)}`);
-      console.error('');
+      logger.error(MODULE_AGENT, '', timer.elapsed('factory'));
+      logger.error(MODULE_AGENT, 'Error during shutdown', timer.elapsed('factory'), error);
+      logger.error(MODULE_AGENT, `   Error: ${error.message || String(error)}`, timer.elapsed('factory'));
+      logger.error(MODULE_AGENT, '', timer.elapsed('factory'));
       // Don't throw - best effort cleanup
     }
   }
@@ -1254,10 +1259,10 @@ export class WorkerAgentFactory {
     } catch (error: any) {
       // Re-throw Zod validation errors with context
       if (error.name === 'ZodError') {
-        console.error('❌ Worker agent configuration validation failed');
-        console.error('   Validation errors:');
+        logger.error(MODULE_AGENT, 'Worker agent configuration validation failed', timer.elapsed('factory'), error);
+        logger.error(MODULE_AGENT, '   Validation errors:', timer.elapsed('factory'));
         for (const issue of error.issues || []) {
-          console.error(`   - ${issue.path.join('.')}: ${issue.message}`);
+          logger.error(MODULE_AGENT, `   - ${issue.path.join('.')}: ${issue.message}`, timer.elapsed('factory'));
         }
       }
       throw error;

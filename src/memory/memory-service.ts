@@ -15,8 +15,7 @@
 
 import type { Result } from '../common/result.js';
 import { ok, err } from '../common/result.js';
-import type { FileError, DatabaseError } from '../common/types.js';
-import { FileErrorType, DatabaseErrorType } from '../common/types.js';
+
 import { FileStorageAdapter } from './file-storage-adapter.js';
 import { ArcadeDBAdapter } from './arcadedb-adapter.js';
 import type { ProviderManager } from '../providers/provider-manager.js';
@@ -102,9 +101,9 @@ export class MemoryService {
    * @param providerManager - LLM provider for summarization (optional)
    */
   constructor(
-    private readonly memoryDataPath: string,
-    private readonly arcadedbUrl?: string,
-    private readonly arcadedbPassword?: string,
+    memoryDataPath: string,
+    arcadedbUrl?: string,
+    arcadedbPassword?: string,
     private readonly providerManager?: ProviderManager
   ) {
     this.fileStorage = new FileStorageAdapter(memoryDataPath);
