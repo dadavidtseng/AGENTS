@@ -203,7 +203,44 @@ Consider:
 5. What are the testing requirements?
 6. What are the integration points?
 
-Generate a structured task list following the guidelines above.`;
+Generate a structured task list following the guidelines above.
+
+---
+
+## CRITICAL: Four-Step Workflow Mandate
+
+You MUST execute ALL four steps of the workflow in order:
+
+**Step 1: quest_plan_task** (COMPLETED - you just called this)
+- Received planning prompt with quest context
+
+**Step 2: quest_analyze_task** (REQUIRED NEXT)
+- You MUST call quest_analyze_task with:
+  - summary: Task summary (min 10 chars)
+  - initialConcept: Initial solution concept (min 50 chars, use pseudocode)
+  - feasibility: Technical feasibility assessment
+  - technicalAnalysis: Structured technical analysis
+  - implementationStrategy: Implementation strategy
+- This works with CONCEPTS before tasks exist (no questId/taskId required)
+
+**Step 3: quest_reflect_task** (REQUIRED AFTER ANALYZE)
+- You MUST call quest_reflect_task with:
+  - summary: Same summary from analyze step
+  - analysis: Complete analysis text from quest_analyze_task
+  - qualityAssessment: Rate completeness, code quality, best practices (1-5 each)
+  - strengths: List identified strengths
+  - weaknesses: List identified weaknesses
+  - improvements: List concrete improvement suggestions
+- This works with CONCEPTS before tasks exist (no questId/taskId required)
+
+**Step 4: quest_split_tasks** (REQUIRED AFTER REFLECT)
+- You MUST call quest_split_tasks with:
+  - questId: "${quest.questId}"
+  - tasks: Array of task objects with all details
+  - globalAnalysisResult: Combined analysis and reflection results (text from steps 2 and 3)
+- This creates tasks in the system with analysis attached
+
+**IMPORTANT:** Do NOT skip any steps. Each step builds on the previous one and ensures quality task generation.`;
 
   // Return planning prompt
   return {

@@ -14,7 +14,39 @@ import type { Task } from '../types';
  */
 export const questSplitTasksTool: Tool = {
   name: 'quest_split_tasks',
-  description: 'Split approved quest into executable tasks. Task IDs are auto-generated as UUIDs - do not provide task IDs in the input.',
+  description: `Split approved quest into executable tasks (Step 4 of four-step workflow).
+
+**Purpose:**
+Creates executable tasks in the system with analysis and reflection data attached.
+
+**Four-Step Workflow:**
+1. quest_plan_task (Get planning prompt)
+2. quest_analyze_task (Analyze task concepts)
+3. quest_reflect_task (Critical review)
+4. **quest_split_tasks** ← You are here (Create tasks with analysis)
+
+**When to Use:**
+- After quest_reflect_task returns reflection results
+- To create tasks in the system with analysis attached
+- Task IDs are auto-generated as UUIDs - do not provide task IDs in the input
+
+**Required Parameters:**
+- questId: Quest ID to split into tasks
+- tasks: Array of task objects with name, description, implementationGuide, verificationCriteria, dependencies, relatedFiles
+- globalAnalysisResult (optional): Combined analysis and reflection results from quest_analyze_task and quest_reflect_task. This will be stored in each task's metadata for reference during execution.
+
+**Task Creation:**
+Each task will be created with:
+- Auto-generated UUID as task ID
+- Status set to 'pending'
+- All provided fields (name, description, implementationGuide, etc.)
+- globalAnalysisResult stored in task.metadata if provided
+
+**Next Steps:**
+After tasks are created, you can:
+- Assign tasks to agents using quest_assign_tasks
+- Execute tasks using quest_execute_task
+- Monitor task progress using quest_get_status`,
   inputSchema: {
     type: 'object',
     properties: {
@@ -47,6 +79,10 @@ export const questSplitTasksTool: Tool = {
           required: ['name', 'description'],
         },
       },
+      globalAnalysisResult: {
+        type: 'string',
+        description: 'Combined analysis and reflection results from quest_analyze_task and quest_reflect_task. This will be stored in each task\'s analysis field for reference during execution.',
+      },
     },
     required: ['questId', 'tasks'],
   },
@@ -65,6 +101,7 @@ interface QuestSplitTasksInput {
     dependencies?: string[];
     relatedFiles?: any[];
   }>;
+  globalAnalysisResult?: string;
 }
 
 /**
@@ -124,7 +161,8 @@ export async function handleQuestSplitTasks(args: unknown) {
       throw new Error('Each task must have name and description');
     }
 
-    return {
+    // Create task object
+    const task: Task = {
       id: randomUUID(),
       questId: input.questId,
       name: taskData.name,
@@ -137,6 +175,15 @@ export async function handleQuestSplitTasks(args: unknown) {
       createdAt: now,
       updatedAt: now,
     };
+
+    // Store globalAnalysisResult in task metadata for reference during execution
+    if (input.globalAnalysisResult) {
+      task.metadata = {
+        globalAnalysisResult: input.globalAnalysisResult,
+      };
+    }
+
+    return task;
   });
 
   // Validate dependencies

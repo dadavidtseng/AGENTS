@@ -1,16 +1,10 @@
 /**
  * quest_analyze_task Tool
- * Deep analysis of task requirements before execution
+ * Deep analysis of task concepts before creating tasks (Step 2 of workflow)
  */
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
-import { randomUUID } from 'crypto';
 import { z } from 'zod';
-import { QuestModel } from '../models/questModel.js';
-import type { TaskAnalysis } from '../types/index.js';
-import { commitQuestChanges } from '../utils/git.js';
-import { config } from '../utils/config.js';
-import { broadcastQuestUpdated } from '../dashboard/events.js';
 
 // Zod schemas for validation
 const FeasibilitySchema = z.object({
@@ -34,8 +28,6 @@ const ImplementationStrategySchema = z.object({
 });
 
 const InputSchema = z.object({
-  questId: z.string().uuid().describe('Quest identifier'),
-  taskId: z.string().uuid().describe('Task identifier'),
   summary: z
     .string()
     .min(10)
@@ -60,16 +52,22 @@ type Input = z.infer<typeof InputSchema>;
 
 export const questAnalyzeTaskTool: Tool = {
   name: 'quest_analyze_task',
-  description: `Perform deep analysis of task requirements before execution.
+  description: `Perform deep analysis of task concepts before creating tasks (Step 2 of workflow).
 
 **Purpose:**
-Provides technical feasibility assessment and structured analysis to ensure task is well-understood before implementation begins.
+Provides technical feasibility assessment and structured analysis for task concepts BEFORE tasks are created in the system.
+
+**Four-Step Workflow:**
+1. quest_plan_task (Get planning prompt)
+2. **quest_analyze_task** ← You are here (Analyze task concepts)
+3. quest_reflect_task (Critical review)
+4. quest_split_tasks (Create tasks with analysis)
 
 **When to Use:**
-- Before starting task implementation
-- When task requirements are complex or unclear
+- After quest_plan_task returns planning prompt
+- Before tasks are created in the system
+- To analyze task concepts and approaches
 - To identify technical risks and challenges
-- To plan implementation strategy
 - For iterative refinement of approach
 
 **Analysis Components:**
@@ -106,26 +104,18 @@ Provides technical feasibility assessment and structured analysis to ensure task
 - Supports continuous improvement of approach
 - Builds on previous insights
 
-**Storage:**
-- Analysis stored in task.analysis field
-- Persisted to quest data
-- Committed to Git for version control
+**Next Steps:**
+After analysis, you MUST call quest_reflect_task with:
+- summary: Same summary from this analysis
+- analysis: Complete analysis results (combine all fields into text)
 
 **Example Use Cases:**
-- "Analyze task abc-123 before implementation"
-- "Refine analysis for complex authentication task"
-- "Assess feasibility of real-time sync feature"`,
+- "Analyze authentication task concept before creating tasks"
+- "Refine analysis for complex real-time sync feature"
+- "Assess feasibility of microservices architecture"`,
   inputSchema: {
     type: 'object',
     properties: {
-      questId: {
-        type: 'string',
-        description: 'Quest identifier (UUID)',
-      },
-      taskId: {
-        type: 'string',
-        description: 'Task identifier (UUID)',
-      },
       summary: {
         type: 'string',
         description: 'Structured task summary (min 10 chars)',
@@ -176,8 +166,6 @@ Provides technical feasibility assessment and structured analysis to ensure task
       },
     },
     required: [
-      'questId',
-      'taskId',
       'summary',
       'initialConcept',
       'feasibility',
@@ -191,44 +179,71 @@ export async function handleQuestAnalyzeTask(args: unknown) {
   // Validate input
   const input = InputSchema.parse(args) as Input;
 
-  // Load quest
-  const quest = await QuestModel.load(input.questId);
-
-  // Find task
-  const task = quest.tasks.find((t) => t.id === input.taskId);
-  if (!task) {
-    throw new Error(`Task ${input.taskId} not found in quest ${input.questId}`);
-  }
-
-  // Create analysis
-  const analysis: TaskAnalysis = {
-    analysisId: randomUUID(),
-    taskId: input.taskId,
+  // Create analysis object (not stored yet - tasks don't exist)
+  const analysisData = {
     summary: input.summary,
     initialConcept: input.initialConcept,
     feasibility: input.feasibility,
     technicalAnalysis: input.technicalAnalysis,
     implementationStrategy: input.implementationStrategy,
     previousAnalysis: input.previousAnalysis,
-    timestamp: new Date(),
     analyzedBy: input.analyzedBy,
+    timestamp: new Date().toISOString(),
   };
 
-  // Store analysis in task
-  task.analysis = analysis;
-  task.updatedAt = new Date();
+  // Generate prompt for next step (quest_reflect_task)
+  const reflectionPrompt = `# Task Analysis Complete
 
-  // Save quest
-  await QuestModel.save(quest);
+## Analysis Summary
 
-  // Commit to git
-  const commitMessage = `docs: analyze task ${task.name} (${input.implementationStrategy.complexity} complexity)`;
-  await commitQuestChanges(config.questDataDir, commitMessage);
+**Task Summary:** ${input.summary}
 
-  // Broadcast update
-  await broadcastQuestUpdated(quest.questId, quest.status);
+**Feasibility Rating:** ${input.feasibility.rating}/5
+**Complexity:** ${input.implementationStrategy.complexity}
+**Implementation Steps:** ${input.implementationStrategy.steps.length}
 
-  // Return success
+## Detailed Analysis
+
+### Initial Concept
+${input.initialConcept}
+
+### Feasibility Assessment
+- **Rating:** ${input.feasibility.rating}/5
+- **Explanation:** ${input.feasibility.explanation}
+- **Risks Identified:** ${input.feasibility.risks.length}
+${input.feasibility.risks.map((r, i) => `  ${i + 1}. ${r}`).join('\n')}
+- **Mitigations:** ${input.feasibility.mitigations.length}
+${input.feasibility.mitigations.map((m, i) => `  ${i + 1}. ${m}`).join('\n')}
+
+### Technical Analysis
+- **Architecture:** ${input.technicalAnalysis.architecture}
+- **Key Decisions:**
+${input.technicalAnalysis.keyDecisions.map((d, i) => `  ${i + 1}. ${d}`).join('\n')}
+- **Dependencies:**
+${input.technicalAnalysis.dependencies.map((d, i) => `  ${i + 1}. ${d}`).join('\n')}
+${input.technicalAnalysis.pseudocode ? `\n**Pseudocode:**\n\`\`\`\n${input.technicalAnalysis.pseudocode}\n\`\`\`` : ''}
+
+### Implementation Strategy
+- **Complexity:** ${input.implementationStrategy.complexity}
+- **Steps:**
+${input.implementationStrategy.steps.map((s, i) => `  ${i + 1}. ${s}`).join('\n')}
+- **Testing Approach:** ${input.implementationStrategy.testingApproach}
+
+---
+
+## Next Step: Critical Reflection
+
+Now you MUST call **quest_reflect_task** with:
+- **summary:** "${input.summary}"
+- **analysis:** Complete analysis text (combine all sections above)
+- **qualityAssessment:** Rate completeness, code quality, best practices (1-5 each)
+- **strengths:** List identified strengths
+- **weaknesses:** List identified weaknesses
+- **improvements:** List concrete improvement suggestions
+
+This reflection step ensures the approach is sound before creating tasks.`;
+
+  // Return analysis results and prompt for reflection
   return {
     content: [
       {
@@ -236,25 +251,10 @@ export async function handleQuestAnalyzeTask(args: unknown) {
         text: JSON.stringify(
           {
             success: true,
-            questId: quest.questId,
-            taskId: task.id,
-            taskName: task.name,
-            analysis: {
-              analysisId: analysis.analysisId,
-              summary: analysis.summary,
-              feasibility: {
-                rating: analysis.feasibility.rating,
-                explanation: analysis.feasibility.explanation,
-                riskCount: analysis.feasibility.risks.length,
-                mitigationCount: analysis.feasibility.mitigations.length,
-              },
-              complexity: analysis.implementationStrategy.complexity,
-              stepCount: analysis.implementationStrategy.steps.length,
-              hasPseudocode: !!analysis.technicalAnalysis.pseudocode,
-              isRefinement: !!analysis.previousAnalysis,
-              timestamp: analysis.timestamp,
-            },
-            message: `Task "${task.name}" analyzed successfully. Feasibility: ${analysis.feasibility.rating}/5, Complexity: ${analysis.implementationStrategy.complexity}, ${analysis.implementationStrategy.steps.length} implementation steps identified.`,
+            analysis: analysisData,
+            prompt: reflectionPrompt,
+            nextStep: 'quest_reflect_task',
+            message: `Analysis complete. Feasibility: ${input.feasibility.rating}/5, Complexity: ${input.implementationStrategy.complexity}. Now call quest_reflect_task to review this analysis.`,
           },
           null,
           2
