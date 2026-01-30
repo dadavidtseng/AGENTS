@@ -151,7 +151,9 @@ For each related file, specify:
 
 ### Dependencies
 
-- Mark dependencies clearly using task IDs
+- Specify dependencies using task NAMES (not IDs, as IDs don't exist yet during task creation)
+- Example: "dependencies": ["Setup database schema", "Create API routes"]
+- The system will automatically resolve task names to UUIDs during task creation
 - Ensure no circular dependencies
 - Tasks with unresolved dependencies cannot be assigned
 - Consider parallel execution opportunities
@@ -173,7 +175,7 @@ For each related file, specify:
   "description": "Implement POST /api/auth/login endpoint with JWT token generation",
   "implementationGuide": "Role: Backend Developer with Express.js and JWT expertise | Task: Create login endpoint following REST conventions, implement JWT token generation with 24h expiry, add rate limiting (5 attempts per minute) | Restrictions: Must use existing auth middleware patterns, do not store passwords in plain text, follow project error handling conventions | Success: Endpoint returns JWT token on valid credentials, returns 401 on invalid credentials, rate limiting works, all tests pass",
   "verificationCriteria": "1. Endpoint responds to POST /api/auth/login\\n2. Valid credentials return 200 with JWT token\\n3. Invalid credentials return 401\\n4. Rate limiting blocks after 5 attempts\\n5. Unit tests pass with >80% coverage",
-  "dependencies": [],
+  "dependencies": ["Setup database schema", "Create authentication middleware"],
   "relatedFiles": [
     {
       "path": "src/routes/auth.ts",
@@ -188,6 +190,9 @@ For each related file, specify:
   ]
 }
 \`\`\`
+
+
+**Note:** Dependencies use task names (e.g., "Setup database schema"), not UUIDs. The system automatically resolves names to IDs during task creation.
 
 ---
 

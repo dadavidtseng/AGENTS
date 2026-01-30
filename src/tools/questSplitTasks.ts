@@ -35,6 +35,13 @@ Creates executable tasks in the system with analysis and reflection data attache
 - tasks: Array of task objects with name, description, implementationGuide, verificationCriteria, dependencies, relatedFiles
 - globalAnalysisResult (optional): Combined analysis and reflection results from quest_analyze_task and quest_reflect_task. This will be stored in each task's metadata for reference during execution.
 
+**Dependencies:**
+- Specify dependencies using task NAMES (not IDs, as IDs don't exist yet during task creation)
+- Example: "dependencies": ["Setup database schema", "Create API routes"]
+- The system will automatically resolve task names to UUIDs during task creation
+- Both task names and UUIDs are supported for flexibility
+- Ensure no circular dependencies
+
 **Task Creation:**
 Each task will be created with:
 - Auto-generated UUID as task ID
@@ -186,7 +193,40 @@ export async function handleQuestSplitTasks(args: unknown) {
     return task;
   });
 
-  // Validate dependencies
+  // Build name-to-ID mapping for dependency resolution
+  console.log('[quest_split_tasks] Building task name-to-ID mapping...');
+  const taskNameToIdMap = new Map<string, string>();
+  tasks.forEach((task) => {
+    taskNameToIdMap.set(task.name, task.id);
+  });
+
+  // Resolve dependencies: convert task names to task IDs
+  console.log('[quest_split_tasks] Resolving dependencies...');
+  for (const task of tasks) {
+    const resolvedDependencies: string[] = [];
+
+    for (const dep of task.dependencies) {
+      // Check if dependency is already a UUID
+      if (dep.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+        // Already a UUID - keep it
+        resolvedDependencies.push(dep);
+      } else {
+        // It's a task name - resolve to ID
+        if (taskNameToIdMap.has(dep)) {
+          const resolvedId = taskNameToIdMap.get(dep)!;
+          resolvedDependencies.push(resolvedId);
+          console.log(`[quest_split_tasks] Resolved dependency "${dep}" to ${resolvedId}`);
+        } else {
+          console.warn(`[quest_split_tasks] Warning: Dependency "${dep}" not found in task list, skipping`);
+          // Skip this dependency - validation will catch if it's critical
+        }
+      }
+    }
+
+    task.dependencies = resolvedDependencies;
+  }
+
+  // Validate dependencies (now all should be UUIDs)
   console.log('[quest_split_tasks] Validating dependencies...');
   const validation = TaskModel.validateDependencies(tasks);
 
