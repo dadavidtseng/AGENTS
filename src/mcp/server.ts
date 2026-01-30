@@ -35,6 +35,7 @@ import { questGetStatusTool, handleQuestGetStatus } from '../tools/questGetStatu
 import { questApprovalStatusTool, handleQuestApprovalStatus } from '../tools/questApprovalStatus.js';
 import { questDeleteApprovalTool, handleQuestDeleteApproval } from '../tools/questDeleteApproval.js';
 import { questAnalyzeTaskTool, handleQuestAnalyzeTask } from '../tools/questAnalyzeTask.js';
+import { questPlanTaskTool, handleQuestPlanTask } from '../tools/questPlanTask.js';
 import { questQueryTasksTool, handleQuestQueryTasks } from '../tools/questQueryTasks.js';
 import { questUpdateTaskTool, handleQuestUpdateTask } from '../tools/questUpdateTask.js';
 import { questReflectTaskTool, handleQuestReflectTask } from '../tools/questReflectTask.js';
@@ -90,6 +91,7 @@ export async function startMCPServer() {
         questApprovalStatusTool,
         questDeleteApprovalTool,
         questAnalyzeTaskTool,
+        questPlanTaskTool,
         questQueryTasksTool,
         questUpdateTaskTool,
         questReflectTaskTool,
@@ -182,6 +184,9 @@ export async function startMCPServer() {
 
         case 'quest_analyze_task':
           return await handleQuestAnalyzeTask(args || {});
+
+        case 'quest_plan_task':
+          return await handleQuestPlanTask(args || {});
 
         case 'quest_query_tasks':
           return await handleQuestQueryTasks(args || {});
