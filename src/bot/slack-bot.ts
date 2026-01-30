@@ -21,10 +21,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { KadiClient } from '@kadi.build/core';
 import { BaseBot, logger, MODULE_SLACK_BOT, timer } from 'agents-library';
 import { SlackMentionEventSchema, SlackMentionEvent } from '../types/slack-events.js';
-import type { ProviderManager } from '../providers/provider-manager.js';
-import type { MemoryService } from '../memory/memory-service.js';
-import type { Message, ProviderError } from '../providers/types.js';
-import type { MemoryError } from '../memory/types.js';
+import type { ProviderManager, MemoryService, Message, ProviderError, MemoryError } from 'agents-library';
 
 // ============================================================================
 // Types

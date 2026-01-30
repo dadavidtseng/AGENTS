@@ -21,10 +21,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import {DiscordMentionEvent, DiscordMentionEventSchema} from '../types/discord-events.js';
 import {BaseBot, BaseBotConfig, logger, MODULE_DISCORD_BOT, timer} from 'agents-library';
-import type {ProviderManager} from '../providers/provider-manager.js';
-import type {MemoryService} from '../memory/memory-service.js';
-import type {Message, ProviderError} from '../providers/types.js';
-import type {MemoryError} from '../memory/types.js';
+import type {ProviderManager, MemoryService, Message, ProviderError, MemoryError} from 'agents-library';
 
 // ============================================================================
 // Types
@@ -242,14 +239,6 @@ export class DiscordBot extends BaseBot {
                 logger.info(MODULE_DISCORD_BOT, `=== Iteration ${iteration} ===`, timer.elapsed('main'));
                 logger.info(MODULE_DISCORD_BOT, `Sending ${messages.length} messages to LLM with model: ${detectedModel || 'default'}${toolsExecuted ? ' (tools disabled - already executed)' : ''}`, timer.elapsed('main'));
 
-                // Add system message when tools are disabled to guide LLM behavior
-                if (toolsExecuted && iteration > 1) {
-                    messages.push({
-                        role: 'system',
-                        content: 'The tool has completed its task (status: complete). Review the tool output and present the information to the user according to their specific request. Format or filter the data as needed based on what the user asked for. Do not call any more tools - just provide your final response.'
-                    });
-                }
-
                 // Log message roles for debugging
                 const msgSummary = messages.map(m => `${m.role}${m.tool_call_id ? `(tool:${m.tool_call_id.substring(0,8)})` : ''}`).join(', ');
                 logger.info(MODULE_DISCORD_BOT, `Message roles: [${msgSummary}]`, timer.elapsed('main'));
@@ -410,7 +399,7 @@ export class DiscordBot extends BaseBot {
             logger.info(MODULE_DISCORD_BOT, `Completed iteration ${iteration}, maxIterations: ${maxIterations}, finalResponse: ${finalResponse ? 'YES' : 'NO'}`, timer.elapsed('main'));
 
             // Check if we got a final response
-            if (!finalResponse) {
+            if (finalResponse === null || finalResponse === undefined) {
                 logger.error(MODULE_DISCORD_BOT, `Tool calling loop exceeded maximum iterations (${maxIterations})`, timer.elapsed('main'));
                 await this.sendDiscordReply(mention.channel, mention.id, 'Sorry, I encountered an issue completing your request.');
                 return;

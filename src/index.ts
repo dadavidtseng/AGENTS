@@ -46,7 +46,7 @@ import 'dotenv/config';
 import { KadiClient } from '@kadi.build/core';
 import { registerAllTools } from './tools';
 import { logger, MODULE_AGENT, timer } from 'agents-library';
-import { AnthropicProvider } from './providers/anthropic-provider.js';
+import { AnthropicProvider } from 'agents-library';
 
 // ============================================================================
 // Tool Registration via Registry
@@ -458,10 +458,12 @@ async function main() {
           logger.info(MODULE_AGENT, 'Initializing shared services for bots...', timer.elapsed('main'));
 
           // Step 2: Import service classes
-          const { ProviderManager } = await import('./providers/provider-manager.js');
-          const { AnthropicProvider } = await import('./providers/anthropic-provider.js');
-          const { ModelManagerProvider } = await import('./providers/model-manager-provider.js');
-          const { MemoryService } = await import('./memory/memory-service.js');
+          const { 
+            ProviderManager, 
+            AnthropicProvider, 
+            ModelManagerProvider,
+            MemoryService
+          } = await import('agents-library');
 
           // Step 3: Instantiate providers
           const anthropicProvider = new AnthropicProvider(anthropicApiKey);

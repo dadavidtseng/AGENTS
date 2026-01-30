@@ -6,8 +6,8 @@
  * and agent configuration updates with rollback support.
  */
 
-import type { Result } from '../common/result.js';
-import { ok, err } from '../common/result.js';
+import type { Result } from 'agents-library';
+import { ok, err } from 'agents-library';
 import type {
   DeployConfig,
   DeploymentResult,
