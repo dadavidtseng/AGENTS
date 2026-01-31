@@ -13,7 +13,7 @@ import type { Agent, AgentRole, Task } from '../types';
  */
 export const questAssignTasksTool: Tool = {
   name: 'quest_assign_tasks',
-  description: 'Assign tasks to agents based on capabilities and availability',
+  description: 'Assign tasks to agents based on capabilities and availability. Only assigns tasks with all dependencies completed (status=completed). Tasks with unresolved dependencies are skipped with clear feedback.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -198,6 +198,28 @@ export async function handleQuestAssignTasks(args: unknown) {
         taskName: task.name,
         assignedTo: task.assignedAgent,
         reason: 'Already assigned',
+      });
+      continue;
+    }
+    
+    // Check for unresolved dependencies
+    const unresolvedDeps = task.dependencies.filter(depId => {
+      const depTask = quest.tasks.find(t => t.id === depId);
+      return !depTask || depTask.status !== 'completed';
+    });
+    
+    if (unresolvedDeps.length > 0) {
+      // Get dependency task names for better error message
+      const depNames = unresolvedDeps.map(depId => {
+        const depTask = quest.tasks.find(t => t.id === depId);
+        return depTask ? depTask.name : depId;
+      });
+      
+      results.push({
+        taskId: task.id,
+        taskName: task.name,
+        assignedTo: null,
+        reason: `Blocked by ${unresolvedDeps.length} unresolved dependencies: ${depNames.join(', ')}`,
       });
       continue;
     }
