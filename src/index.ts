@@ -107,150 +107,9 @@ registerAllTools(client);
 // Task Completion Event Handlers
 // ============================================================================
 
-/**
- * Setup event handlers for task completion notifications
- * Subscribes to {role}.task.completed events from worker agents
- */
-async function setupTaskCompletionHandlers(client: KadiClient): Promise<void> {
-    const roles = ['artist', 'designer', 'programmer'];
-    for (const role of roles) {
-        const topic = `${role}.task.completed`;
-        await client.subscribe(topic, async (event) => {
-            await handleTaskCompletion(event, role, client);
-        });
-        logger.info(MODULE_AGENT, `Subscribed to ${topic}`, timer.elapsed('main'));
-    }
-}
-
-/**
- * Handle task completion event from worker agent
- * Validates completion criteria and publishes ready-for-approval event
- */
-async function handleTaskCompletion(event: any, role: string, client: KadiClient): Promise<void> {
-    try {
-        const {taskId, filesCreated, filesModified, commitSha} = event.data || {};
-
-        logger.info(MODULE_AGENT, `Received ${role}.task.completed event {taskId: ${taskId}, filesCreated: ${filesCreated?.length || 0}, filesModified: ${filesModified?.length || 0}, commitSha: ${commitSha?.substring(0, 7)}}`, timer.elapsed('main'));
-
-        // Validate task exists and get current status using client.invokeRemote
-        const taskStatusResult: any = await client.invokeRemote('shrimp_get_task_detail', {taskId}, {
-            timeout: 30000
-        });
-
-        logger.debug(MODULE_AGENT, `Task status result: ${JSON.stringify(taskStatusResult, null, 2)}`, timer.elapsed('main'));
-
-        // Parse task details from markdown format
-        const detailContent = Array.isArray(taskStatusResult.content)
-            ? taskStatusResult.data.content.filter((item: any) => item.type === 'text').map((item: any) => item.text).join('\n')
-            : String(taskStatusResult.data);
-
-        const nameMatch = detailContent.match(/###\s+([^\n]+)/);
-        const statusMatch = detailContent.match(/\*\*Status:\*\*\s*(\w+)/i);
-
-        if (!nameMatch || !statusMatch) {
-            logger.error(MODULE_AGENT, `Failed to parse task status for ${taskId}`, "+0ms");
-            client.publish('task.completion.processing.failed', {
-                taskId,
-                role,
-                error: 'Task status parsing failed',
-                agent: 'agent-producer'
-            });
-            return;
-        }
-
-        const taskStatus = {
-            taskId,
-            description: nameMatch[1].trim(),
-            status: statusMatch[1].toLowerCase()
-        };
-
-        // Validate completion criteria
-        const isValid = validateTaskCompletion({
-            taskId,
-            commitSha,
-            filesCreated,
-            filesModified,
-            taskStatus
-        });
-
-        if (isValid) {
-            // Auto-verify task completion to set status to COMPLETED
-            try {
-                await client.invokeRemote('shrimp_verify_task', {
-                    taskId,
-                    summary: `Task completed by ${role} agent. Created ${filesCreated?.length || 0} files, modified ${filesModified?.length || 0} files. Commit: ${commitSha}`,
-                    score: 100
-                }, {
-                    timeout: 30000
-                });
-
-                logger.info(MODULE_AGENT, `Task ${taskId} auto-verified successfully`, timer.elapsed('main'));
-            } catch (verifyError) {
-                logger.warn(MODULE_AGENT, `Failed to auto-verify task ${taskId} (continuing anyway)`, timer.elapsed('main'), verifyError as Error | string);
-                // Continue anyway - task is still completed
-            }
-
-            // Get channel context from map (if available)
-            const channelContext = taskChannelMap.get(taskId);
-
-            // Publish ready for approval event with channel context
-            client.publish('task.ready_for_approval', {
-                taskId,
-                role,
-                taskName: taskStatus.description,
-                message: `✅ ${taskStatus.description} completed by ${role} agent`,
-                completionDetails: {
-                    filesCreated: filesCreated || [],
-                    filesModified: filesModified || [],
-                    commitSha,
-                    completedAt: new Date().toISOString()
-                },
-                channel: channelContext || {type: 'desktop'}, // Default to desktop if no context
-                agent: 'agent-producer'
-            });
-            logger.info(MODULE_AGENT, `Task ${taskId} ready for user approval${channelContext ? ` (notifying via ${channelContext.type})` : ' (desktop notification)'}`, timer.elapsed('main'));
-        } else {
-            // Publish review failed event
-            client.publish('task.review.failed', {
-                taskId,
-                role,
-                reason: 'Completion criteria not met',
-                agent: 'agent-producer'
-            });
-            logger.error(MODULE_AGENT, `Task ${taskId} failed automated review`, "+0ms");
-        }
-    } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        logger.error(MODULE_AGENT, `Failed to process ${role}.task.completed event: ${errorMsg}`, "+0ms");
-
-        client.publish('task.completion.processing.failed', {
-            taskId: event.data?.taskId,
-            role,
-            error: errorMsg,
-            agent: 'agent-producer'
-        });
-    }
-}
-
-/**
- * Validate task completion data meets requirements
- * Checks for commit SHA, file changes, and task status
- */
-function validateTaskCompletion(data: any): boolean {
-    const checks = {
-        hasCommit: !!data.commitSha,
-        hasFileChanges: (data.filesCreated?.length > 0) || (data.filesModified?.length > 0),
-        statusValid: data.taskStatus?.status !== 'completed'
-    };
-
-    const passed = Object.values(checks).every(check => check);
-
-    if (!passed) {
-        logger.warn(MODULE_AGENT, `Task completion validation failed: ${JSON.stringify(checks)}`, timer.elapsed('main'));
-    }
-
-    return passed;
-}
+// OLD task completion handlers - REMOVED (replaced by task 2.7 handler with LLM verification)
+// The new handler in task-completion.ts now handles all role-specific task.completed events
+// with LLM-based verification and score-based decision making
 
 // ============================================================================
 // Bot Instance Tracking
@@ -428,6 +287,25 @@ async function main() {
                     (global as any).__providerManager = providerManager;
                     (global as any).__memoryService = memoryService;
 
+                    // Setup task completion event handler (from task-completion.ts)
+                    // IMPORTANT: Must be done AFTER providerManager is stored in global
+                    try {
+                        const { setupTaskCompletionHandler } = await import('./handlers/task-completion.js');
+                        await setupTaskCompletionHandler(client, providerManager);
+                        logger.info(MODULE_AGENT, 'Task completion event handler registered successfully (all roles)', timer.elapsed('main'));
+                    } catch (error) {
+                        logger.error(MODULE_AGENT, 'Failed to setup task completion event handler', "+0ms", error as Error | string);
+                    }
+
+                    // Setup task failure event handler (from task-failure.ts)
+                    try {
+                        const { setupTaskFailureHandler } = await import('./handlers/task-failure.js');
+                        await setupTaskFailureHandler(client);
+                        logger.info(MODULE_AGENT, 'Task failure event handler registered successfully', timer.elapsed('main'));
+                    } catch (error) {
+                        logger.error(MODULE_AGENT, 'Failed to setup task failure event handler', "+0ms", error as Error | string);
+                    }
+
                     // Step 6: Start Slack Bot if enabled
                     const shouldEnableSlackBot = (process.env.ENABLE_SLACK_BOT === 'true' || process.env.ENABLE_SLACK_BOT === undefined);
                     if (shouldEnableSlackBot) {
@@ -469,15 +347,16 @@ async function main() {
             logger.info(MODULE_AGENT, '', timer.elapsed('main'));
         }
 
-        // Setup task completion event handlers after bots are initialized
-        setTimeout(async () => {
-            try {
-                await setupTaskCompletionHandlers(client);
-                logger.info(MODULE_AGENT, 'Task completion event handlers registered', timer.elapsed('main'));
-            } catch (error) {
-                logger.error(MODULE_AGENT, 'Failed to setup task completion handlers', "+0ms", error as Error | string);
-            }
-        }, 2000);
+        // OLD task completion handler - DISABLED (replaced by task 2.7 handler with LLM verification)
+        // The new handler in task-completion.ts now handles all role-specific task.completed events
+        // setTimeout(async () => {
+        //     try {
+        //         await setupTaskCompletionHandlers(client);
+        //         logger.info(MODULE_AGENT, 'Task completion event handlers registered', timer.elapsed('main'));
+        //     } catch (error) {
+        //         logger.error(MODULE_AGENT, 'Failed to setup task completion handlers', "+0ms", error as Error | string);
+        //     }
+        // }, 2000);
 
         // Setup task completion notifier for user notifications
         setTimeout(async () => {

@@ -147,11 +147,74 @@ export class DiscordBot extends BaseBot {
     /**
      * Handle a Discord mention event from KĀDI broker
      */
+    /**
+     * Handle structured commands (task approval, failure responses)
+     * Returns true if message was handled, false if should fall through to LLM
+     */
+    private async handleStructuredCommands(mention: DiscordMention): Promise<boolean> {
+        const message = mention.text;
+
+        try {
+            // 1. Task Approval (approve/reject/request changes)
+            const { handleTaskApproval } = await import('../handlers/task-approval.js');
+            const approvalResult = await handleTaskApproval(this.client, message);
+
+            if (approvalResult) {
+                logger.info(MODULE_DISCORD_BOT, 'Task approval command handled', timer.elapsed('main'));
+
+                await this.sendDiscordReply(
+                    mention.channel,
+                    mention.id,
+                    approvalResult.message
+                );
+
+                return true;
+            }
+
+            // 2. Task Failure Response (retry/skip/abort)
+            const { processFailureResponse } = await import('../handlers/task-failure.js');
+            const failureHandled = await processFailureResponse(this.client, message);
+            if (failureHandled) {
+                logger.info(MODULE_DISCORD_BOT, 'Task failure response handled', timer.elapsed('main'));
+
+                await this.sendDiscordReply(
+                    mention.channel,
+                    mention.id,
+                    '✅ Task failure response processed'
+                );
+
+                return true;
+            }
+
+            // No structured command detected
+            return false;
+
+        } catch (error: any) {
+            logger.error(MODULE_DISCORD_BOT, `Error handling structured command: ${error.message}`, timer.elapsed('main'), error);
+
+            await this.sendDiscordReply(
+                mention.channel,
+                mention.id,
+                `❌ Error: ${error.message}`
+            );
+
+            return true; // Handled (with error)
+        }
+    }
+
     protected async handleMention(mention: DiscordMention): Promise<void> {
         try {
             logger.info(MODULE_DISCORD_BOT, `Processing mention from @${mention.user}: \"${mention.text}\"`, timer.elapsed('main'));
 
-            // Process mention using existing logic
+            // Step 1: Check for structured commands (task approval, failure responses)
+            const handled = await this.handleStructuredCommands(mention);
+
+            if (handled) {
+                logger.info(MODULE_DISCORD_BOT, 'Message handled by structured command handler', timer.elapsed('main'));
+                return;
+            }
+
+            // Step 2: Pass all other messages to LLM for natural language understanding
             await this.processMention(mention);
         } catch (error: any) {
             logger.error(MODULE_DISCORD_BOT, `Error handling mention from @${mention.user}`, timer.elapsed('main'), error);
@@ -338,7 +401,7 @@ export class DiscordBot extends BaseBot {
 
           // Execute each tool and collect results
           for (const toolCall of toolCallData.toolCalls) {
-            const toolResult = await this.executeToolCall(toolCall);
+            const toolResult = await this.executeToolCall(toolCall, mention);
 
             logger.info(MODULE_DISCORD_BOT, `Tool ${toolCall.function.name} result: ${toolResult.substring(0, 200)}...`, timer.elapsed('main'));
             logger.info(MODULE_DISCORD_BOT, `Tool call ID: ${toolCall.id}`, timer.elapsed('main'));
@@ -368,6 +431,9 @@ export class DiscordBot extends BaseBot {
                 // Ignore parse errors
               }
             }
+
+            // If this is task_execution, the context was already injected in executeToolCall
+            // The task_execution tool will store the context in taskChannelMap for all triggered tasks
 
             // Add tool result to conversation using OpenAI tool format
             messages.push({
@@ -491,13 +557,24 @@ export class DiscordBot extends BaseBot {
   /**
    * Execute a single tool call with retry logic
    */
-  private async executeToolCall(toolCall: any): Promise<string> {
+  private async executeToolCall(toolCall: any, mention?: DiscordMention): Promise<string> {
     const toolName = toolCall.function.name;
     const toolArgs = JSON.parse(toolCall.function.arguments);
 
     logger.info(MODULE_DISCORD_BOT, `Executing tool: ${toolName}`, timer.elapsed('main'));
 
     try {
+      // Inject Discord channel context for task_execution tool
+      if (toolName === 'task_execution' && mention) {
+        toolArgs._context = {
+          type: 'discord',
+          channelId: mention.channel,
+          userId: mention.user,
+          guildId: mention.channel, // Discord uses channel as guild identifier in this context
+        };
+        logger.info(MODULE_DISCORD_BOT, `Injected Discord context for task_execution: channel ${mention.channel}`, timer.elapsed('main'));
+      }
+
       // Determine target agent based on tool name
       const targetAgent = this.resolveTargetAgent(toolName);
 
