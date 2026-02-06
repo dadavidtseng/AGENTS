@@ -3,7 +3,7 @@
  * Provides REST methods and WebSocket event subscription
  */
 
-import type { Quest, Agent, Task } from '../types';
+import type { Quest, Agent } from '../types';
 
 const API_BASE = '/api';
 const WS_URL = import.meta.env.DEV 

@@ -17,19 +17,21 @@ import { setupRoutes } from './routes.js';
 export class DashboardServer {
   private app: FastifyInstance;
   private clients: Set<WebSocket> = new Set();
+  private initialized: boolean = false;
 
   constructor() {
     this.app = Fastify({ logger: true });
-    this.setupMiddleware();
-    this.setupRoutes();
-    this.setupWebSocket();
   }
 
   /**
-   * Setup Fastify middleware
+   * Initialize the server (must be called before start())
    */
-  private setupMiddleware(): void {
-    // CORS for localhost development (using Fastify's built-in CORS)
+  async initialize(): Promise<void> {
+    if (this.initialized) {
+      return;
+    }
+
+    // Setup CORS
     this.app.addHook('onRequest', async (request, reply) => {
       reply.header('Access-Control-Allow-Origin', '*');
       reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -39,16 +41,22 @@ export class DashboardServer {
       }
     });
 
-    // WebSocket support
-    this.app.register(fastifyWebsocket);
+    // Register WebSocket plugin FIRST (must be before routes)
+    await this.app.register(fastifyWebsocket);
 
-    // Static file serving (React build)
-    // Note: Dashboard frontend will be built to src/dashboard/dist
+    // Register static file serving
     const staticPath = join(process.cwd(), 'src', 'dashboard', 'dist');
-    this.app.register(fastifyStatic, {
+    await this.app.register(fastifyStatic, {
       root: staticPath,
       prefix: '/',
+      decorateReply: false, // Don't decorate reply to avoid conflicts
     });
+
+    // Setup routes and WebSocket after plugins are registered
+    this.setupRoutes();
+    this.setupWebSocket();
+
+    this.initialized = true;
   }
 
   /**
@@ -63,7 +71,8 @@ export class DashboardServer {
    */
   private setupWebSocket(): void {
     this.app.get('/ws', { websocket: true }, (socket, request) => {
-      // In @fastify/websocket v11+, socket is directly the WebSocket instance
+      // socket is the WebSocket.WebSocket instance directly
+      
       // Add client to set
       this.clients.add(socket);
       console.log('[WebSocket] Client connected. Total clients:', this.clients.size);
@@ -141,6 +150,10 @@ export class DashboardServer {
    * Start the dashboard server
    */
   async start(): Promise<void> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
     try {
       const address = await this.app.listen({
         port: config.dashboardPort,

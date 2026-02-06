@@ -22,6 +22,9 @@ export interface Quest {
   questName: string;
   description: string;
   status: QuestStatus;
+  requirements: string;
+  design: string;
+  tasks: Task[];
   createdAt: string;
   updatedAt: string;
 }
@@ -33,6 +36,9 @@ export interface Task {
   description: string;
   status: TaskStatus;
   assignedAgent?: string;
+  dependencies: string[];
+  startedAt?: string;
+  completedAt?: string;
 }
 
 export interface Agent {

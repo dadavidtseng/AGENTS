@@ -264,4 +264,32 @@ export function setupRoutes(
       timestamp: new Date().toISOString() 
     });
   });
+
+  /**
+   * Catch-all route for React Router
+   * Serves index.html for all non-API routes to support client-side routing
+   */
+  app.setNotFoundHandler(async (request, reply) => {
+    // Only serve index.html for non-API routes
+    if (!request.url.startsWith('/api') && !request.url.startsWith('/ws')) {
+      // Serve index.html for client-side routing
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const indexPath = path.join(process.cwd(), 'src', 'dashboard', 'dist', 'index.html');
+      
+      try {
+        const content = await fs.readFile(indexPath, 'utf-8');
+        reply.type('text/html');
+        return reply.send(content);
+      } catch (err) {
+        console.error('[Routes] Failed to serve index.html:', err);
+        reply.status(500);
+        return error('Failed to serve application', 'index.html not found');
+      }
+    }
+    
+    // For API routes, return 404 JSON
+    reply.status(404);
+    return error('Route not found', `${request.method} ${request.url} not found`);
+  });
 }
