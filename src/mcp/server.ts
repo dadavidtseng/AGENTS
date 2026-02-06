@@ -10,40 +10,57 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
-// Import tool handlers
-import { questCreateTool, handleQuestCreate } from '../tools/questCreate.js';
-import { questReviseTool, handleQuestRevise } from '../tools/questRevise.js';
-import { questRequestApprovalTool, handleQuestRequestApproval } from '../tools/questRequestApproval.js';
-import { questSubmitApprovalTool, handleQuestSubmitApproval } from '../tools/questSubmitApproval.js';
-import { questSplitTasksTool, handleQuestSplitTasks } from '../tools/questSplitTasks.js';
-import { questListTool, handleQuestList } from '../tools/questList.js';
-import { questGetDetailsTool, handleQuestGetDetails } from '../tools/questGetDetails.js';
-import { questAssignTasksTool, handleQuestAssignTasks } from '../tools/questAssignTasks.js';
-import { questGetTaskDetailsTool, handleQuestGetTaskDetails } from '../tools/questGetTaskDetails.js';
-import { questUpdateTaskStatusTool, handleQuestUpdateTaskStatus } from '../tools/questUpdateTaskStatus.js';
-import { questSubmitTaskResultTool, handleQuestSubmitTaskResult } from '../tools/questSubmitTaskResult.js';
-import { questVerifyTaskTool, handleQuestVerifyTask } from '../tools/questVerifyTask.js';
-import { questRegisterAgentTool, handleQuestRegisterAgent } from '../tools/questRegisterAgent.js';
-import { questListAgentsTool, handleQuestListAgents } from '../tools/questListAgents.js';
-import { questCreateFromTemplateTool, handleQuestCreateFromTemplate } from '../tools/questCreateFromTemplate.js';
-import { questListTemplatesTool, handleQuestListTemplates } from '../tools/questListTemplates.js';
-import { questCancelQuestTool, handleQuestCancelQuest } from '../tools/questCancelQuest.js';
-import { questDeleteQuestTool, handleQuestDeleteQuest } from '../tools/questDeleteQuest.js';
-import { questDeleteTaskTool, handleQuestDeleteTask } from '../tools/questDeleteTask.js';
-import { questLogImplementationTool, handleQuestLogImplementation } from '../tools/questLogImplementation.js';
-import { questGetStatusTool, handleQuestGetStatus } from '../tools/questGetStatus.js';
-import { questApprovalStatusTool, handleQuestApprovalStatus } from '../tools/questApprovalStatus.js';
-import { questDeleteApprovalTool, handleQuestDeleteApproval } from '../tools/questDeleteApproval.js';
-import { questAnalyzeTaskTool, handleQuestAnalyzeTask } from '../tools/questAnalyzeTask.js';
-import { questPlanTaskTool, handleQuestPlanTask } from '../tools/questPlanTask.js';
-import { questQueryTasksTool, handleQuestQueryTasks } from '../tools/questQueryTasks.js';
-import { questUpdateTaskTool, handleQuestUpdateTask } from '../tools/questUpdateTask.js';
-import { questReflectTaskTool, handleQuestReflectTask } from '../tools/questReflectTask.js';
-import { questClearCompletedTool, handleQuestClearCompleted } from '../tools/questClearCompleted.js';
-import { questAgentHeartbeatTool, handleQuestAgentHeartbeat } from '../tools/questAgentHeartbeat.js';
-import { questUnregisterAgentTool, handleQuestUnregisterAgent } from '../tools/questUnregisterAgent.js';
-import { questWorkflowGuideTool, handleQuestWorkflowGuide } from '../tools/questWorkflowGuide.js';
-import { questResearchModeTool, handleQuestResearchMode } from '../tools/questResearchMode.js';
+// Import all tools and handlers from categorized structure
+import { allTools } from '../tools/index.js';
+
+// Import handlers by category
+import {
+  handleQuestRegisterAgent,
+  handleQuestUnregisterAgent,
+  handleQuestListAgents,
+  handleQuestAgentHeartbeat,
+} from '../tools/agent/index.js';
+
+import {
+  handleQuestCreate,
+  handleQuestCreateFromTemplate,
+  handleQuestGetDetails,
+  handleQuestGetStatus,
+  handleQuestList,
+  handleQuestListTemplates,
+  handleQuestCancelQuest,
+  handleQuestDeleteQuest,
+  handleQuestClearCompleted,
+  handleQuestRevise,
+} from '../tools/quest/index.js';
+
+import {
+  handleQuestAssignTasks,
+  handleQuestGetTaskDetails,
+  handleQuestUpdateTaskStatus,
+  handleQuestQueryTasks,
+  handleQuestUpdateTask,
+  handleQuestDeleteTask,
+  handleQuestSubmitTaskResult,
+  handleQuestVerifyTask,
+  handleQuestLogImplementation,
+  handleQuestSplitTasks,
+  handleQuestPlanTask,
+  handleQuestAnalyzeTask,
+  handleQuestReflectTask,
+  handleQuestResearchMode,
+} from '../tools/task/index.js';
+
+import {
+  handleQuestRequestApproval,
+  handleQuestSubmitApproval,
+  handleQuestApprovalStatus,
+  handleQuestDeleteApproval,
+} from '../tools/approval/index.js';
+
+import {
+  handleQuestWorkflowGuide,
+} from '../tools/workflow/index.js';
 
 /**
  * Initialize and start MCP server
@@ -63,45 +80,11 @@ export async function startMCPServer() {
 
   /**
    * List available tools
+   * All tools are imported from categorized structure
    */
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
-      tools: [
-        questCreateTool,
-        questReviseTool,
-        questRequestApprovalTool,
-        questSubmitApprovalTool,
-        questSplitTasksTool,
-        questListTool,
-        questGetDetailsTool,
-        questAssignTasksTool,
-        questGetTaskDetailsTool,
-        questUpdateTaskStatusTool,
-        questSubmitTaskResultTool,
-        questVerifyTaskTool,
-        questRegisterAgentTool,
-        questListAgentsTool,
-        questCreateFromTemplateTool,
-        questListTemplatesTool,
-        questCancelQuestTool,
-        questDeleteQuestTool,
-        questDeleteTaskTool,
-        questLogImplementationTool,
-        questGetStatusTool,
-        questApprovalStatusTool,
-        questDeleteApprovalTool,
-        questAnalyzeTaskTool,
-        questPlanTaskTool,
-        questQueryTasksTool,
-        questUpdateTaskTool,
-        questReflectTaskTool,
-        questClearCompletedTool,
-        questAgentHeartbeatTool,
-        questUnregisterAgentTool,
-        questWorkflowGuideTool,
-        questResearchModeTool,
-        // Future tools will be added here
-      ],
+      tools: allTools,
     };
   });
 
