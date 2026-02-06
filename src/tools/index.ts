@@ -44,6 +44,7 @@ import type { KadiClient } from '@kadi.build/core';
 import { logger, timer, MODULE_TOOLS } from 'agents-library';
 import { registerEchoTool } from './echo.js';
 import { registerListToolsTool } from './list-tools.js';
+import { registerTaskExecutionTool } from './task-execution.js';
 
 /**
  * Tool Registry Array
@@ -54,6 +55,7 @@ import { registerListToolsTool } from './list-tools.js';
 export const toolRegistry: Array<(client: KadiClient) => void> = [
   registerEchoTool,
   registerListToolsTool,
+  registerTaskExecutionTool,
 ];
 
 /**
