@@ -1,0 +1,13 @@
+{
+  "name": "deploy-ability",
+  "version": "1.0.0",
+  "license": "MIT",
+  "kind": "ability",
+  "description": "Programmatic deployment library for KADI - deploy applications to Akash Network, local Docker, or other platforms without CLI dependencies",
+  "repo": "https://gitlab.com/humin-game-lab/kadi/deploy-ability.git",
+  "abilities": {},
+  "scripts": {
+    "setup": "npm install && npm run build"
+  }
+}
+

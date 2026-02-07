@@ -1,0 +1,112 @@
+{
+  "name": "@kadi.build/deploy-ability",
+  "version": "0.0.7",
+  "description": "Programmatic deployment library for KADI - deploy to Akash Network, local Docker, and other platforms without CLI dependencies",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./akash": {
+      "types": "./dist/targets/akash/index.d.ts",
+      "import": "./dist/targets/akash/index.js"
+    },
+    "./local": {
+      "types": "./dist/targets/local/index.d.ts",
+      "import": "./dist/targets/local/index.js"
+    },
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/types/index.js"
+    },
+    "./errors": {
+      "types": "./dist/errors/index.d.ts",
+      "import": "./dist/errors/index.js"
+    },
+    "./registry": {
+      "types": "./dist/utils/registry/index.d.ts",
+      "import": "./dist/utils/registry/index.js"
+    }
+  },
+  "scripts": {
+    "start": "node index.js",
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "clean": "rm -rf dist",
+    "format": "prettier --write .",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "kadi",
+    "deployment",
+    "akash",
+    "docker",
+    "kubernetes",
+    "orchestration",
+    "infrastructure"
+  ],
+  "author": "Kassi Bertrand",
+  "license": "MIT",
+  "files": [
+    "dist/",
+    "docs/",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+<<<<<<< Updated upstream
+=======
+    "@kadi.build/core": "file:../kadi-core",
+    "axios": "^1.7.7",
+>>>>>>> Stashed changes
+    "@akashnetwork/akash-api": "^1.4.0",
+    "@akashnetwork/chain-sdk": "1.0.0-alpha.18",
+    "@cosmjs/amino": "^0.36.1",
+    "@cosmjs/encoding": "^0.36.1",
+    "@cosmjs/proto-signing": "^0.36.1",
+    "@cosmjs/stargate": "^0.36.1",
+    "@kadi.build/container-registry-ability": "^0.0.3",
+    "@keplr-wallet/wc-client": "^0.12.243",
+    "@keplr-wallet/wc-qrcode-modal": "^0.12.247",
+    "@types/ws": "^8.18.1",
+    "@walletconnect/sign-client": "^2.21.3",
+    "axios": "^1.7.7",
+    "debug": "^4.3.7",
+    "dockerode": "^4.0.7",
+    "dotenv": "^16.5.0",
+    "js-yaml": "^4.1.0",
+    "long": "^5.2.3",
+    "strip-ansi": "^7.1.2",
+    "ws": "^8.18.3",
+    "yaml": "^2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/debug": "^4.1.12",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.46.2",
+    "@typescript-eslint/parser": "^8.46.2",
+    "@vitest/coverage-v8": "^3.2.4",
+    "eslint": "^9.38.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
