@@ -45,6 +45,8 @@ import { logger, timer, MODULE_TOOLS } from 'agents-library';
 import { registerEchoTool } from './echo.js';
 import { registerListToolsTool } from './list-tools.js';
 import { registerTaskExecutionTool } from './task-execution.js';
+import { registerQuestApproveTool, registerQuestRequestRevisionTool, registerQuestRejectTool } from './quest-approval.js';
+import { registerTaskApproveTool, registerTaskRequestRevisionTool, registerTaskRejectTool } from './task-approval.js';
 
 /**
  * Tool Registry Array
@@ -56,6 +58,14 @@ export const toolRegistry: Array<(client: KadiClient) => void> = [
   registerEchoTool,
   registerListToolsTool,
   registerTaskExecutionTool,
+  // Quest-level approval tools (workflow steps 10a/10b/10c)
+  registerQuestApproveTool,
+  registerQuestRequestRevisionTool,
+  registerQuestRejectTool,
+  // Task-level approval tools (workflow steps 23a/23b/23c)
+  registerTaskApproveTool,
+  registerTaskRequestRevisionTool,
+  registerTaskRejectTool,
 ];
 
 /**
