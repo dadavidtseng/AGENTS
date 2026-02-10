@@ -44,6 +44,8 @@ export interface ToolDefinition {
  */
 export interface ChatOptions {
   model?: string;
+  /** System prompt passed to the LLM as a top-level parameter (not in messages array). */
+  system?: string;
   maxTokens?: number;
   temperature?: number;
   stopSequences?: string[];

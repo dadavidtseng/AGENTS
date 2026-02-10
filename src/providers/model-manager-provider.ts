@@ -167,14 +167,20 @@ export class ModelManagerProvider implements LLMProvider {
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      const requestBody: OpenAIChatRequest = {
-        model: options?.model || this.defaultModel,
-        messages: messages.map((msg) => ({
+      // Build OpenAI messages array, prepending system prompt if provided
+      const openaiMessages = [
+        ...(options?.system ? [{ role: 'system' as const, content: options.system }] : []),
+        ...messages.map((msg) => ({
           role: msg.role,
           content: msg.content,
           ...(msg.tool_call_id && { tool_call_id: msg.tool_call_id }),
           ...(msg.tool_calls && { tool_calls: msg.tool_calls }),
         })),
+      ];
+
+      const requestBody: OpenAIChatRequest = {
+        model: options?.model || this.defaultModel,
+        messages: openaiMessages,
         max_completion_tokens: options?.maxTokens || this.defaultMaxTokens,
         temperature: options?.temperature,
         stop: options?.stopSequences,
@@ -271,14 +277,20 @@ export class ModelManagerProvider implements LLMProvider {
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      const requestBody: OpenAIChatRequest = {
-        model: options?.model || this.defaultModel,
-        messages: messages.map((msg) => ({
+      // Build OpenAI messages array, prepending system prompt if provided
+      const openaiStreamMessages = [
+        ...(options?.system ? [{ role: 'system' as const, content: options.system }] : []),
+        ...messages.map((msg) => ({
           role: msg.role,
           content: msg.content,
           ...(msg.tool_call_id && { tool_call_id: msg.tool_call_id }),
           ...(msg.tool_calls && { tool_calls: msg.tool_calls }),
         })),
+      ];
+
+      const requestBody: OpenAIChatRequest = {
+        model: options?.model || this.defaultModel,
+        messages: openaiStreamMessages,
         max_completion_tokens: options?.maxTokens || this.defaultMaxTokens,
         temperature: options?.temperature,
         stop: options?.stopSequences,

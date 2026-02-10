@@ -406,6 +406,7 @@ export class AnthropicProvider implements LLMProvider {
         temperature: options?.temperature,
         stop_sequences: options?.stopSequences,
         messages: this.convertMessagesToAnthropicFormat(messages),
+        ...(options?.system && { system: options.system }),
         ...(anthropicTools && anthropicTools.length > 0 && { tools: anthropicTools }),
         ...(anthropicToolChoice && { tool_choice: anthropicToolChoice }),
       });
@@ -482,6 +483,7 @@ export class AnthropicProvider implements LLMProvider {
         temperature: options?.temperature,
         stop_sequences: options?.stopSequences,
         messages: this.convertMessagesToAnthropicFormat(messages),
+        ...(options?.system && { system: options.system }),
       });
 
       // Create async iterator from stream
