@@ -1,9 +1,11 @@
 /**
  * MCP Server Quest - Main Entry Point
- * Starts dashboard server and initializes data directory
+ * Initializes data directory and quest templates.
+ *
+ * The dashboard UI is now served by the separate mcp-client-quest package.
+ * This entry point only bootstraps the data layer (Git repo + templates).
  */
 
-import { dashboardServer } from './dashboard/server.js';
 import { initQuestDataRepo } from './utils/git.js';
 import { TemplateModel } from './models/templateModel.js';
 import { config } from './utils/config.js';
@@ -24,34 +26,25 @@ async function main() {
     console.log('[Startup] Initializing quest templates...');
     await TemplateModel.initBuiltInTemplates();
 
-    // Start dashboard server
-    console.log('[Startup] Starting dashboard server...');
-    await dashboardServer.start();
-
-    console.log('[Startup] ✅ Server ready!');
-    console.log(`[Startup] Dashboard: http://${config.dashboardHost}:${config.dashboardPort}`);
-    console.log(`[Startup] WebSocket: ws://${config.dashboardHost}:${config.dashboardPort}/ws`);
-    console.log(`[Startup] API: http://${config.dashboardHost}:${config.dashboardPort}/api`);
+    console.log('[Startup] ✅ Data layer ready!');
   } catch (error) {
-    console.error('[Startup] ❌ Failed to start server:', error);
+    console.error('[Startup] ❌ Failed to initialize:', error);
     process.exit(1);
   }
 }
 
 // Handle graceful shutdown
-process.on('SIGINT', async () => {
-  console.log('\n[Shutdown] Received SIGINT, shutting down gracefully...');
-  await dashboardServer.stop();
+process.on('SIGINT', () => {
+  console.log('\n[Shutdown] Received SIGINT, shutting down...');
   process.exit(0);
 });
 
-process.on('SIGTERM', async () => {
-  console.log('\n[Shutdown] Received SIGTERM, shutting down gracefully...');
-  await dashboardServer.stop();
+process.on('SIGTERM', () => {
+  console.log('\n[Shutdown] Received SIGTERM, shutting down...');
   process.exit(0);
 });
 
-// Start the server
+// Start initialization
 main().catch((error) => {
   console.error('[Startup] Unhandled error:', error);
   process.exit(1);

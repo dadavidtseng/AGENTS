@@ -18,10 +18,7 @@
     "test:ui": "vitest --ui"
   },
   "dependencies": {
-    "@fastify/static": "latest",
-    "@fastify/websocket": "latest",
-    "@modelcontextprotocol/sdk": "latest",
-    "fastify": "latest"
+    "@modelcontextprotocol/sdk": "latest"
   },
   "devDependencies": {
     "@types/node": "latest",
