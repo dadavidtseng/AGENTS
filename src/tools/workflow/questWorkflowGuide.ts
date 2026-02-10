@@ -66,11 +66,11 @@ export async function handleQuestWorkflowGuide() {
 
 ## Quick Start
 
-1. **Create Quest**: Use \`quest_create\` with requirements and design
-2. **Request Approval**: Use \`quest_request_approval\`
-3. **Split Tasks**: Use \`quest_split_tasks\` after approval
-4. **Assign Tasks**: Use \`quest_assign_tasks\` to agents
-5. **Execute**: Agents update status with \`quest_update_task_status\`
+1. **Create Quest**: Use \`quest_create_quest\` with requirements and design
+2. **Request Approval**: Use \`quest_request_quest_approval\`
+3. **Split Tasks**: Use \`quest_split_task\` after approval
+4. **Assign Tasks**: Use \`quest_assign_task\` to agents
+5. **Execute**: Agents update status with \`quest_update_task\`
 6. **Verify**: Use \`quest_verify_task\` to confirm completion
 7. **Complete**: Quest automatically completes when all tasks done
 
@@ -82,11 +82,11 @@ Draft → Pending Approval → Approved → In Progress → Completed
 
 ## Key Tools
 
-- **Creation**: quest_create, quest_create_from_template
-- **Approval**: quest_request_approval, quest_submit_approval
-- **Tasks**: quest_split_tasks, quest_assign_tasks, quest_update_task_status
+- **Creation**: quest_create_quest
+- **Approval**: quest_request_quest_approval, quest_submit_approval
+- **Tasks**: quest_split_task, quest_assign_task, quest_update_task
 - **Verification**: quest_verify_task, quest_log_implementation
-- **Monitoring**: quest_get_status, quest_get_details, quest_list_agents
+- **Monitoring**: quest_query_quest, quest_list_agents
 
 ## Dashboard
 
@@ -111,7 +111,7 @@ Features:
 ## Common Issues
 
 **Quest stuck in pending approval?**
-- Check \`quest_approval_status\`
+- Check \`quest_query_approval\`
 - Verify approvers are notified
 
 **Task dependencies blocking progress?**

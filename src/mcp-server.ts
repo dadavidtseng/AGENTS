@@ -1,17 +1,14 @@
 #!/usr/bin/env node
 /**
  * MCP Server Entry Point
- * Runs the Model Context Protocol server for quest management tools
- * AND starts the dashboard server for human users
+ * Runs the Model Context Protocol server for quest management tools.
  *
- * This entry point is designed for production use where both:
- * - MCP stdio server (for KĀDI broker integration)
- * - Dashboard HTTP/WebSocket server (for human users)
- * run in the same process
+ * This entry point is designed for production use where the MCP stdio server
+ * (for KĀDI broker integration) runs as a standalone process.
+ * The dashboard UI is now served by the separate mcp-client-quest package.
  */
 
 import { startMCPServer } from './mcp/server.js';
-import { dashboardServer } from './dashboard/server.js';
 import { initQuestDataRepo } from './utils/git.js';
 import { TemplateModel } from './models/templateModel.js';
 import { config } from './utils/config.js';
@@ -29,17 +26,11 @@ async function main() {
     console.log('[Startup] Initializing quest templates...');
     await TemplateModel.initBuiltInTemplates();
 
-    // Start dashboard server
-    console.log('[Startup] Starting dashboard server...');
-    await dashboardServer.start();
-
     // Start MCP server (this will keep the process alive via stdio)
     console.log('[Startup] Starting MCP server...');
     await startMCPServer();
 
-    console.log('[Startup] ✅ All services ready!');
-    console.log(`[Startup] Dashboard: http://${config.dashboardHost}:${config.dashboardPort}`);
-    console.log(`[Startup] WebSocket: ws://${config.dashboardHost}:${config.dashboardPort}/ws`);
+    console.log('[Startup] ✅ MCP server ready!');
     console.log(`[Startup] MCP: stdio transport (connected to KĀDI broker)`);
   } catch (error) {
     console.error('[Startup] ❌ Failed to start:', error);
@@ -48,15 +39,13 @@ async function main() {
 }
 
 // Handle graceful shutdown
-process.on('SIGINT', async () => {
-  console.log('\n[Shutdown] Received SIGINT, shutting down gracefully...');
-  await dashboardServer.stop();
+process.on('SIGINT', () => {
+  console.log('\n[Shutdown] Received SIGINT, shutting down...');
   process.exit(0);
 });
 
-process.on('SIGTERM', async () => {
-  console.log('\n[Shutdown] Received SIGTERM, shutting down gracefully...');
-  await dashboardServer.stop();
+process.on('SIGTERM', () => {
+  console.log('\n[Shutdown] Received SIGTERM, shutting down...');
   process.exit(0);
 });
 

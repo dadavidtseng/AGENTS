@@ -122,7 +122,7 @@ export async function handleQuestVerifyTask(args: unknown) {
   const { task, quest } = result;
   
   // Reload quest from disk to get the latest status
-  // This ensures we see any status updates made by other tools (e.g., quest_update_task_status)
+  // This ensures we see any status updates made by other tools (e.g., quest_update_task)
   const freshQuest = await QuestModel.load(quest.questId);
   const freshTask = freshQuest.tasks.find((t) => t.id === input.taskId);
 

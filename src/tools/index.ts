@@ -2,13 +2,13 @@
  * MCP Server Quest Tools
  *
  * All tools organized by category:
- * - agent: Agent management (5 tools)
- * - quest: Quest lifecycle (10 tools)
- * - task: Task management (14 tools)
+ * - agent: Agent management (4 tools)
+ * - quest: Quest lifecycle (6 tools)
+ * - task: Task management (11 tools)
  * - approval: Approval workflow (4 tools)
  * - workflow: Workflow guidance (1 tool)
  *
- * Total: 34 tools
+ * Total: 26 tools
  */
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
@@ -29,40 +29,33 @@ import {
 } from './agent/index.js';
 
 import {
-  questCreateTool,
-  questCreateFromTemplateTool,
-  questGetDetailsTool,
-  questGetStatusTool,
-  questListTool,
-  questListTemplatesTool,
-  questCancelQuestTool,
+  questCreateQuestTool,
+  questQueryQuestTool,
+  questListQuestTool,
+  questArchiveQuestTool,
   questDeleteQuestTool,
-  questClearCompletedTool,
-  questReviseTool,
+  questUpdateQuestTool,
 } from './quest/index.js';
 
 import {
-  questAssignTasksTool,
-  questGetTaskDetailsTool,
-  questUpdateTaskStatusTool,
-  questQueryTasksTool,
+  questAssignTaskTool,
+  questQueryTaskTool,
   questUpdateTaskTool,
   questDeleteTaskTool,
   questSubmitTaskResultTool,
   questVerifyTaskTool,
   questLogImplementationTool,
-  questSplitTasksTool,
+  questSplitTaskTool,
   questPlanTaskTool,
   questAnalyzeTaskTool,
   questReflectTaskTool,
-  questResearchModeTool,
 } from './task/index.js';
 
 import {
-  questRequestApprovalTool,
+  questRequestQuestApprovalTool,
   questSubmitApprovalTool,
-  questApprovalStatusTool,
-  questDeleteApprovalTool,
+  questQueryApprovalTool,
+  questRequestTaskApprovalTool,
 } from './approval/index.js';
 
 import {
@@ -79,39 +72,32 @@ export const allTools: Tool[] = [
   questListAgentsTool,
   questAgentHeartbeatTool,
 
-  // Quest tools (10)
-  questCreateTool,
-  questCreateFromTemplateTool,
-  questGetDetailsTool,
-  questGetStatusTool,
-  questListTool,
-  questListTemplatesTool,
-  questCancelQuestTool,
+  // Quest tools (6)
+  questCreateQuestTool,
+  questQueryQuestTool,
+  questListQuestTool,
+  questArchiveQuestTool,
   questDeleteQuestTool,
-  questClearCompletedTool,
-  questReviseTool,
+  questUpdateQuestTool,
 
-  // Task tools (14)
-  questAssignTasksTool,
-  questGetTaskDetailsTool,
-  questUpdateTaskStatusTool,
-  questQueryTasksTool,
+  // Task tools (11)
+  questAssignTaskTool,
+  questQueryTaskTool,
   questUpdateTaskTool,
   questDeleteTaskTool,
   questSubmitTaskResultTool,
   questVerifyTaskTool,
   questLogImplementationTool,
-  questSplitTasksTool,
+  questSplitTaskTool,
   questPlanTaskTool,
   questAnalyzeTaskTool,
   questReflectTaskTool,
-  questResearchModeTool,
 
   // Approval tools (4)
-  questRequestApprovalTool,
+  questRequestQuestApprovalTool,
   questSubmitApprovalTool,
-  questApprovalStatusTool,
-  questDeleteApprovalTool,
+  questQueryApprovalTool,
+  questRequestTaskApprovalTool,
 
   // Workflow tools (1)
   questWorkflowGuideTool,
@@ -128,38 +114,31 @@ export const toolCategories = {
     questAgentHeartbeatTool,
   ],
   quest: [
-    questCreateTool,
-    questCreateFromTemplateTool,
-    questGetDetailsTool,
-    questGetStatusTool,
-    questListTool,
-    questListTemplatesTool,
-    questCancelQuestTool,
+    questCreateQuestTool,
+    questQueryQuestTool,
+    questListQuestTool,
+    questArchiveQuestTool,
     questDeleteQuestTool,
-    questClearCompletedTool,
-    questReviseTool,
+    questUpdateQuestTool,
   ],
   task: [
-    questAssignTasksTool,
-    questGetTaskDetailsTool,
-    questUpdateTaskStatusTool,
-    questQueryTasksTool,
+    questAssignTaskTool,
+    questQueryTaskTool,
     questUpdateTaskTool,
     questDeleteTaskTool,
     questSubmitTaskResultTool,
     questVerifyTaskTool,
     questLogImplementationTool,
-    questSplitTasksTool,
+    questSplitTaskTool,
     questPlanTaskTool,
     questAnalyzeTaskTool,
     questReflectTaskTool,
-    questResearchModeTool,
   ],
   approval: [
-    questRequestApprovalTool,
+    questRequestQuestApprovalTool,
     questSubmitApprovalTool,
-    questApprovalStatusTool,
-    questDeleteApprovalTool,
+    questQueryApprovalTool,
+    questRequestTaskApprovalTool,
   ],
   workflow: [
     questWorkflowGuideTool,

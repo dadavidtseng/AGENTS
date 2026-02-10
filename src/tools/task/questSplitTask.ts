@@ -1,5 +1,5 @@
 /**
- * quest_split_tasks MCP Tool
+ * quest_split_task MCP Tool
  * Splits approved quest into executable tasks with pre-generated task list
  */
 
@@ -12,8 +12,8 @@ import type { Task } from '../../types';
 /**
  * Tool definition for MCP protocol
  */
-export const questSplitTasksTool: Tool = {
-  name: 'quest_split_tasks',
+export const questSplitTaskTool: Tool = {
+  name: 'quest_split_task',
   description: `Split approved quest into executable tasks (Step 4 of four-step workflow).
 
 **Purpose:**
@@ -23,7 +23,7 @@ Creates executable tasks in the system with analysis and reflection data attache
 1. quest_plan_task (Get planning prompt)
 2. quest_analyze_task (Analyze task concepts)
 3. quest_reflect_task (Critical review)
-4. **quest_split_tasks** ← You are here (Create tasks with analysis)
+4. **quest_split_task** ← You are here (Create tasks with analysis)
 
 **When to Use:**
 - After quest_reflect_task returns reflection results
@@ -51,9 +51,9 @@ Each task will be created with:
 
 **Next Steps:**
 After tasks are created, you can:
-- Assign tasks to agents using quest_assign_tasks
+- Assign tasks to agents using quest_assign_task
 - Execute tasks using quest_execute_task
-- Monitor task progress using quest_get_status`,
+- Monitor task progress using quest_query_quest`,
   inputSchema: {
     type: 'object',
     properties: {
@@ -96,9 +96,9 @@ After tasks are created, you can:
 };
 
 /**
- * Input parameters for quest_split_tasks tool
+ * Input parameters for quest_split_task tool
  */
-interface QuestSplitTasksInput {
+interface QuestSplitTaskInput {
   questId: string;
   tasks: Array<{
     name: string;
@@ -128,11 +128,11 @@ function generateDependencyGraph(tasks: Task[]): string {
 }
 
 /**
- * Handle quest_split_tasks tool call
+ * Handle quest_split_task tool call
  */
-export async function handleQuestSplitTasks(args: unknown) {
+export async function handleQuestSplitTask(args: unknown) {
   // Validate input
-  const input = args as QuestSplitTasksInput;
+  const input = args as QuestSplitTaskInput;
 
   if (!input.questId) {
     throw new Error('questId is required');
@@ -194,14 +194,14 @@ export async function handleQuestSplitTasks(args: unknown) {
   });
 
   // Build name-to-ID mapping for dependency resolution
-  console.log('[quest_split_tasks] Building task name-to-ID mapping...');
+  console.log('[quest_split_task] Building task name-to-ID mapping...');
   const taskNameToIdMap = new Map<string, string>();
   tasks.forEach((task) => {
     taskNameToIdMap.set(task.name, task.id);
   });
 
   // Resolve dependencies: convert task names to task IDs
-  console.log('[quest_split_tasks] Resolving dependencies...');
+  console.log('[quest_split_task] Resolving dependencies...');
   for (const task of tasks) {
     const resolvedDependencies: string[] = [];
 
@@ -215,9 +215,9 @@ export async function handleQuestSplitTasks(args: unknown) {
         if (taskNameToIdMap.has(dep)) {
           const resolvedId = taskNameToIdMap.get(dep)!;
           resolvedDependencies.push(resolvedId);
-          console.log(`[quest_split_tasks] Resolved dependency "${dep}" to ${resolvedId}`);
+          console.log(`[quest_split_task] Resolved dependency "${dep}" to ${resolvedId}`);
         } else {
-          console.warn(`[quest_split_tasks] Warning: Dependency "${dep}" not found in task list, skipping`);
+          console.warn(`[quest_split_task] Warning: Dependency "${dep}" not found in task list, skipping`);
           // Skip this dependency - validation will catch if it's critical
         }
       }
@@ -227,7 +227,7 @@ export async function handleQuestSplitTasks(args: unknown) {
   }
 
   // Validate dependencies (now all should be UUIDs)
-  console.log('[quest_split_tasks] Validating dependencies...');
+  console.log('[quest_split_task] Validating dependencies...');
   const validation = TaskModel.validateDependencies(tasks);
 
   if (!validation.valid) {
@@ -264,6 +264,7 @@ export async function handleQuestSplitTasks(args: unknown) {
             })),
             dependencyGraph,
             message: `Quest "${quest.questName}" split into ${tasks.length} tasks`,
+            nextStep: `Tasks have been created. Next, call quest_list_agents to see available worker agents, then call quest_assign_task with questId "${quest.questId}" to assign tasks to agents based on their capabilities.`,
           },
           null,
           2

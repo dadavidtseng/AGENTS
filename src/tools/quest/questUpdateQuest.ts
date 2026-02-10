@@ -1,5 +1,5 @@
 /**
- * quest_revise MCP Tool
+ * quest_update_quest MCP Tool
  * Revises quest requirements and design with pre-generated revised content
  */
 
@@ -9,8 +9,8 @@ import { QuestModel } from '../../models/questModel.js';
 /**
  * Tool definition for MCP protocol
  */
-export const questReviseTool: Tool = {
-  name: 'quest_revise',
+export const questUpdateQuestTool: Tool = {
+  name: 'quest_update_quest',
   description: 'Revise quest requirements and design with pre-generated revised content',
   inputSchema: {
     type: 'object',
@@ -37,9 +37,9 @@ export const questReviseTool: Tool = {
 };
 
 /**
- * Input parameters for quest_revise tool
+ * Input parameters for quest_update_quest tool
  */
-interface QuestReviseInput {
+interface QuestUpdateQuestInput {
   questId: string;
   feedback: string;
   revisedRequirements: string;
@@ -47,11 +47,11 @@ interface QuestReviseInput {
 }
 
 /**
- * Handle quest_revise tool call
+ * Handle quest_update_quest tool call
  */
-export async function handleQuestRevise(args: unknown) {
+export async function handleQuestUpdateQuest(args: unknown) {
   // Validate input
-  const input = args as QuestReviseInput;
+  const input = args as QuestUpdateQuestInput;
 
   if (!input.questId) {
     throw new Error('questId is required');

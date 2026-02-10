@@ -1,5 +1,5 @@
 /**
- * quest_list MCP Tool
+ * quest_list_quest MCP Tool
  * Lists all quests with optional filters and pagination
  */
 
@@ -10,8 +10,8 @@ import type { QuestStatus } from '../../types';
 /**
  * Tool definition for MCP protocol
  */
-export const questListTool: Tool = {
-  name: 'quest_list',
+export const questListQuestTool: Tool = {
+  name: 'quest_list_quest',
   description: `List all quests with optional filters and pagination.
 
 **Usage Guidelines:**
@@ -58,9 +58,9 @@ export const questListTool: Tool = {
 };
 
 /**
- * Input parameters for quest_list tool
+ * Input parameters for quest_list_quest tool
  */
-interface QuestListInput {
+interface QuestListQuestInput {
   status?: QuestStatus;
   limit?: number;
   offset?: number;
@@ -79,11 +79,11 @@ interface QuestSummary {
 }
 
 /**
- * Handle quest_list tool call
+ * Handle quest_list_quest tool call
  */
-export async function handleQuestList(args: unknown) {
+export async function handleQuestListQuest(args: unknown) {
   // Parse and validate input
-  const input = (args as QuestListInput) || {};
+  const input = (args as QuestListQuestInput) || {};
 
   // Validate limit
   const limit = input.limit !== undefined ? input.limit : 50;

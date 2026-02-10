@@ -22,40 +22,33 @@ import {
 } from '../tools/agent/index.js';
 
 import {
-  handleQuestCreate,
-  handleQuestCreateFromTemplate,
-  handleQuestGetDetails,
-  handleQuestGetStatus,
-  handleQuestList,
-  handleQuestListTemplates,
-  handleQuestCancelQuest,
+  handleQuestCreateQuest,
+  handleQuestQueryQuest,
+  handleQuestListQuest,
+  handleQuestArchiveQuest,
   handleQuestDeleteQuest,
-  handleQuestClearCompleted,
-  handleQuestRevise,
+  handleQuestUpdateQuest,
 } from '../tools/quest/index.js';
 
 import {
-  handleQuestAssignTasks,
-  handleQuestGetTaskDetails,
-  handleQuestUpdateTaskStatus,
-  handleQuestQueryTasks,
+  handleQuestAssignTask,
+  handleQuestQueryTask,
   handleQuestUpdateTask,
   handleQuestDeleteTask,
   handleQuestSubmitTaskResult,
   handleQuestVerifyTask,
   handleQuestLogImplementation,
-  handleQuestSplitTasks,
+  handleQuestSplitTask,
   handleQuestPlanTask,
   handleQuestAnalyzeTask,
   handleQuestReflectTask,
-  handleQuestResearchMode,
 } from '../tools/task/index.js';
 
 import {
-  handleQuestRequestApproval,
+  handleQuestRequestQuestApproval,
   handleQuestSubmitApproval,
-  handleQuestApprovalStatus,
-  handleQuestDeleteApproval,
+  handleQuestQueryApproval,
+  handleQuestRequestTaskApproval,
 } from '../tools/approval/index.js';
 
 import {
@@ -96,35 +89,29 @@ export async function startMCPServer() {
 
     try {
       switch (name) {
-        case 'quest_create':
-          return await handleQuestCreate(args);
+        case 'quest_create_quest':
+          return await handleQuestCreateQuest(args);
 
-        case 'quest_revise':
-          return await handleQuestRevise(args);
+        case 'quest_update_quest':
+          return await handleQuestUpdateQuest(args);
 
-        case 'quest_request_approval':
-          return await handleQuestRequestApproval(args);
+        case 'quest_request_quest_approval':
+          return await handleQuestRequestQuestApproval(args);
 
         case 'quest_submit_approval':
           return await handleQuestSubmitApproval(args);
 
-        case 'quest_split_tasks':
-          return await handleQuestSplitTasks(args);
+        case 'quest_split_task':
+          return await handleQuestSplitTask(args);
 
-        case 'quest_list':
-          return await handleQuestList(args);
+        case 'quest_list_quest':
+          return await handleQuestListQuest(args);
 
-        case 'quest_get_details':
-          return await handleQuestGetDetails(args);
+        case 'quest_query_quest':
+          return await handleQuestQueryQuest(args);
 
-        case 'quest_assign_tasks':
-          return await handleQuestAssignTasks(args);
-
-        case 'quest_get_task_details':
-          return await handleQuestGetTaskDetails(args);
-
-        case 'quest_update_task_status':
-          return await handleQuestUpdateTaskStatus(args);
+        case 'quest_assign_task':
+          return await handleQuestAssignTask(args);
 
         case 'quest_submit_task_result':
           return await handleQuestSubmitTaskResult(args);
@@ -138,14 +125,8 @@ export async function startMCPServer() {
         case 'quest_list_agents':
           return await handleQuestListAgents(args);
 
-        case 'quest_create_from_template':
-          return await handleQuestCreateFromTemplate(args);
-
-        case 'quest_list_templates':
-          return await handleQuestListTemplates(args);
-
-        case 'quest_cancel_quest':
-          return await handleQuestCancelQuest(args);
+        case 'quest_archive_quest':
+          return await handleQuestArchiveQuest(args);
 
         case 'quest_delete_quest':
           return await handleQuestDeleteQuest(args);
@@ -156,14 +137,11 @@ export async function startMCPServer() {
         case 'quest_log_implementation':
           return await handleQuestLogImplementation(args || {});
 
-        case 'quest_get_status':
-          return await handleQuestGetStatus(args);
+        case 'quest_query_approval':
+          return await handleQuestQueryApproval(args);
 
-        case 'quest_approval_status':
-          return await handleQuestApprovalStatus(args);
-
-        case 'quest_delete_approval':
-          return await handleQuestDeleteApproval(args);
+        case 'quest_request_task_approval':
+          return await handleQuestRequestTaskApproval(args);
 
         case 'quest_analyze_task':
           return await handleQuestAnalyzeTask(args || {});
@@ -171,17 +149,14 @@ export async function startMCPServer() {
         case 'quest_plan_task':
           return await handleQuestPlanTask(args || {});
 
-        case 'quest_query_tasks':
-          return await handleQuestQueryTasks(args || {});
+        case 'quest_query_task':
+          return await handleQuestQueryTask(args || {});
 
         case 'quest_update_task':
           return await handleQuestUpdateTask(args || {});
 
         case 'quest_reflect_task':
           return await handleQuestReflectTask(args || {});
-
-        case 'quest_clear_completed':
-          return await handleQuestClearCompleted(args || {});
 
         case 'quest_agent_heartbeat':
           return await handleQuestAgentHeartbeat(args || {});
@@ -191,9 +166,6 @@ export async function startMCPServer() {
 
         case 'quest_workflow_guide':
           return await handleQuestWorkflowGuide();
-
-        case 'quest_research_mode':
-          return await handleQuestResearchMode(args || {});
 
         default:
           throw new Error(`Unknown tool: ${name}`);

@@ -8,7 +8,7 @@ import { QuestModel } from '../../models/questModel.js';
 import type { TaskStatus } from '../../types/index.js';
 import { commitQuestChanges } from '../../utils/git.js';
 import { config } from '../../utils/config.js';
-import { broadcastQuestUpdated } from '../../dashboard/events.js';
+import { broadcastQuestUpdated } from '../../events/broadcast.js';
 
 /**
  * Tool definition for MCP protocol

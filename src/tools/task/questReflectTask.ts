@@ -43,7 +43,7 @@ Provides quality assessment and improvement suggestions for task concepts BEFORE
 1. quest_plan_task (Get planning prompt)
 2. quest_analyze_task (Analyze task concepts)
 3. **quest_reflect_task** ← You are here (Critical review)
-4. quest_split_tasks (Create tasks with analysis)
+4. quest_split_task (Create tasks with analysis)
 
 **When to Use:**
 - After quest_analyze_task returns analysis results
@@ -81,7 +81,7 @@ Provides quality assessment and improvement suggestions for task concepts BEFORE
    - Alternative approaches to consider
 
 **Next Steps:**
-After reflection, you MUST call quest_split_tasks with:
+After reflection, you MUST call quest_split_task with:
 - tasks: Array of task objects with all details
 - globalAnalysisResult: Combined analysis and reflection results
 
@@ -240,7 +240,7 @@ export async function handleQuestReflectTask(args: unknown) {
     insights,
   };
 
-  // Generate prompt for next step (quest_split_tasks)
+  // Generate prompt for next step (quest_split_task)
   const splitTasksPrompt = `# Task Reflection Complete
 
 ## Reflection Summary
@@ -278,7 +278,7 @@ ${avgQuality >= 3.5
 
 ## Next Step: Create Tasks
 
-Now you MUST call **quest_split_tasks** with:
+Now you MUST call **quest_split_task** with:
 - **questId:** The quest ID from quest_plan_task
 - **tasks:** Array of task objects with complete details:
   - name, description, implementationGuide, verificationCriteria
@@ -300,7 +300,7 @@ The globalAnalysisResult will be stored in each task's analysis field for refere
             success: true,
             reflection: reflectionData,
             prompt: splitTasksPrompt,
-            nextStep: 'quest_split_tasks',
+            nextStep: 'quest_split_task',
             recommendation: avgQuality >= 3.5
               ? 'Proceed with implementation, addressing suggested improvements'
               : 'Revise approach before implementation',

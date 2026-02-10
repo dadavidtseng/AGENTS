@@ -1,5 +1,5 @@
 /**
- * quest_assign_tasks MCP Tool
+ * quest_assign_task MCP Tool
  * Assigns tasks to agents based on capabilities and availability
  */
 
@@ -11,8 +11,8 @@ import type { Agent, AgentRole, Task } from '../../types';
 /**
  * Tool definition for MCP protocol
  */
-export const questAssignTasksTool: Tool = {
-  name: 'quest_assign_tasks',
+export const questAssignTaskTool: Tool = {
+  name: 'quest_assign_task',
   description: 'Assign tasks to agents based on capabilities and availability. Only assigns tasks with all dependencies completed (status=completed). Tasks with unresolved dependencies are skipped with clear feedback.',
   inputSchema: {
     type: 'object',
@@ -46,9 +46,9 @@ export const questAssignTasksTool: Tool = {
 };
 
 /**
- * Input parameters for quest_assign_tasks tool
+ * Input parameters for quest_assign_task tool
  */
-interface QuestAssignTasksInput {
+interface QuestAssignTaskInput {
   questId: string;
   assignments?: Array<{
     taskId: string;
@@ -154,11 +154,11 @@ function findBestAgent(task: Task, agents: Agent[]): Agent | null {
 }
 
 /**
- * Handle quest_assign_tasks tool call
+ * Handle quest_assign_task tool call
  */
-export async function handleQuestAssignTasks(args: unknown) {
+export async function handleQuestAssignTask(args: unknown) {
   // Validate input
-  const input = args as QuestAssignTasksInput;
+  const input = args as QuestAssignTaskInput;
   
   if (!input.questId) {
     throw new Error('questId is required');
@@ -299,6 +299,9 @@ export async function handleQuestAssignTasks(args: unknown) {
             total: results.length,
             assignments: results,
             message: `Assigned ${assignedCount} out of ${results.length} tasks`,
+            nextStep: unassignedCount > 0
+              ? `${unassignedCount} task(s) could not be assigned. Check agent availability with quest_list_agents and retry, or inform the user that some tasks need manual assignment.`
+              : `All tasks have been assigned. Inform the user of the assignments. Task execution will proceed automatically — worker agents will pick up their assigned tasks.`,
           },
           null,
           2

@@ -1,5 +1,5 @@
 /**
- * quest_query_tasks Tool
+ * quest_query_task Tool
  * Search and filter tasks across all quests
  */
 
@@ -9,13 +9,15 @@ import { QuestModel } from '../../models/questModel.js';
 import type { Task, TaskStatus } from '../../types/index.js';
 
 const InputSchema = z.object({
+  taskId: z.string().uuid().optional().describe('Get specific task by ID with full details and quest context (optional)'),
   query: z
     .string()
     .min(1)
-    .describe('Search query: task ID (UUID) or keywords to search in task name/description'),
+    .optional()
+    .describe('Search query: keywords to search in task name/description (optional, ignored if taskId is provided)'),
   questId: z.string().uuid().optional().describe('Filter by specific quest (optional)'),
   status: z
-    .enum(['pending', 'in_progress', 'completed', 'failed'])
+    .enum(['pending', 'assigned', 'in_progress', 'pending_approval', 'completed', 'failed'])
     .optional()
     .describe('Filter by task status (optional)'),
   agentId: z.string().optional().describe('Filter by assigned agent (optional)'),
@@ -34,66 +36,40 @@ const InputSchema = z.object({
     .max(20)
     .optional()
     .default(10)
-    .describe('Number of results per page (default: 10, max: 20)'),
+    .describe('Results per page (default: 10, max: 20)'),
 });
 
 type Input = z.infer<typeof InputSchema>;
 
-export const questQueryTasksTool: Tool = {
-  name: 'quest_query_tasks',
-  description: `Search and filter tasks across all quests.
+export const questQueryTaskTool: Tool = {
+  name: 'quest_query_task',
+  description: `Query tasks: get a specific task by ID or search/filter tasks across quests.
 
-**Purpose:**
-Find tasks by keyword, task ID, or filters. Useful for discovering tasks across multiple quests.
+**Mode 1: Get Task by ID** (provide taskId)
+Returns full task details with quest context (requirements, design).
+Use when you know the exact task ID.
 
-**Search Modes:**
+**Mode 2: Search Tasks** (provide query and/or filters)
+Search by keywords or filter by status/agent/quest.
+Use for discovering tasks across quests.
 
-1. **Task ID Search** (exact match):
-   - Provide full UUID: "abc-123-def-456"
-   - Returns exact task if found
-
-2. **Keyword Search** (fuzzy match):
-   - Search in task name and description
-   - Multiple keywords: "authentication JWT token"
-   - Case-insensitive matching
-
-**Filters:**
-
-- **questId**: Limit search to specific quest
-- **status**: Filter by task status (pending, in_progress, completed, failed)
-- **agentId**: Filter by assigned agent
-
-**Pagination:**
-
-- **page**: Page number (default: 1)
-- **pageSize**: Results per page (default: 10, max: 20)
-
-**Use Cases:**
-
-- "Find all tasks related to authentication"
-- "Show me all pending tasks"
-- "Find tasks assigned to agent-123"
-- "Search for task abc-123-def"
-- "Show all failed tasks across all quests"
-
-**Returns:**
-
-- Matching tasks with quest context
-- Pagination info (total, pages, current page)
-- Task summaries (name, status, quest, agent)
-
-**Example Queries:**
-
-- query: "database migration" → Find tasks about database
-- query: "abc-123", questId: "xyz-789" → Find specific task in quest
-- status: "failed" → Find all failed tasks
-- agentId: "agent-1", status: "in_progress" → Find agent's active tasks`,
+**Parameters:**
+- taskId (optional): Get specific task with full details and quest context
+- query (optional): Search keywords (ignored if taskId provided)
+- questId (optional): Filter by quest
+- status (optional): Filter by status (pending, assigned, in_progress, completed, failed)
+- agentId (optional): Filter by assigned agent
+- page/pageSize: Pagination for search results`,
   inputSchema: {
     type: 'object',
     properties: {
+      taskId: {
+        type: 'string',
+        description: 'Get specific task by ID with full details (optional)',
+      },
       query: {
         type: 'string',
-        description: 'Search query (task ID or keywords)',
+        description: 'Search keywords (optional, ignored if taskId provided)',
       },
       questId: {
         type: 'string',
@@ -101,7 +77,7 @@ Find tasks by keyword, task ID, or filters. Useful for discovering tasks across 
       },
       status: {
         type: 'string',
-        enum: ['pending', 'in_progress', 'completed', 'failed'],
+        enum: ['pending', 'assigned', 'in_progress', 'pending_approval', 'completed', 'failed'],
         description: 'Filter by task status (optional)',
       },
       agentId: {
@@ -117,7 +93,7 @@ Find tasks by keyword, task ID, or filters. Useful for discovering tasks across 
         description: 'Results per page (default: 10, max: 20)',
       },
     },
-    required: ['query'],
+    required: [],
   },
 };
 
@@ -128,9 +104,21 @@ interface TaskSearchResult {
   questStatus: string;
 }
 
-export async function handleQuestQueryTasks(args: unknown) {
+export async function handleQuestQueryTask(args: unknown) {
   // Validate input
   const input = InputSchema.parse(args) as Input;
+
+  // Mode 1: Get specific task by ID
+  if (input.taskId) {
+    return await handleGetTaskById(input.taskId);
+  }
+
+  // Mode 2: Search/filter tasks (need at least query or a filter)
+  if (!input.query && !input.questId && !input.status && !input.agentId) {
+    throw new Error('Provide taskId for specific task, or query/questId/status/agentId for search');
+  }
+
+  const searchQuery = input.query || '*';
 
   // Load all quests (or specific quest if filtered)
   let quests;
@@ -143,7 +131,7 @@ export async function handleQuestQueryTasks(args: unknown) {
 
   // Determine if query is a UUID (task ID search)
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const isTaskIdSearch = uuidRegex.test(input.query);
+  const isTaskIdSearch = uuidRegex.test(searchQuery);
 
   // Search tasks across quests
   const allResults: TaskSearchResult[] = [];
@@ -154,10 +142,13 @@ export async function handleQuestQueryTasks(args: unknown) {
 
       // Task ID search (exact match)
       if (isTaskIdSearch) {
-        matches = task.id.toLowerCase() === input.query.toLowerCase();
+        matches = task.id.toLowerCase() === searchQuery.toLowerCase();
+      } else if (searchQuery === '*') {
+        // No query filter — match all (rely on status/agent/quest filters)
+        matches = true;
       } else {
         // Keyword search (case-insensitive, in name and description)
-        const queryLower = input.query.toLowerCase();
+        const queryLower = searchQuery.toLowerCase();
         const keywords = queryLower.split(/\s+/);
         const searchText = `${task.name} ${task.description}`.toLowerCase();
 
@@ -227,8 +218,8 @@ export async function handleQuestQueryTasks(args: unknown) {
         text: JSON.stringify(
           {
             success: true,
-            query: input.query,
-            searchMode: isTaskIdSearch ? 'taskId' : 'keyword',
+            query: searchQuery,
+            searchMode: isTaskIdSearch ? 'taskId' : (searchQuery === '*' ? 'filter' : 'keyword'),
             filters: {
               questId: input.questId,
               status: input.status,
@@ -243,7 +234,7 @@ export async function handleQuestQueryTasks(args: unknown) {
               hasPreviousPage: input.page > 1,
             },
             tasks,
-            message: `Found ${totalResults} task(s) matching query "${input.query}". Showing page ${input.page} of ${totalPages}.`,
+            message: `Found ${totalResults} task(s)${searchQuery !== '*' ? ` matching "${searchQuery}"` : ''}. Showing page ${input.page} of ${totalPages}.`,
           },
           null,
           2
@@ -251,4 +242,59 @@ export async function handleQuestQueryTasks(args: unknown) {
       },
     ],
   };
+}
+
+/**
+ * Get specific task by ID with full details and quest context
+ * (Migrated from former quest_get_task_details tool)
+ */
+async function handleGetTaskById(taskId: string) {
+  // Search for task across all quests
+  const allQuests = await QuestModel.listAll();
+
+  for (const quest of allQuests) {
+    const task = quest.tasks.find((t) => t.id === taskId);
+    if (task) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                task: {
+                  ...task,
+                  createdAt: typeof task.createdAt === 'string'
+                    ? task.createdAt
+                    : task.createdAt.toISOString(),
+                  updatedAt: typeof task.updatedAt === 'string'
+                    ? task.updatedAt
+                    : task.updatedAt.toISOString(),
+                  startedAt: task.startedAt
+                    ? (typeof task.startedAt === 'string'
+                      ? task.startedAt
+                      : task.startedAt.toISOString())
+                    : undefined,
+                  completedAt: task.completedAt
+                    ? (typeof task.completedAt === 'string'
+                      ? task.completedAt
+                      : task.completedAt.toISOString())
+                    : undefined,
+                },
+                questContext: {
+                  questId: quest.questId,
+                  questName: quest.questName,
+                  requirements: quest.requirements,
+                  design: quest.design,
+                },
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+  }
+
+  throw new Error(`Task with ID '${taskId}' not found in any quest`);
 }

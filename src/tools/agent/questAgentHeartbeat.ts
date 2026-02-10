@@ -7,7 +7,7 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { AgentModel } from '../../models/agentModel.js';
 import type { AgentStatus } from '../../types/index.js';
-import { broadcastQuestUpdated } from '../../dashboard/events.js';
+import { broadcastQuestUpdated } from '../../events/broadcast.js';
 
 /**
  * Tool definition for MCP protocol

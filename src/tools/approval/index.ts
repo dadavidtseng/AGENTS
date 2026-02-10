@@ -4,7 +4,7 @@
  * Tools for managing quest approval workflow
  */
 
-export { questRequestApprovalTool, handleQuestRequestApproval } from './questRequestApproval.js';
+export { questRequestQuestApprovalTool, handleQuestRequestQuestApproval } from './questRequestQuestApproval.js';
 export { questSubmitApprovalTool, handleQuestSubmitApproval } from './questSubmitApproval.js';
-export { questApprovalStatusTool, handleQuestApprovalStatus } from './questApprovalStatus.js';
-export { questDeleteApprovalTool, handleQuestDeleteApproval } from './questDeleteApproval.js';
+export { questQueryApprovalTool, handleQuestQueryApproval } from './questQueryApproval.js';
+export { questRequestTaskApprovalTool, handleQuestRequestTaskApproval } from './questRequestTaskApproval.js';

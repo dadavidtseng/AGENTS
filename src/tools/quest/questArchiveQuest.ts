@@ -1,5 +1,5 @@
 /**
- * quest_cancel_quest MCP Tool
+ * quest_archive_quest MCP Tool
  * Cancels a quest without deleting it, preserving history for later review
  */
 
@@ -8,13 +8,13 @@ import { QuestModel } from '../../models/questModel.js';
 import type { QuestStatus } from '../../types/index.js';
 import { commitQuestChanges } from '../../utils/git.js';
 import { config } from '../../utils/config.js';
-import { broadcastQuestUpdated } from '../../dashboard/events.js';
+import { broadcastQuestUpdated } from '../../events/broadcast.js';
 
 /**
  * Tool definition for MCP protocol
  */
-export const questCancelQuestTool: Tool = {
-  name: 'quest_cancel_quest',
+export const questArchiveQuestTool: Tool = {
+  name: 'quest_archive_quest',
   description: `Cancel a quest without deleting it, preserving history for later review.
 
 **Usage Guidelines:**
@@ -50,9 +50,9 @@ export const questCancelQuestTool: Tool = {
 };
 
 /**
- * Input parameters for quest_cancel_quest tool
+ * Input parameters for quest_archive_quest tool
  */
-interface QuestCancelQuestInput {
+interface QuestArchiveQuestInput {
   questId: string;
   reason?: string;
 }
@@ -66,11 +66,11 @@ function canCancelQuest(status: QuestStatus): boolean {
 }
 
 /**
- * Handle quest_cancel_quest tool call
+ * Handle quest_archive_quest tool call
  */
-export async function handleQuestCancelQuest(args: unknown) {
+export async function handleQuestArchiveQuest(args: unknown) {
   // Validate input
-  const input = args as QuestCancelQuestInput;
+  const input = args as QuestArchiveQuestInput;
 
   if (!input.questId) {
     throw new Error('questId is required');

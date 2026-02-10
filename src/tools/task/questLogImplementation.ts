@@ -9,7 +9,7 @@ import { ImplementationLogModel } from '../../models/implementationLogModel.js';
 import { QuestModel } from '../../models/questModel.js';
 import { commitQuestChanges } from '../../utils/git.js';
 import { config } from '../../utils/config.js';
-import { broadcastQuestUpdated } from '../../dashboard/events.js';
+import { broadcastQuestUpdated } from '../../events/broadcast.js';
 
 // Zod schemas for validation
 const ApiEndpointSchema = z.object({
@@ -184,7 +184,7 @@ Document frontend-backend integrations:
 ✅ GOOD (specific, searchable, complete):
 \`\`\`json
 {
-  "summary": "Implemented quest_cancel_quest tool with status validation and metadata tracking",
+  "summary": "Implemented quest_archive_quest tool with status validation and metadata tracking",
   "details": "Created questCancelQuest.ts tool that validates quest status before cancellation. Only allows cancelling draft/pending_approval/approved/in_progress quests. Prevents duplicate cancellation. Stores cancellation metadata (reason, timestamp, previous status) in quest.metadata.cancellation. Broadcasts updates via WebSocket. Commits changes to git.",
   "artifacts": {
     "functions": [{
@@ -197,7 +197,7 @@ Document frontend-backend integrations:
     "integrations": [{
       "description": "Quest cancellation flow",
       "frontendComponent": "QuestActions (src/components/QuestActions.tsx)",
-      "backendEndpoint": "quest_cancel_quest MCP tool",
+      "backendEndpoint": "quest_archive_quest MCP tool",
       "dataFlow": "User clicks cancel → MCP tool call → Status validation → Metadata update → QuestModel.save() → Git commit → WebSocket broadcast"
     }]
   },

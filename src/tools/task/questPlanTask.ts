@@ -30,7 +30,7 @@ Provides comprehensive planning context including quest requirements, design spe
 1. **quest_plan_task** ← You are here (Get planning prompt)
 2. quest_analyze_task (Deep technical analysis)
 3. quest_reflect_task (Critical review and improvements)
-4. quest_split_tasks (Create final task list)
+4. quest_split_task (Create final task list)
 
 **When to Use:**
 - At the start of task generation workflow
@@ -56,7 +56,7 @@ After receiving the planning prompt:
 1. Use LLM to analyze and create initial task breakdown
 2. Call quest_analyze_task for each task
 3. Call quest_reflect_task to review approach
-4. Call quest_split_tasks to finalize tasks`,
+4. Call quest_split_task to finalize tasks`,
   inputSchema: {
     type: 'object',
     properties: {
@@ -238,8 +238,8 @@ You MUST execute ALL four steps of the workflow in order:
   - improvements: List concrete improvement suggestions
 - This works with CONCEPTS before tasks exist (no questId/taskId required)
 
-**Step 4: quest_split_tasks** (REQUIRED AFTER REFLECT)
-- You MUST call quest_split_tasks with:
+**Step 4: quest_split_task** (REQUIRED AFTER REFLECT)
+- You MUST call quest_split_task with:
   - questId: "${quest.questId}"
   - tasks: Array of task objects with all details
   - globalAnalysisResult: Combined analysis and reflection results (text from steps 2 and 3)
@@ -263,7 +263,7 @@ You MUST execute ALL four steps of the workflow in order:
               '1. Use LLM to analyze the planning prompt and create initial task breakdown',
               '2. For each task, call quest_analyze_task to perform deep technical analysis',
               '3. Call quest_reflect_task to critically review the approach',
-              '4. Call quest_split_tasks with final task array to create tasks in the system',
+              '4. Call quest_split_task with final task array to create tasks in the system',
             ],
             message: `Planning prompt generated for quest "${quest.questName}". Use this prompt with LLM to create structured task breakdown, then proceed with analyze → reflect → split workflow.`,
           },

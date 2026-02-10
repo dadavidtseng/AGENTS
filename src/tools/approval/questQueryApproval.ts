@@ -1,5 +1,5 @@
 /**
- * quest_approval_status Tool
+ * quest_query_approval Tool
  * Check approval status without modifying anything, separate from submission
  */
 
@@ -10,15 +10,15 @@ import type { ApprovalDecision, QuestStatus } from '../../types/index.js';
 /**
  * Tool definition for MCP protocol
  */
-export const questApprovalStatusTool: Tool = {
-  name: 'quest_approval_status',
+export const questQueryApprovalTool: Tool = {
+  name: 'quest_query_approval',
   description: `Check approval status without modifying anything.
 
 **Usage Guidelines:**
 Use this tool to poll approval status separately from submission. This is a read-only operation that does not modify quest state.
 
 **When to Use:**
-- After calling quest_request_approval, poll this tool to check status
+- After calling quest_request_quest_approval, poll this tool to check status
 - Monitor approval progress without making changes
 - Check approval history for a quest
 - Determine if quest is ready to proceed after approval
@@ -53,18 +53,18 @@ Use this tool to poll approval status separately from submission. This is a read
 };
 
 /**
- * Input type for quest_approval_status
+ * Input type for quest_query_approval
  */
-interface QuestApprovalStatusInput {
+interface QuestQueryApprovalInput {
   questId: string;
 }
 
 /**
- * Handle quest_approval_status tool call
+ * Handle quest_query_approval tool call
  */
-export async function handleQuestApprovalStatus(args: unknown) {
+export async function handleQuestQueryApproval(args: unknown) {
   // Validate input
-  const input = args as QuestApprovalStatusInput;
+  const input = args as QuestQueryApprovalInput;
 
   if (!input.questId) {
     throw new Error('questId is required');
@@ -104,28 +104,28 @@ export async function handleQuestApprovalStatus(args: unknown) {
 
   if (isDraft) {
     nextSteps.push('Quest is in draft status');
-    nextSteps.push('Call quest_request_approval to submit for approval');
+    nextSteps.push('Call quest_request_quest_approval to submit for approval');
   } else if (isPending) {
     nextSteps.push('BLOCKED - Quest is pending approval');
     nextSteps.push('VERBAL APPROVAL NOT ACCEPTED');
     nextSteps.push('Approval must be done via Discord/Slack/Dashboard');
     nextSteps.push('Approver must call quest_submit_approval');
-    nextSteps.push('Continue polling with quest_approval_status');
+    nextSteps.push('Continue polling with quest_query_approval');
   } else if (isRejected) {
     nextSteps.push('BLOCKED - Quest was rejected');
     nextSteps.push('Review rejection feedback in approval history');
-    nextSteps.push('Call quest_revise to update requirements/design');
-    nextSteps.push('Resubmit for approval with quest_request_approval');
+    nextSteps.push('Call quest_update_quest to update requirements/design');
+    nextSteps.push('Resubmit for approval with quest_request_quest_approval');
     if (latestApproval?.feedback) {
       nextSteps.push(`Latest feedback: ${latestApproval.feedback}`);
     }
   } else if (canProceed) {
     nextSteps.push('APPROVED - Quest can proceed');
     if (currentStatus === 'approved') {
-      nextSteps.push('Call quest_split_tasks to break down into tasks');
+      nextSteps.push('Call quest_split_task to break down into tasks');
     } else if (currentStatus === 'in_progress') {
       nextSteps.push('Quest is currently being implemented');
-      nextSteps.push('Call quest_get_details to view task progress');
+      nextSteps.push('Call quest_query_quest with detail="full" to view task progress');
     } else if (currentStatus === 'completed') {
       nextSteps.push('Quest has been completed');
     }

@@ -8,17 +8,24 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { QuestModel } from '../../models/questModel.js';
 import { TaskModel } from '../../models/taskModel.js';
-import type { Task, RelatedFile } from '../../types/index.js';
+import { AgentModel } from '../../models/agentModel.js';
+import type { Task, TaskStatus, RelatedFile } from '../../types/index.js';
 import { commitQuestChanges } from '../../utils/git.js';
 import { config } from '../../utils/config.js';
-import { broadcastQuestUpdated } from '../../dashboard/events.js';
+import { broadcastQuestUpdated } from '../../events/broadcast.js';
 
 /**
  * Tool definition for MCP protocol
  */
 export const questUpdateTaskTool: Tool = {
   name: 'quest_update_task',
-  description: 'Update task details and metadata. Allows modifying task name, description, implementation guide, verification criteria, dependencies, and related files.',
+  description: `Update task details, metadata, and/or status.
+
+**Metadata updates:** Modify name, description, implementation guide, verification criteria, dependencies, related files.
+**Status updates:** Change task status (in_progress, completed, failed) with agent authorization.
+Both can be done in a single call.
+
+When updating status, agentId is required for authorization (must match assigned agent).`,
   inputSchema: {
     type: 'object',
     properties: {
@@ -31,6 +38,15 @@ export const questUpdateTaskTool: Tool = {
         type: 'string',
         format: 'uuid',
         description: 'Task ID to update',
+      },
+      status: {
+        type: 'string',
+        enum: ['in_progress', 'pending_approval', 'completed', 'failed'],
+        description: 'New task status (optional, requires agentId for authorization)',
+      },
+      agentId: {
+        type: 'string',
+        description: 'Agent ID for status update authorization (required when status is provided)',
       },
       name: {
         type: 'string',
@@ -94,6 +110,8 @@ const RelatedFileSchema = z.object({
 const InputSchema = z.object({
   questId: z.string().uuid(),
   taskId: z.string().uuid(),
+  status: z.enum(['in_progress', 'pending_approval', 'completed', 'failed']).optional(),
+  agentId: z.string().optional(),
   name: z.string().optional(),
   description: z.string().optional(),
   implementationGuide: z.string().optional(),
@@ -113,7 +131,7 @@ export async function handleQuestUpdateTask(args: unknown) {
   const input = InputSchema.parse(args);
 
   // Check if at least one field is being updated
-  const hasUpdates = 
+  const hasMetadataUpdates = 
     input.name !== undefined ||
     input.description !== undefined ||
     input.implementationGuide !== undefined ||
@@ -121,8 +139,15 @@ export async function handleQuestUpdateTask(args: unknown) {
     input.dependencies !== undefined ||
     input.relatedFiles !== undefined;
 
-  if (!hasUpdates) {
-    throw new Error('At least one field must be provided for update');
+  const hasStatusUpdate = input.status !== undefined;
+
+  if (!hasMetadataUpdates && !hasStatusUpdate) {
+    throw new Error('At least one field or status must be provided for update');
+  }
+
+  // Validate status update requirements
+  if (hasStatusUpdate && !input.agentId) {
+    throw new Error('agentId is required when updating status');
   }
 
   // Load quest
@@ -175,6 +200,46 @@ export async function handleQuestUpdateTask(args: unknown) {
   if (input.relatedFiles !== undefined) {
     changes.push(`relatedFiles updated (${input.relatedFiles.length} files)`);
     task.relatedFiles = input.relatedFiles as RelatedFile[];
+  }
+
+  // Handle status update
+  if (hasStatusUpdate && input.status && input.agentId) {
+    // Validate agent authorization
+    if (task.assignedAgent !== input.agentId) {
+      throw new Error(
+        `Agent '${input.agentId}' is not authorized to update this task (assigned to: ${task.assignedAgent || 'unassigned'})`
+      );
+    }
+
+    // Validate status transition
+    const validTransitions: Record<string, string[]> = {
+      pending: ['assigned', 'in_progress'],
+      assigned: ['in_progress', 'completed'],
+      in_progress: ['pending_approval', 'completed', 'failed'],
+      pending_approval: ['completed', 'failed', 'in_progress'],
+      completed: [],
+      failed: ['in_progress'],
+    };
+    const allowed = validTransitions[task.status] || [];
+    if (!allowed.includes(input.status)) {
+      throw new Error(
+        `Invalid status transition: ${task.status} → ${input.status}. Valid: ${allowed.join(', ') || 'none (terminal state)'}`
+      );
+    }
+
+    changes.push(`status: "${task.status}" → "${input.status}"`);
+
+    // Use TaskModel for status update (handles timestamps, quest status)
+    await TaskModel.updateStatus(task.id, quest.questId, input.status as TaskStatus);
+
+    // Remove from agent workload if terminal
+    if (input.status === 'completed' || input.status === 'failed') {
+      try {
+        await AgentModel.removeTaskFromAgent(input.agentId, task.id);
+      } catch (error) {
+        console.warn(`[quest_update_task] Failed to remove task from agent workload: ${error}`);
+      }
+    }
   }
 
   // Check if any changes were actually made

@@ -1,5 +1,5 @@
 /**
- * quest_request_approval MCP Tool
+ * quest_request_quest_approval MCP Tool
  * Requests human approval for quest plans with platform-formatted messages
  */
 
@@ -11,8 +11,8 @@ import type { Platform } from '../../types';
 /**
  * Tool definition for MCP protocol
  */
-export const questRequestApprovalTool: Tool = {
-  name: 'quest_request_approval',
+export const questRequestQuestApprovalTool: Tool = {
+  name: 'quest_request_quest_approval',
   description: 'Request human approval for quest plans',
   inputSchema: {
     type: 'object',
@@ -27,9 +27,9 @@ export const questRequestApprovalTool: Tool = {
 };
 
 /**
- * Input parameters for quest_request_approval tool
+ * Input parameters for quest_request_quest_approval tool
  */
-interface QuestRequestApprovalInput {
+interface QuestRequestQuestApprovalInput {
   questId: string;
 }
 
@@ -138,11 +138,11 @@ function generateApprovalMessage(
 }
 
 /**
- * Handle quest_request_approval tool call
+ * Handle quest_request_quest_approval tool call
  */
-export async function handleQuestRequestApproval(args: unknown) {
+export async function handleQuestRequestQuestApproval(args: unknown) {
   // Validate input
-  const input = args as QuestRequestApprovalInput;
+  const input = args as QuestRequestQuestApprovalInput;
 
   if (!input.questId) {
     throw new Error('questId is required');
@@ -192,6 +192,7 @@ export async function handleQuestRequestApproval(args: unknown) {
               threadId: quest.conversationContext.threadId,
               userId: quest.conversationContext.userId,
             },
+            nextStep: `Quest is now pending human approval. Inform the user that the quest has been submitted for review and they can approve it in the dashboard. STOP here — do not call any more quest tools until the user confirms the quest is approved.`,
           },
           null,
           2

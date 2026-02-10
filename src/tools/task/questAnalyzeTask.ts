@@ -61,7 +61,7 @@ Provides technical feasibility assessment and structured analysis for task conce
 1. quest_plan_task (Get planning prompt)
 2. **quest_analyze_task** ← You are here (Analyze task concepts)
 3. quest_reflect_task (Critical review)
-4. quest_split_tasks (Create tasks with analysis)
+4. quest_split_task (Create tasks with analysis)
 
 **When to Use:**
 - After quest_plan_task returns planning prompt

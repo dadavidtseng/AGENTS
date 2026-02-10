@@ -8,8 +8,8 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { QuestModel } from '../../models/questModel.js';
 import { ApprovalModel } from '../../models/approvalModel.js';
 import type { ApprovalDecision, ApprovalDecisionType, Platform } from '../../types/index.js';
-import { handleQuestRevise } from '../quest/questRevise.js';
-import { handleQuestRequestApproval } from './questRequestApproval.js';
+import { handleQuestUpdateQuest } from '../quest/questUpdateQuest.js';
+import { handleQuestRequestQuestApproval } from './questRequestQuestApproval.js';
 
 /**
  * Tool definition for MCP protocol
@@ -146,13 +146,13 @@ export async function handleQuestSubmitApproval(args: unknown) {
   if (input.decision === 'revision_requested' && input.feedback) {
     try {
       // Trigger revision
-      await handleQuestRevise({
+      await handleQuestUpdateQuest({
         questId: input.questId,
         feedback: input.feedback,
       });
 
       // Re-request approval after revision
-      await handleQuestRequestApproval({
+      await handleQuestRequestQuestApproval({
         questId: input.questId,
       });
 

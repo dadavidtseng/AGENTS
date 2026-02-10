@@ -206,6 +206,7 @@ export async function handleQuestSubmitTaskResult(args: unknown) {
             status: 'completed',
             completedAt: completedAt.toISOString(),
             message: `Task completed successfully: ${input.summary}`,
+            nextStep: `Task result submitted. Now call quest_request_task_approval with taskId "${input.taskId}" to submit this task for human review.`,
           },
           null,
           2

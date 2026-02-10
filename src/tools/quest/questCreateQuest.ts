@@ -1,5 +1,5 @@
 /**
- * quest_create MCP Tool
+ * quest_create_quest MCP Tool
  * Creates new quests with pre-generated or template-based requirements and design documents
  */
 
@@ -11,8 +11,8 @@ import type { ConversationContext, Platform } from '../../types';
 /**
  * Tool definition for MCP protocol
  */
-export const questCreateTool: Tool = {
-  name: 'quest_create',
+export const questCreateQuestTool: Tool = {
+  name: 'quest_create_quest',
   description: 'Create a new quest with pre-generated or template-based requirements and design documents',
   inputSchema: {
     type: 'object',
@@ -56,9 +56,9 @@ export const questCreateTool: Tool = {
 };
 
 /**
- * Input parameters for quest_create tool
+ * Input parameters for quest_create_quest tool
  */
-interface QuestCreateInput {
+interface QuestCreateQuestInput {
   questName?: string;
   description: string;
   requirements?: string;
@@ -85,11 +85,11 @@ function extractQuestName(requirements: string): string {
 }
 
 /**
- * Handle quest_create tool call
+ * Handle quest_create_quest tool call
  */
-export async function handleQuestCreate(args: unknown) {
+export async function handleQuestCreateQuest(args: unknown) {
   // Validate input
-  const input = args as QuestCreateInput;
+  const input = args as QuestCreateQuestInput;
 
   if (!input.description) {
     throw new Error('description is required');
@@ -158,6 +158,7 @@ export async function handleQuestCreate(args: unknown) {
             questName: quest.questName,
             status: quest.status,
             message: `Quest "${quest.questName}" created successfully`,
+            nextStep: `Now call quest_request_quest_approval with questId "${quest.questId}" to submit this quest for human review. Do NOT proceed to task splitting until the quest is approved.`,
           },
           null,
           2
