@@ -23,6 +23,7 @@ import {DiscordMentionEventSchema} from '../types/discord-events.js';
 import {BaseBot, BaseBotConfig, logger, MODULE_DISCORD_BOT, timer} from 'agents-library';
 import type { Message, ProviderError } from 'agents-library';
 import type { MemoryError } from 'agents-library';
+import { QUEST_WORKFLOW_SYSTEM_PROMPT } from '../prompts/quest-workflow.js';
 
 // ============================================================================
 // Types
@@ -326,6 +327,7 @@ export class DiscordBot extends BaseBot {
 
           const result = await this.providerManager.chat(messages, {
             model: detectedModel,
+            system: QUEST_WORKFLOW_SYSTEM_PROMPT,
             tools: openaiTools,
             tool_choice: 'auto',
           });
@@ -354,6 +356,7 @@ export class DiscordBot extends BaseBot {
 
           const streamResult = await this.providerManager.streamChat(messages, {
             model: detectedModel,
+            system: QUEST_WORKFLOW_SYSTEM_PROMPT,
           });
 
           // Handle stream error or success
