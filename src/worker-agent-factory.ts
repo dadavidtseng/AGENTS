@@ -375,8 +375,8 @@ export class BaseWorkerAgent {
    * ```
    */
   protected async subscribeToTaskAssignments(): Promise<void> {
-    // Construct topic dynamically from role (no hardcoding)
-    const topic = `${this.role}.task.assigned`;
+    // Subscribe to generic task.assigned topic (role filtering done in handler)
+    const topic = `task.assigned`;
 
     logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
     logger.info(MODULE_AGENT, `📡 Subscribing to task assignments...`, timer.elapsed('factory'));
@@ -522,13 +522,45 @@ export class BaseWorkerAgent {
     logger.info(MODULE_AGENT, `   Description: ${task.description}`, timer.elapsed('factory'));
 
     try {
-      // Step 1: Change to worktree directory
+      // Step 1: Get full task details if questId is provided
+      let implementationGuide = task.requirements;
+      let verificationCriteria = '';
+      
+      if (task.questId) {
+        logger.info(MODULE_AGENT, `📋 Fetching full task details from quest ${task.questId}...`, timer.elapsed('factory'));
+        
+        try {
+          const taskDetails = await this.client.invokeRemote<{
+            content: Array<{ type: string; text: string }>;
+          }>('quest_quest_get_task_details', {
+            taskId: task.taskId
+          });
+
+          // Parse task details
+          const detailsText = taskDetails.content[0].text;
+          const details = JSON.parse(detailsText);
+          
+          implementationGuide = details.implementationGuide || task.requirements;
+          verificationCriteria = details.verificationCriteria || '';
+          
+          logger.info(MODULE_AGENT, `   ✅ Task details fetched`, timer.elapsed('factory'));
+          logger.info(MODULE_AGENT, `   Implementation guide: ${implementationGuide.substring(0, 100)}...`, timer.elapsed('factory'));
+          if (verificationCriteria) {
+            logger.info(MODULE_AGENT, `   Verification criteria: ${verificationCriteria.substring(0, 100)}...`, timer.elapsed('factory'));
+          }
+        } catch (error: any) {
+          logger.warn(MODULE_AGENT, `   ⚠️  Failed to fetch task details: ${error.message}`, timer.elapsed('factory'));
+          logger.warn(MODULE_AGENT, `   Continuing with basic requirements`, timer.elapsed('factory'));
+        }
+      }
+
+      // Step 2: Change to worktree directory
       const originalCwd = process.cwd();
       logger.info(MODULE_AGENT, `📂 Changing to worktree: ${this.worktreePath}`, timer.elapsed('factory'));
       process.chdir(this.worktreePath);
 
       try {
-        // Step 2: Determine filename
+        // Step 3: Determine filename
         const fileName = await this.determineFilename(task);
         const filePath = `${this.worktreePath}/${fileName}`;
 
@@ -539,27 +571,31 @@ export class BaseWorkerAgent {
 
         logger.info(MODULE_AGENT, `📝 Target file: ${fileName}`, timer.elapsed('factory'));
 
-        // Step 3: Generate content with Claude API
+        // Step 4: Generate content with Claude API using implementation guide
         logger.info(MODULE_AGENT, `🤖 Generating content with Claude AI...`, timer.elapsed('factory'));
+
+        const prompt = `You are a ${this.role} agent. Create content for this task:
+
+Task ID: ${task.taskId}
+Description: ${task.description}
+Implementation Guide: ${implementationGuide}
+${verificationCriteria ? `Verification Criteria: ${verificationCriteria}` : ''}
+
+Instructions:
+1. Follow the implementation guide carefully
+2. Create appropriate content based on the task description
+3. Ensure the output meets the verification criteria (if provided)
+4. Make the content professional and high-quality
+5. For ${this.role} role, focus on ${this.role === 'artist' ? 'creative and artistic elements' : this.role === 'designer' ? 'design principles and aesthetics' : 'code quality and best practices'}
+
+Respond with ONLY the file content, no explanations or markdown code blocks.`;
 
         const stream = await this.anthropic.messages.stream({
           model: this.claudeModel,
           max_tokens: 4096,
           messages: [{
             role: 'user',
-            content: `You are a ${this.role} agent. Create content for this task:
-
-Task ID: ${task.taskId}
-Description: ${task.description}
-Requirements: ${task.requirements}
-
-Instructions:
-1. Create appropriate content based on the task description
-2. Follow any specific requirements mentioned
-3. Make the content professional and high-quality
-4. For ${this.role} role, focus on ${this.role === 'artist' ? 'creative and artistic elements' : this.role === 'designer' ? 'design principles and aesthetics' : 'code quality and best practices'}
-
-Respond with ONLY the file content, no explanations or markdown code blocks.`
+            content: prompt
           }]
         });
 
@@ -573,7 +609,7 @@ Respond with ONLY the file content, no explanations or markdown code blocks.`
 
         logger.info(MODULE_AGENT, `   ✅ Content generated (${content.length} characters)`, timer.elapsed('factory'));
 
-        // Step 4: Write file to worktree
+        // Step 5: Write file to worktree
         logger.info(MODULE_AGENT, `💾 Writing file: ${filePath}`, timer.elapsed('factory'));
 
         const fs = await import('fs/promises');
@@ -581,12 +617,13 @@ Respond with ONLY the file content, no explanations or markdown code blocks.`
 
         logger.info(MODULE_AGENT, `   ✅ File written: ${fileName}`, timer.elapsed('factory'));
 
-        // Step 5: Commit changes with git
+        // Step 6: Commit changes with git
         const commitSha = await this.commitChanges(task.taskId, [fileName]);
 
-        // Step 6: Publish completion event
+        // Step 7: Publish completion event with questId
         await this.publishCompletion(
           task.taskId,
+          task.questId,
           [fileName],  // filesCreated
           [],          // filesModified (none in this implementation)
           commitSha
@@ -890,6 +927,7 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
    */
   protected async publishCompletion(
     taskId: string,
+    questId: string | undefined,
     filesCreated: string[],
     filesModified: string[],
     commitSha: string
@@ -900,6 +938,7 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
     // Create payload matching TaskCompletedEvent schema
     const payload: TaskCompletedEvent = {
       taskId,
+      questId,
       role: this.role,
       status: 'completed',
       filesCreated,
@@ -913,6 +952,9 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
       logger.info(MODULE_AGENT, `📢 Publishing completion event`, timer.elapsed('factory'));
       logger.info(MODULE_AGENT, `   Topic: ${topic}`, timer.elapsed('factory'));
       logger.info(MODULE_AGENT, `   Task ID: ${taskId}`, timer.elapsed('factory'));
+      if (questId) {
+        logger.info(MODULE_AGENT, `   Quest ID: ${questId}`, timer.elapsed('factory'));
+      }
       logger.info(MODULE_AGENT, `   Commit SHA: ${commitSha.substring(0, 7)}`, timer.elapsed('factory'));
 
       await this.client.publish(topic, payload, { broker: 'default', network: 'global' });

@@ -49,6 +49,9 @@ export interface TaskAssignedEvent {
   /** Unique task identifier */
   taskId: string;
 
+  /** Quest ID this task belongs to (optional for backward compatibility) */
+  questId?: string;
+
   /** Agent role assigned to this task */
   role: string;
 
@@ -60,6 +63,9 @@ export interface TaskAssignedEvent {
 
   /** ISO 8601 timestamp when task was assigned */
   timestamp: string;
+
+  /** User or agent that assigned this task (optional) */
+  assignedBy?: string;
 }
 
 /**
@@ -67,10 +73,12 @@ export interface TaskAssignedEvent {
  */
 export const TaskAssignedEventSchema = z.object({
   taskId: z.string().min(1, 'Task ID is required'),
+  questId: z.string().optional(),
   role: z.string().min(1, 'Role is required'),
   description: z.string().min(1, 'Description is required'),
   requirements: z.string(),
-  timestamp: z.string().datetime('Invalid ISO 8601 timestamp')
+  timestamp: z.string().datetime('Invalid ISO 8601 timestamp'),
+  assignedBy: z.string().optional()
 });
 
 // ============================================================================
@@ -105,6 +113,9 @@ export interface TaskCompletedEvent {
   /** Unique task identifier */
   taskId: string;
 
+  /** Quest ID this task belongs to (optional for backward compatibility) */
+  questId?: string;
+
   /** Agent role that completed this task */
   role: string;
 
@@ -132,6 +143,7 @@ export interface TaskCompletedEvent {
  */
 export const TaskCompletedEventSchema = z.object({
   taskId: z.string().min(1, 'Task ID is required'),
+  questId: z.string().optional(),
   role: z.string().min(1, 'Role is required'),
   status: z.literal('completed'),
   filesCreated: z.array(z.string()),
