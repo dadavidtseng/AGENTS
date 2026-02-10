@@ -139,7 +139,7 @@ async function verifyTaskReadyForApproval(
     // Get task details
     const taskDetailsResponse = await client.invokeRemote<{
       content: Array<{ type: string; text: string }>;
-    }>('quest_quest_get_task_details', {
+    }>('quest_quest_query_task', {
       taskId,
     });
 
@@ -150,8 +150,9 @@ async function verifyTaskReadyForApproval(
     // Get full quest details to check all tasks
     const questDetailsResponse = await client.invokeRemote<{
       content: Array<{ type: string; text: string }>;
-    }>('quest_quest_get_details', {
+    }>('quest_quest_query_quest', {
       questId: task.questId,
+      detail: 'full',
     });
 
     const questDetailsText = questDetailsResponse.content[0].text;
@@ -286,7 +287,7 @@ async function rejectTask(
     // Get full task details for retry
     const taskDetailsResponse = await client.invokeRemote<{
       content: Array<{ type: string; text: string }>;
-    }>('quest_quest_get_task_details', {
+    }>('quest_quest_query_task', {
       taskId: task.id,
     });
 
@@ -385,7 +386,7 @@ async function requestChanges(
     // Get full task details for retry
     const taskDetailsResponse = await client.invokeRemote<{
       content: Array<{ type: string; text: string }>;
-    }>('quest_quest_get_task_details', {
+    }>('quest_quest_query_task', {
       taskId: task.id,
     });
 

@@ -88,7 +88,7 @@ async function getLatestQuestWithAssignedTasks(client: KadiClient): Promise<stri
   try {
     const result = await client.invokeRemote<{
       content: Array<{ type: string; text: string }>;
-    }>('quest_quest_list', {});
+    }>('quest_quest_list_quest', {});
 
     const resultText = result.content[0].text;
     const questsData = JSON.parse(resultText);
@@ -125,7 +125,7 @@ async function getAssignedTasks(client: KadiClient, questId: string, taskId?: st
       // Get specific task details
       const result = await client.invokeRemote<{
         content: Array<{ type: string; text: string }>;
-      }>('quest_quest_get_task_details', {
+      }>('quest_quest_query_task', {
         questId,
         taskId
       });
@@ -172,7 +172,7 @@ async function getAssignedTasks(client: KadiClient, questId: string, taskId?: st
       // Get all assigned tasks
       const result = await client.invokeRemote<{
         content: Array<{ type: string; text: string }>;
-      }>('quest_quest_query_tasks', {
+      }>('quest_quest_query_task', {
         questId,
         status: 'assigned'
       });
@@ -212,9 +212,11 @@ async function publishTaskAssignedEvent(
       timer.elapsed('main')
     );
 
-    await client.invokeRemote('quest_quest_update_task_status', {
+    await client.invokeRemote('quest_quest_update_task', {
+      questId,
       taskId: task.taskId,
-      status: 'in_progress'
+      status: 'in_progress',
+      agentId: task.assignedTo || 'unknown',
     });
 
     logger.info(

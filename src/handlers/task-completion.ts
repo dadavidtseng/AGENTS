@@ -381,13 +381,14 @@ async function handleTaskCompletedEvent(
 
     const taskDetailsResponse = await client.invokeRemote<{
       content: Array<{ type: string; text: string }>;
-    }>('quest_quest_get_task_details', {
+    }>('quest_quest_query_task', {
       taskId: event.taskId,
     });
 
     const taskDetailsText = taskDetailsResponse.content[0].text;
     const taskDetailsData = JSON.parse(taskDetailsText);
     const taskDetails = taskDetailsData.task;
+    const questId = taskDetailsData.questContext?.questId || event.questId;
     const taskName = taskDetails.name || event.taskId;
     const verificationCriteria = taskDetails.verificationCriteria || 'No specific criteria provided';
 
@@ -424,7 +425,8 @@ async function handleTaskCompletedEvent(
           timer.elapsed('main')
         );
         
-        await client.invokeRemote('quest_quest_update_task_status', {
+        await client.invokeRemote('quest_quest_update_task', {
+          questId,
           taskId: event.taskId,
           status: 'in_progress',
           agentId: event.agent,
@@ -439,7 +441,8 @@ async function handleTaskCompletedEvent(
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
       
-      await client.invokeRemote('quest_quest_update_task_status', {
+      await client.invokeRemote('quest_quest_update_task', {
+        questId,
         taskId: event.taskId,
         status: 'completed',
         agentId: event.agent,

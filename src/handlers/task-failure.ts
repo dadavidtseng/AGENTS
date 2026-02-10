@@ -15,7 +15,7 @@
  * Integration:
  * - Uses KadiClient.subscribe() for event subscription
  * - Uses KadiClient.publish() to republish task.assigned for retry
- * - Uses quest_update_task_status to mark tasks as skipped
+ * - Uses quest_update_task to mark tasks as skipped
  * - Sends notifications to Discord channel where task was assigned
  */
 
@@ -223,10 +223,11 @@ async function handleSkip(
 
   try {
     // Update task status to 'failed' (skipped)
-    await client.invokeRemote('quest_update_task_status', {
+    await client.invokeRemote('quest_quest_update_task', {
+      questId: failure.event.questId,
       taskId: failure.event.taskId,
       status: 'failed',
-      notes: `Skipped by user after failure: ${failure.event.error}`,
+      agentId: failure.event.agent || 'unknown',
     });
 
     logger.info(
@@ -394,12 +395,12 @@ async function handleTaskFailedEvent(
   );
 
   try {
-    // Get task name from quest_get_task_details
+    // Get task name from quest_query_task
     let taskName = event.taskId;
     try {
       const taskDetails = await client.invokeRemote<{
         content: Array<{ type: string; text: string }>;
-      }>('quest_quest_get_task_details', {
+      }>('quest_quest_query_task', {
         taskId: event.taskId,
       });
       const taskDetailsText = taskDetails.content[0].text;
