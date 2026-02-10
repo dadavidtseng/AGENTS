@@ -30,7 +30,7 @@ export type QuestStatus =
  * - completed: Task successfully completed
  * - failed: Task execution failed
  */
-export type TaskStatus = 'pending' | 'assigned' | 'in_progress' | 'completed' | 'failed';
+export type TaskStatus = 'pending' | 'assigned' | 'in_progress' | 'pending_approval' | 'completed' | 'failed';
 
 /**
  * Agent role types for capability matching
@@ -348,7 +348,7 @@ export interface Quest {
     requirements: string;
     /** Design document (markdown) */
     design: string;
-    /** List of tasks (populated after quest_split_tasks) */
+    /** List of tasks (populated after quest_split_task) */
     tasks: Task[];
     /** History of approval decisions */
     approvalHistory: ApprovalDecision[];
@@ -358,7 +358,7 @@ export interface Quest {
     createdAt: Date;
     /** Last update timestamp */
     updatedAt: Date;
-    /** Revision number (increments with quest_revise) */
+    /** Revision number (increments with quest_update_quest) */
     revisionNumber: number;
     /** Additional metadata (cancellation info, etc.) */
     metadata?: Record<string, any>;

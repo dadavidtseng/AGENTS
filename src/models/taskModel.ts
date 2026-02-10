@@ -7,7 +7,7 @@ import { Task, TaskArtifacts, TaskStatus } from '../types/index.js';
 import { QuestModel } from './questModel.js';
 import { commitQuestChanges } from '../utils/git.js';
 import { config } from '../utils/config.js';
-import { broadcastTaskStatusChanged, broadcastTaskAssigned } from '../dashboard/events.js';
+import { broadcastTaskStatusChanged, broadcastTaskAssigned } from '../events/broadcast.js';
 
 /**
  * Validation result for dependency checks

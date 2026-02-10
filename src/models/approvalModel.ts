@@ -7,7 +7,7 @@ import { ApprovalDecision, ConversationContext, QuestStatus } from '../types/ind
 import { QuestModel } from './questModel.js';
 import { commitQuestChanges } from '../utils/git.js';
 import { config } from '../utils/config.js';
-import { broadcastApprovalRequested, broadcastApprovalDecision } from '../dashboard/events.js';
+import { broadcastApprovalRequested, broadcastApprovalDecision } from '../events/broadcast.js';
 
 /**
  * Approval state returned when requesting approval

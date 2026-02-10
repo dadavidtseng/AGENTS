@@ -6,11 +6,14 @@ This directory contains all test files for the mcp-server-quest project.
 
 ```
 tests/
-├── setup.ts              # Global test setup and utilities
-├── unit/                 # Unit tests for individual components
-├── integration/          # Integration tests for system workflows
-└── fixtures/             # Test data and mock generators
-    └── mock-data.ts      # Mock data generators
+├── setup.ts                      # Global test setup and utilities
+├── unit/                         # Unit tests for individual components
+│   ├── setup.test.ts             # Basic setup validation
+│   ├── tool-inventory.test.ts    # Validates all 26 tools are registered
+│   └── merged-tools.test.ts      # Schema tests for merged/new tools
+├── integration/                  # Integration tests for system workflows
+└── fixtures/                     # Test data and mock generators
+    └── mock-data.ts              # Mock data generators
 ```
 
 ## Running Tests

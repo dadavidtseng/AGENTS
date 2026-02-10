@@ -7,7 +7,7 @@ import { readFile, writeFile, rename } from 'fs/promises';
 import { join } from 'path';
 import { Agent, AgentStatus, AgentRole } from '../types';
 import { config } from '../utils/config.js';
-import { broadcastAgentRegistered, broadcastAgentStatusChanged } from '../dashboard/events.js';
+import { broadcastAgentRegistered, broadcastAgentStatusChanged } from '../events/broadcast.js';
 
 /**
  * Filters for querying agents

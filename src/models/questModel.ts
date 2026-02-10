@@ -9,7 +9,7 @@ import { join } from 'path';
 import { Quest, ConversationContext, Task, ApprovalDecision } from '../types/index.js';
 import { commitQuestChanges } from '../utils/git.js';
 import { config } from '../utils/config.js';
-import { broadcastQuestCreated, broadcastQuestUpdated } from '../dashboard/events.js';
+import { broadcastQuestCreated, broadcastQuestUpdated } from '../events/broadcast.js';
 
 /**
  * Parameters for creating a new quest

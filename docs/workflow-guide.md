@@ -30,8 +30,8 @@ graph TD
 ### Phase 1: Quest Creation
 
 **Tools:**
-- `quest_create` - Create new quest with requirements and design
-- `quest_create_from_template` - Use predefined templates
+- `quest_create_quest` - Create new quest with requirements and design
+- Templates have been removed; use `quest_create_quest` with pre-generated content
 
 **Best Practices:**
 - Write clear, detailed requirements
@@ -41,7 +41,7 @@ graph TD
 
 **Example:**
 ```typescript
-await quest_create({
+await quest_create_quest({
   questName: "User Authentication System",
   description: "Implement JWT-based authentication",
   requirements: "# Requirements\n- User login/logout\n- Token refresh\n- Password reset",
@@ -57,10 +57,10 @@ await quest_create({
 ### Phase 2: Approval Workflow
 
 **Tools:**
-- `quest_request_approval` - Submit quest for review
+- `quest_request_quest_approval` - Submit quest for review
 - `quest_submit_approval` - Approve/reject quest
-- `quest_approval_status` - Check approval status
-- `quest_revise` - Update quest after feedback
+- `quest_query_approval` - Check approval status
+- `quest_update_quest` - Update quest after feedback
 
 **Approval States:**
 - `draft` → `pending_approval` → `approved`
@@ -76,7 +76,7 @@ await quest_create({
 ### Phase 3: Task Planning
 
 **Tools:**
-- `quest_split_tasks` - Break quest into executable tasks
+- `quest_split_task` - Break quest into executable tasks
 - `quest_analyze_task` - Analyze task feasibility
 - `quest_reflect_task` - Review and improve approach
 - `quest_update_task` - Modify task details
@@ -105,9 +105,9 @@ await quest_create({
 ### Phase 4: Task Execution
 
 **Tools:**
-- `quest_assign_tasks` - Assign tasks to agents
-- `quest_get_task_details` - Get task information
-- `quest_update_task_status` - Update progress
+- `quest_assign_task` - Assign tasks to agents
+- `quest_query_task` - Get task information (by ID or search)
+- `quest_update_task` - Update task metadata and/or status
 - `quest_submit_task_result` - Submit completed work
 
 **Task Lifecycle:**
@@ -127,7 +127,7 @@ pending → in_progress → failed
 **Tools:**
 - `quest_verify_task` - Verify task completion
 - `quest_log_implementation` - Document implementation
-- `quest_get_status` - Check overall progress
+- `quest_query_quest` - Check overall progress (detail="summary") or full data (detail="full")
 
 **Verification Criteria:**
 - All requirements met
@@ -138,9 +138,9 @@ pending → in_progress → failed
 ### Phase 6: Maintenance
 
 **Tools:**
-- `quest_clear_completed` - Archive old quests
+- `quest_archive_quest` - Archive old quests
 - `quest_delete_quest` - Remove draft/rejected quests
-- `quest_cancel_quest` - Cancel active quests
+- `quest_archive_quest` - Cancel active quests
 
 ## Agent Management
 
@@ -212,7 +212,7 @@ await quest_unregister_agent({
 
 ### Task Search
 
-**Tool:** `quest_query_tasks`
+**Tool:** `quest_query_task`
 
 **Search Modes:**
 - UUID exact match
@@ -292,7 +292,7 @@ await quest_unregister_agent({
 ## Troubleshooting
 
 ### Quest Stuck in Pending Approval
-- Check approval history: `quest_approval_status`
+- Check approval history: `quest_query_approval`
 - Verify approvers are notified
 - Follow up in conversation channel
 
@@ -310,8 +310,8 @@ await quest_unregister_agent({
 
 For issues or questions:
 - Check dashboard for real-time status
-- Review quest details: `quest_get_details`
-- Check task status: `quest_get_task_details`
+- Review quest details: `quest_query_quest` with detail="full"
+- Check task status: `quest_query_task`
 - Monitor agent health: `quest_list_agents`
 
 ---

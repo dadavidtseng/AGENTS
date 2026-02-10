@@ -41,7 +41,7 @@ export interface MockTask {
   questId: string;
   name: string;
   description: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  status: 'pending' | 'assigned' | 'in_progress' | 'pending_approval' | 'completed' | 'failed';
   assignedTo?: string;
   dependencies: string[];
   createdAt: string;
