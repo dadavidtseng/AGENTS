@@ -564,11 +564,35 @@ export class BaseShadowAgent {
    */
   protected async setupGitRefWatcher(): Promise<void> {
     // Construct path to worker branch ref file
-    const refFilePath = path.join(
-      this.workerWorktreePath,
-      '.git/refs/heads',
-      this.workerBranch
-    );
+    // Handle both regular repos and git worktrees
+    let gitDir = path.join(this.workerWorktreePath, '.git');
+    
+    // Check if .git is a file (worktree) or directory (regular repo)
+    if (fs.existsSync(gitDir)) {
+      const gitStat = fs.statSync(gitDir);
+      if (gitStat.isFile()) {
+        // This is a worktree - read the .git file to get actual git directory
+        const gitFileContent = fs.readFileSync(gitDir, 'utf-8').trim();
+        const match = gitFileContent.match(/^gitdir:\s*(.+)$/);
+        if (match) {
+          gitDir = match[1].trim();
+          logger.info(MODULE_AGENT, `📁 Detected git worktree, actual git dir: ${gitDir}`, timer.elapsed('shadow-factory'));
+          
+          // For worktrees, refs are stored in the common (main) git directory
+          // Read the commondir file to get the path to the main git directory
+          const commondirPath = path.join(gitDir, 'commondir');
+          if (fs.existsSync(commondirPath)) {
+            const commondirContent = fs.readFileSync(commondirPath, 'utf-8').trim();
+            // commondir contains a relative path to the main git directory
+            const mainGitDir = path.resolve(gitDir, commondirContent);
+            logger.info(MODULE_AGENT, `📁 Worktree refs stored in common dir: ${mainGitDir}`, timer.elapsed('shadow-factory'));
+            gitDir = mainGitDir;
+          }
+        }
+      }
+    }
+
+    const refFilePath = path.join(gitDir, 'refs/heads', this.workerBranch);
 
     logger.info(MODULE_AGENT, `👁️  Setting up git ref watcher: ${refFilePath}`, timer.elapsed('shadow-factory'));
 
