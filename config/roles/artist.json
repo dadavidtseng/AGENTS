@@ -1,0 +1,19 @@
+{
+  "$schema": "../shadow-role-schema.json",
+  "role": "artist",
+  "workerWorktreePath": "C:/GitHub/agent-playground-artist",
+  "shadowWorktreePath": "C:/GitHub/shadow-agent-playground-artist",
+  "workerBranch": "agent-playground-artist",
+  "shadowBranch": "shadow-agent-playground-artist",
+  "monitoringInterval": 5000,
+  "debounceMs": 1000,
+  "provider": {
+    "model": "gpt-5-mini",
+    "temperature": 0.3,
+    "maxTokens": 4096
+  },
+  "memory": {
+    "enabled": false,
+    "namespace": "shadow-artist"
+  }
+}
