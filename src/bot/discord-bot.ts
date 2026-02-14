@@ -272,6 +272,9 @@ export class DiscordBot extends BaseBot {
       const context = contextResult.success ? contextResult.data : [];
 
       // Step 2: Build messages array (context + new user message)
+      // Append platform context so the LLM has real channel/user IDs for tool calls
+      const platformContext = `\n\n[Context: platform=discord, channelId=${mention.channel}, userId=${mention.user}]`;
+
       const messages: Message[] = [
         ...context.map(msg => ({
           role: msg.role,
@@ -279,17 +282,15 @@ export class DiscordBot extends BaseBot {
         })),
         {
           role: 'user' as const,
-          content: mention.text,
+          content: mention.text + platformContext,
         },
       ];
 
       // Step 3: Detect model from message using regex /\[([^\]]+)\]/
       const modelMatch = mention.text.match(/\[([^\]]+)\]/);
-      const detectedModel = modelMatch ? modelMatch[1] : undefined;
+      const detectedModel = modelMatch ? modelMatch[1] : 'gpt-5-mini';
 
-      if (detectedModel) {
-        logger.info(MODULE_DISCORD_BOT, `Model detected from message: ${detectedModel}`, timer.elapsed('main'));
-      }
+      logger.info(MODULE_DISCORD_BOT, `Model: ${detectedModel}${modelMatch ? ' (from message)' : ' (default)'}`, timer.elapsed('main'));
 
       // Step 4: Get available tools and convert to OpenAI format
       const anthropicTools = await this.getAvailableTools();
@@ -300,7 +301,7 @@ export class DiscordBot extends BaseBot {
       logger.info(MODULE_DISCORD_BOT, `Passing ${openaiTools.length} tools to LLM`, timer.elapsed('main'));
 
       // Step 5: Tool calling loop - keep calling until we get a final text response
-      let maxIterations = 10;
+      let maxIterations = 15;
       let iteration = 0;
       let finalResponse: string | null = null;
       let toolsExecuted = false; // Track if tools have been executed

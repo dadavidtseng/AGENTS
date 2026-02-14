@@ -234,7 +234,7 @@ export class SlackBot extends BaseBot {
       logger.info(MODULE_SLACK_BOT, `Passing ${openaiTools.length} tools to LLM`, timer.elapsed('main'));
 
       // Step 5: Tool calling loop - keep calling until we get a final text response
-      let maxIterations = 10;
+      let maxIterations = 15;
       let iteration = 0;
       let finalResponse: string | null = null;
       let toolsExecuted = false; // Track if tools have been executed

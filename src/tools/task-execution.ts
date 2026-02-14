@@ -33,6 +33,7 @@ export const channelContextSchema = z.object({
 export const taskExecutionInputSchema = z.object({
   questId: z.string().optional().describe('Quest ID (optional, will use latest quest with assigned tasks if not provided)'),
   taskId: z.string().optional().describe('Specific task ID to execute (optional, will execute all assigned tasks if not provided)'),
+  taskIds: z.array(z.string()).optional().describe('Explicit list of assigned task IDs to execute (preferred over re-querying by status)'),
   _context: channelContextSchema.optional().describe('Optional channel context for notifications (automatically injected by Discord/Slack bots)')
 });
 
@@ -56,7 +57,7 @@ export type TaskExecutionOutput = z.infer<typeof taskExecutionOutputSchema>;
 /**
  * Task data structure
  */
-interface Task {
+export interface Task {
   taskId: string;
   name: string;
   description: string;
@@ -119,7 +120,7 @@ async function getLatestQuestWithAssignedTasks(client: KadiClient): Promise<stri
 /**
  * Get assigned tasks for quest
  */
-async function getAssignedTasks(client: KadiClient, questId: string, taskId?: string): Promise<Task[]> {
+export async function getAssignedTasks(client: KadiClient, questId: string, taskId?: string): Promise<Task[]> {
   try {
     if (taskId) {
       // Get specific task details
@@ -196,7 +197,7 @@ async function getAssignedTasks(client: KadiClient, questId: string, taskId?: st
 /**
  * Publish task.assigned event for a single task
  */
-async function publishTaskAssignedEvent(
+export async function publishTaskAssignedEvent(
   client: KadiClient,
   task: Task,
   questId: string,
@@ -315,8 +316,20 @@ export function registerTaskExecutionTool(client: KadiClient): void {
 
       logger.info(MODULE_AGENT, `Using quest ID: ${questId}`, timer.elapsed('main'));
 
-      // Step 2: Get assigned tasks
-      const assignedTasks = await getAssignedTasks(client, questId, params.taskId);
+      // Step 2: Get assigned tasks — prefer explicit taskIds to avoid race condition
+      let assignedTasks: Task[];
+      if (params.taskIds && params.taskIds.length > 0) {
+        // Fetch each task by ID directly (avoids race condition with assign_task)
+        logger.info(MODULE_AGENT, `Using explicit taskIds: ${params.taskIds.join(', ')}`, timer.elapsed('main'));
+        const taskResults = await Promise.all(
+          params.taskIds.map(id => getAssignedTasks(client, questId!, id))
+        );
+        assignedTasks = taskResults.flat();
+      } else if (params.taskId) {
+        assignedTasks = await getAssignedTasks(client, questId, params.taskId);
+      } else {
+        assignedTasks = await getAssignedTasks(client, questId);
+      }
 
       if (assignedTasks.length === 0) {
         return {
@@ -349,24 +362,63 @@ export function registerTaskExecutionTool(client: KadiClient): void {
       // Import taskChannelMap for storing channel context
       const { taskChannelMap } = await import('../index.js');
 
+      // Resolve channel context: ALWAYS prefer quest's conversationContext (LLM-provided _context is unreliable)
+      let resolvedContext: typeof params._context | undefined = undefined;
+      if (questId) {
+        try {
+          const questResult = await client.invokeRemote<{
+            content: Array<{ type: string; text: string }>;
+          }>('quest_quest_query_quest', {
+            questId,
+            detail: 'full',
+          });
+          const questData = JSON.parse(questResult.content[0].text);
+          const ctx = questData.conversationContext;
+          if (ctx?.channelId) {
+            resolvedContext = {
+              type: ctx.platform || 'discord',
+              channelId: ctx.channelId,
+              userId: ctx.userId,
+              threadTs: ctx.threadTs,
+            };
+            logger.info(
+              MODULE_AGENT,
+              `Resolved channel context from quest conversationContext: ${ctx.platform || 'discord'} channel ${ctx.channelId}`,
+              timer.elapsed('main')
+            );
+          }
+        } catch {
+          logger.warn(MODULE_AGENT, `Could not resolve channel context from quest`, timer.elapsed('main'));
+        }
+      }
+      // Only fall back to _context if quest lookup failed (e.g. direct bot invocation without quest)
+      if (!resolvedContext && params._context?.channelId) {
+        resolvedContext = params._context;
+        logger.info(
+          MODULE_AGENT,
+          `Using caller-provided _context as fallback: ${params._context.type} channel ${params._context.channelId}`,
+          timer.elapsed('main')
+        );
+      }
+
       for (const task of assignedTasks) {
         try {
           await publishTaskAssignedEvent(client, task, questId, 'discord-bot');
           publishedCount++;
           triggeredTaskIds.push(task.taskId);
 
-          // Store channel context if provided
-          if (params._context) {
+          // Store channel context for later use by failure/rejection handlers
+          if (resolvedContext) {
             taskChannelMap.set(task.taskId, {
-              type: params._context.type,
-              channelId: params._context.channelId,
-              userId: params._context.userId,
-              threadTs: params._context.threadTs,
+              type: resolvedContext.type,
+              channelId: resolvedContext.channelId,
+              userId: resolvedContext.userId,
+              threadTs: resolvedContext.threadTs,
             });
 
             logger.info(
               MODULE_AGENT,
-              `Stored channel context for task ${task.taskId}: ${params._context.type} channel ${params._context.channelId}`,
+              `Stored channel context for task ${task.taskId}: ${resolvedContext.type} channel ${resolvedContext.channelId}`,
               timer.elapsed('main')
             );
           }
@@ -414,4 +466,129 @@ export function registerTaskExecutionTool(client: KadiClient): void {
       };
     }
   });
+}
+
+
+/**
+ * Subscribe to task.rejected events from worker agents
+ *
+ * When a worker agent rejects a task due to capability mismatch,
+ * this handler:
+ * 1. Updates the task status to 'rejected' via quest_quest_update_task
+ * 2. Notifies the human via Discord with the rejection reason
+ *
+ * @param client - KĀDI client for broker communication
+ */
+export async function subscribeToTaskRejections(client: KadiClient): Promise<void> {
+  const topic = 'task.rejected';
+
+  logger.info(MODULE_AGENT, `📡 Subscribing to ${topic} events...`, timer.elapsed('main'));
+
+  await client.subscribe(topic, async (event: unknown) => {
+    try {
+      const eventData = (event as any)?.data || event;
+
+      logger.info(MODULE_AGENT, '', timer.elapsed('main'));
+      logger.info(MODULE_AGENT, '🚫 Task rejection received', timer.elapsed('main'));
+      logger.info(MODULE_AGENT, `   Raw event: ${JSON.stringify(eventData).substring(0, 300)}`, timer.elapsed('main'));
+
+      const { taskId, questId, reason, agent } = eventData as {
+        taskId: string;
+        questId?: string;
+        reason: string;
+        agent: string;
+      };
+
+      logger.info(MODULE_AGENT, `   Task ID: ${taskId}`, timer.elapsed('main'));
+      logger.info(MODULE_AGENT, `   Agent: ${agent}`, timer.elapsed('main'));
+      logger.info(MODULE_AGENT, `   Reason: ${reason}`, timer.elapsed('main'));
+
+      // Step 1: Update task status to 'rejected'
+      if (questId) {
+        try {
+          await client.invokeRemote('quest_quest_update_task', {
+            questId,
+            taskId,
+            status: 'rejected',
+            agentId: agent,
+          });
+          logger.info(MODULE_AGENT, `   ✅ Task status updated to 'rejected'`, timer.elapsed('main'));
+        } catch (updateError: any) {
+          logger.warn(
+            MODULE_AGENT,
+            `   ⚠️  Failed to update task status: ${updateError.message}`,
+            timer.elapsed('main'),
+          );
+        }
+      }
+
+      // Step 2: Notify human via Discord
+      // Try taskChannelMap first, then fall back to quest conversation context
+      const { taskChannelMap } = await import('../index.js');
+      let channelId: string | undefined;
+
+      const channelCtx = taskChannelMap.get(taskId);
+      if (channelCtx?.channelId && channelCtx.type === 'discord') {
+        channelId = channelCtx.channelId;
+      }
+
+      // Fall back to quest conversation context
+      if (!channelId && questId) {
+        try {
+          const questResult = await client.invokeRemote<{
+            content: Array<{ type: string; text: string }>;
+          }>('quest_quest_query_quest', {
+            questId,
+            detail: 'full',
+          });
+          const questData = JSON.parse(questResult.content[0].text);
+          const ctx = questData.conversationContext;
+          if (ctx?.channelId && /^\d{17,20}$/.test(ctx.channelId)) {
+            channelId = ctx.channelId;
+          }
+        } catch {
+          // Ignore — no channel context available
+        }
+      }
+
+      if (channelId) {
+        try {
+          const message = `⚠️ **Task Rejected by ${agent}**\n\n` +
+            `**Task ID:** \`${taskId}\`\n` +
+            (questId ? `**Quest ID:** \`${questId}\`\n` : '') +
+            `**Reason:** ${reason}\n\n` +
+            `The task has been unassigned and can be reassigned to a suitable agent.`;
+
+          await client.invokeRemote('discord_server_send_message', {
+            channel: channelId,
+            text: message,
+          });
+          logger.info(MODULE_AGENT, `   ✅ Discord notification sent`, timer.elapsed('main'));
+        } catch (discordError: any) {
+          logger.warn(
+            MODULE_AGENT,
+            `   ⚠️  Failed to send Discord notification: ${discordError.message}`,
+            timer.elapsed('main'),
+          );
+        }
+      } else {
+        logger.warn(
+          MODULE_AGENT,
+          `   ⚠️  No Discord channel found for task ${taskId} — skipping notification`,
+          timer.elapsed('main'),
+        );
+      }
+
+      logger.info(MODULE_AGENT, '', timer.elapsed('main'));
+    } catch (error: any) {
+      logger.error(
+        MODULE_AGENT,
+        `Error handling task.rejected event: ${error.message}`,
+        timer.elapsed('main'),
+        error,
+      );
+    }
+  }, { broker: 'default' });
+
+  logger.info(MODULE_AGENT, `   ✅ Subscribed to ${topic} events`, timer.elapsed('main'));
 }

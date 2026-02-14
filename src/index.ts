@@ -19,9 +19,9 @@
  * Event Flow:
  * 1. User calls tool (via Claude Code/Desktop or Slack/Discord)
  * 2. agent-producer validates and forwards to mcp-shrimp-task-manager
- * 3. agent-producer publishes '{role}.task.assigned' event via KĀDI
- * 4. Worker agent receives event, executes task, commits to playground
- * 5. Worker agent publishes '{role}.task.completed' event
+ * 3. agent-producer publishes 'task.assigned' event via KĀDI (generic topic, role in payload)
+ * 4. Worker agent receives event, filters by role, executes task, commits to playground
+ * 5. Worker agent publishes 'task.completed' event (generic topic, agent metadata in payload)
  * 6. agent-producer receives completion, awaits user approval
  *
  * @module agent-producer
@@ -30,11 +30,11 @@
  */
 
 import 'dotenv/config';
-import {KadiClient} from '@kadi.build/core';
-import {logger, MODULE_AGENT, timer} from 'agents-library';
+import {BaseAgent, logger, MODULE_AGENT, timer} from 'agents-library';
+import type {BaseAgentConfig} from 'agents-library';
 
 import {setupTaskCompletionNotifier} from './handlers/task-completion-notifier.js';
-import {registerAllTools} from './tools/index.js';
+import {registerAllTools, injectOrchestrator} from './tools/index.js';
 
 // ============================================================================
 // Tool Schemas (Imported from tool modules)
@@ -49,33 +49,55 @@ import {registerAllTools} from './tools/index.js';
 // Configuration
 // ============================================================================
 
-const config = {
-    brokerUrl: process.env.KADI_BROKER_URL || 'ws://localhost:8080',
-    networks: (process.env.KADI_NETWORK || 'global,slack,discord,utility').split(',')
-};
+const brokerUrl = process.env.KADI_BROKER_URL || 'ws://localhost:8080';
+const networks = (process.env.KADI_NETWORK || 'global,slack,discord,utility').split(',');
+
+/**
+ * Whether LLM-dependent features (bots, orchestrator, task handlers) are enabled.
+ * Requires a valid ANTHROPIC_API_KEY in environment.
+ */
+const llmEnabled = !!(process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'YOUR_ANTHROPIC_API_KEY_HERE');
 
 // ============================================================================
-// KĀDI Client
+// BaseAgent Instance
 // ============================================================================
 
 /**
- * KĀDI protocol client instance
- *
- * This client handles:
- * - WebSocket connection to broker
- * - Tool registration with broker
- * - Event publishing to worker agents
- * - MCP upstream calls to mcp-shrimp-task-manager
+ * BaseAgent provides shared infrastructure:
+ * - KadiClient for broker communication
+ * - ProviderManager for LLM access (if configured)
+ * - MemoryService for persistent memory (if configured)
+ * - Graceful shutdown handling (SIGTERM/SIGINT)
  */
-const client = new KadiClient({
-    name: 'agent-producer',
-    version: '1.0.0',
-    brokers: {
-        default: config.brokerUrl
+const baseAgentConfig: BaseAgentConfig = {
+  agentId: 'agent-producer',
+  agentRole: 'producer',
+  version: '1.0.0',
+  brokerUrl,
+  networks,
+  ...(llmEnabled && {
+    provider: {
+      anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
+      modelManagerBaseUrl: process.env.MODEL_MANAGER_BASE_URL,
+      modelManagerApiKey: process.env.MODEL_MANAGER_API_KEY,
+      primaryProvider: 'model-manager',
+      fallbackProvider: process.env.MODEL_MANAGER_BASE_URL ? 'anthropic' : undefined,
+      retryAttempts: 3,
+      retryDelayMs: 1000,
+      healthCheckIntervalMs: 60000,
     },
-    defaultBroker: 'default',
-    networks: config.networks
-});
+    memory: {
+      dataPath: process.env.MEMORY_DATA_PATH || './data/memory',
+      arcadedbUrl: process.env.ARCADEDB_URL,
+      arcadedbPassword: process.env.ARCADEDB_ROOT_PASSWORD || 'root',
+    },
+  }),
+};
+
+const baseAgent = new BaseAgent(baseAgentConfig);
+
+/** Convenience alias — used by tool registrations and event handlers */
+const client = baseAgent.client;
 
 // ============================================================================
 // Channel Context Tracking
@@ -103,13 +125,10 @@ export const taskChannelMap = new Map<string, {
 //
 registerAllTools(client);
 
-// ============================================================================
-// Task Completion Event Handlers
-// ============================================================================
+// Task rejection subscription is set up in main() after broker connection
+import { subscribeToTaskRejections } from './tools/task-execution.js';
 
-// OLD task completion handlers - REMOVED (replaced by task 2.7 handler with LLM verification)
-// The new handler in task-completion.ts now handles all role-specific task.completed events
-// with LLM-based verification and score-based decision making
+
 
 // ============================================================================
 // Bot Instance Tracking
@@ -122,60 +141,7 @@ registerAllTools(client);
 let slackBot: any = null;
 let discordBot: any = null;
 
-/**
- * Graceful shutdown sequence
- *
- * Handles SIGTERM/SIGINT signals to cleanly shut down all services:
- * 1. Stop Slack bot (cancels Slack event subscriptions)
- * 2. Stop Discord bot (cancels Discord event subscriptions)
- * 3. Call client.disconnect() - KĀDI's built-in cleanup that:
- *    - Stops broker protocol heartbeat
- *    - Disconnects from broker (triggers broker's session cleanup)
- *    - Unloads all loaded abilities
- *    - Clears all event subscriptions (both local and broker-side)
- *    - Clears protocol instances
- * 4. Exit process
- */
-async function gracefulShutdown(signal: string) {
-    logger.info(MODULE_AGENT, `${signal} received, shutting down gracefully...`, timer.elapsed('main'));
-
-    try {
-        // Step 1: Stop Slack bot if running
-        if (slackBot) {
-            logger.info(MODULE_AGENT, 'Stopping Slack bot...', timer.elapsed('main'));
-            try {
-                if (typeof slackBot.stop === 'function') {
-                    await slackBot.stop();
-                }
-            } catch (error) {
-                logger.error(MODULE_AGENT, 'Error stopping Slack bot', "+0ms", error as Error | string);
-            }
-        }
-
-        // Step 2: Stop Discord bot if running
-        if (discordBot) {
-            logger.info(MODULE_AGENT, 'Stopping Discord bot...', timer.elapsed('main'));
-            try {
-                if (typeof discordBot.stop === 'function') {
-                    await discordBot.stop();
-                }
-            } catch (error) {
-                logger.error(MODULE_AGENT, 'Error stopping Discord bot', "+0ms", error as Error | string);
-            }
-        }
-
-        // Step 3: Disconnect from broker and cleanup all subscriptions
-        // This is the critical step that cleanly unregisters from broker
-        logger.info(MODULE_AGENT, 'Disconnecting from KĀDI broker...', timer.elapsed('main'));
-        await client.disconnect();
-
-        logger.info(MODULE_AGENT, 'Graceful shutdown complete', timer.elapsed('main'));
-        process.exit(0);
-    } catch (error) {
-        logger.error(MODULE_AGENT, 'Error during graceful shutdown', "+0ms", error as Error | string);
-        process.exit(1);
-    }
-}
+// gracefulShutdown is now handled by BaseAgent.registerShutdownHandlers()
 
 // ============================================================================
 // Main Application Entry Point
@@ -193,11 +159,9 @@ async function main() {
         logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('main'));
         logger.warn(MODULE_AGENT, 'Starting Agent Producer', timer.elapsed('main'));
         logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('main'));
-        logger.info(MODULE_AGENT, `Broker URL: ${config.brokerUrl}`, timer.elapsed('main'));
-        logger.info(MODULE_AGENT, `Networks: ${config.networks.join(', ')}`, timer.elapsed('main'));
-        logger.info(MODULE_AGENT, '', timer.elapsed('main'));
-
-        logger.info(MODULE_AGENT, 'Connecting to broker...', timer.elapsed('main'));
+        logger.info(MODULE_AGENT, `Broker URL: ${brokerUrl}`, timer.elapsed('main'));
+        logger.info(MODULE_AGENT, `Networks: ${networks.join(', ')}`, timer.elapsed('main'));
+        logger.info(MODULE_AGENT, `LLM features: ${llmEnabled ? 'enabled' : 'disabled'}`, timer.elapsed('main'));
         logger.info(MODULE_AGENT, '', timer.elapsed('main'));
 
         // Dynamically list all registered tools
@@ -213,163 +177,128 @@ async function main() {
             logger.info(MODULE_AGENT, '', timer.elapsed('main'));
         }
 
-        // CRITICAL: serve() is blocking - all logs must come BEFORE this line
-        // Connect to broker and start serving tool invocations
-        // The broker will route tool calls to this agent based on network membership
-
-        // Setup signal handlers BEFORE starting serve()
-        // This ensures graceful shutdown is ready before blocking serve() call
-        process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-        process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
-        // Initialize shared services for bots (ProviderManager and MemoryService)
-        const shouldEnableBots = (process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'YOUR_ANTHROPIC_API_KEY_HERE');
-
-        if (shouldEnableBots) {
-            // Wait for broker connection before initializing services
-            setTimeout(async () => {
+        // ----------------------------------------------------------------
+        // Step 1: Register shutdown handlers (before connect)
+        // ----------------------------------------------------------------
+        baseAgent.registerShutdownHandlers(async () => {
+            // Agent-specific cleanup: stop bots before broker disconnect
+            if (slackBot) {
+                logger.info(MODULE_AGENT, 'Stopping Slack bot...', timer.elapsed('main'));
                 try {
-                    // Step 1: Load environment variables
-                    const anthropicApiKey = process.env.ANTHROPIC_API_KEY!;
-                    const modelManagerBaseUrl = process.env.MODEL_MANAGER_BASE_URL;
-                    const modelManagerApiKey = process.env.MODEL_MANAGER_API_KEY;
-                    const memoryDataPath = process.env.MEMORY_DATA_PATH || './data/memory';
-                    const arcadedbUrl = process.env.ARCADEDB_URL;
-                    const arcadedbPassword = process.env.ARCADEDB_ROOT_PASSWORD || 'root';
-
-                    logger.info(MODULE_AGENT, 'Initializing shared services for bots...', timer.elapsed('main'));
-
-                    // Step 2: Import service classes
-                    const { 
-                        ProviderManager, 
-                        AnthropicProvider, 
-                        ModelManagerProvider,
-                        MemoryService
-                    } = await import('agents-library');
-
-                    // Step 3: Instantiate providers
-                    const anthropicProvider = new AnthropicProvider(anthropicApiKey);
-                    const providers: any[] = [anthropicProvider];
-
-                    // Add ModelManagerProvider if configured
-                    if (modelManagerBaseUrl && modelManagerApiKey) {
-                        const modelManagerProvider = new ModelManagerProvider(modelManagerBaseUrl, modelManagerApiKey);
-                        providers.push(modelManagerProvider);
-                        logger.info(MODULE_AGENT, '   - ModelManager provider configured', timer.elapsed('main'));
-                    }
-
-                    // Step 4: Create ProviderManager with configuration
-                    const providerManager = new ProviderManager(
-                        providers,
-                        {
-                            primaryProvider: 'anthropic',
-                            fallbackProvider: providers.length > 1 ? 'model-manager' : undefined,
-                            retryAttempts: 3,
-                            retryDelayMs: 1000,
-                            healthCheckIntervalMs: 60000,
-                        }
-                    );
-
-                    logger.info(MODULE_AGENT, '   - ProviderManager initialized with ' + providers.length + ' provider(s)', timer.elapsed('main'));
-
-                    // Step 5: Create and initialize MemoryService
-                    const memoryService = new MemoryService(
-                        memoryDataPath,
-                        arcadedbUrl,
-                        arcadedbPassword,
-                        providerManager
-                    );
-
-                    await memoryService.initialize();
-                    logger.info(MODULE_AGENT, '   - MemoryService initialized', timer.elapsed('main'));
-
-                    // Store services for graceful shutdown
-                    (global as any).__providerManager = providerManager;
-                    (global as any).__memoryService = memoryService;
-
-                    // Setup task completion event handler (from task-completion.ts)
-                    // IMPORTANT: Must be done AFTER providerManager is stored in global
-                    try {
-                        const { setupTaskCompletionHandler } = await import('./handlers/task-completion.js');
-                        await setupTaskCompletionHandler(client, providerManager);
-                        logger.info(MODULE_AGENT, 'Task completion event handler registered successfully (all roles)', timer.elapsed('main'));
-                    } catch (error) {
-                        logger.error(MODULE_AGENT, 'Failed to setup task completion event handler', "+0ms", error as Error | string);
-                    }
-
-                    // Setup task failure event handler (from task-failure.ts)
-                    try {
-                        const { setupTaskFailureHandler } = await import('./handlers/task-failure.js');
-                        await setupTaskFailureHandler(client);
-                        logger.info(MODULE_AGENT, 'Task failure event handler registered successfully', timer.elapsed('main'));
-                    } catch (error) {
-                        logger.error(MODULE_AGENT, 'Failed to setup task failure event handler', "+0ms", error as Error | string);
-                    }
-
-                    // Step 6: Start Slack Bot if enabled
-                    const shouldEnableSlackBot = (process.env.ENABLE_SLACK_BOT === 'true' || process.env.ENABLE_SLACK_BOT === undefined);
-                    if (shouldEnableSlackBot) {
-                        logger.info(MODULE_AGENT, 'Starting Slack bot...', timer.elapsed('main'));
-                        const { SlackBot } = await import('./bot/slack-bot.js');
-                        slackBot = new SlackBot({
-                            client,
-                            anthropicApiKey,
-                            botUserId: process.env.SLACK_BOT_USER_ID!,
-                            providerManager,
-                            memoryService,
-                        });
-                        slackBot.start();
-                        logger.info(MODULE_AGENT, 'Slack bot started (subscribed to Slack mention events)', timer.elapsed('main'));
-                    }
-
-                    // Step 7: Start Discord Bot if enabled
-                    const shouldEnableDiscordBot = (process.env.ENABLE_DISCORD_BOT === 'true' || process.env.ENABLE_DISCORD_BOT === undefined);
-                    if (shouldEnableDiscordBot) {
-                        logger.info(MODULE_AGENT, 'Starting Discord bot...', timer.elapsed('main'));
-                        const { DiscordBot } = await import('./bot/discord-bot.js');
-                        discordBot = new DiscordBot({
-                            client,
-                            anthropicApiKey,
-                            botUserId: process.env.DISCORD_BOT_USER_ID!,
-                            providerManager,
-                            memoryService,
-                        });
-                        discordBot.start();
-                        logger.info(MODULE_AGENT, 'Discord bot started (subscribed to Discord mention events)', timer.elapsed('main'));
-                    }
-
+                    if (typeof slackBot.stop === 'function') await slackBot.stop();
                 } catch (error) {
-                    logger.error(MODULE_AGENT, 'Failed to initialize services or bots', "+0ms", error as Error | string);
+                    logger.error(MODULE_AGENT, 'Error stopping Slack bot', "+0ms", error as Error | string);
                 }
-            }, 2000); // Wait 2 seconds for broker connection
+            }
+            if (discordBot) {
+                logger.info(MODULE_AGENT, 'Stopping Discord bot...', timer.elapsed('main'));
+                try {
+                    if (typeof discordBot.stop === 'function') await discordBot.stop();
+                } catch (error) {
+                    logger.error(MODULE_AGENT, 'Error stopping Discord bot', "+0ms", error as Error | string);
+                }
+            }
+        });
+
+        // ----------------------------------------------------------------
+        // Step 2: Connect to broker (non-blocking)
+        // ----------------------------------------------------------------
+        logger.info(MODULE_AGENT, 'Connecting to broker...', timer.elapsed('main'));
+        await baseAgent.connect();
+        logger.info(MODULE_AGENT, '✅ Connected to broker', timer.elapsed('main'));
+
+        // ----------------------------------------------------------------
+        // Step 3: Initialize LLM-dependent services
+        // ----------------------------------------------------------------
+        if (llmEnabled && baseAgent.providerManager) {
+            // Create LlmOrchestrator and inject into tool handlers
+            const { LlmOrchestrator } = await import('./services/llm-orchestrator.js');
+            const orchestrator = new LlmOrchestrator(baseAgent.providerManager, client);
+            injectOrchestrator(orchestrator);
+            logger.info(MODULE_AGENT, '   ✅ LlmOrchestrator created and injected', timer.elapsed('main'));
+
+            // Setup task completion event handler (requires providerManager for LLM verification)
+            try {
+                const { setupTaskCompletionHandler } = await import('./handlers/task-completion.js');
+                await setupTaskCompletionHandler(client, baseAgent.providerManager);
+                logger.info(MODULE_AGENT, 'Task completion event handler registered successfully (all roles)', timer.elapsed('main'));
+            } catch (error) {
+                logger.error(MODULE_AGENT, 'Failed to setup task completion event handler', "+0ms", error as Error | string);
+            }
+
+            // Setup task failure event handler
+            try {
+                const { setupTaskFailureHandler } = await import('./handlers/task-failure.js');
+                await setupTaskFailureHandler(client);
+                logger.info(MODULE_AGENT, 'Task failure event handler registered successfully', timer.elapsed('main'));
+            } catch (error) {
+                logger.error(MODULE_AGENT, 'Failed to setup task failure event handler', "+0ms", error as Error | string);
+            }
+
+            // Start Slack Bot if enabled
+            const shouldEnableSlackBot = (process.env.ENABLE_SLACK_BOT === 'true' || process.env.ENABLE_SLACK_BOT === undefined);
+            if (shouldEnableSlackBot) {
+                logger.info(MODULE_AGENT, 'Starting Slack bot...', timer.elapsed('main'));
+                const { SlackBot } = await import('./bot/slack-bot.js');
+                slackBot = new SlackBot({
+                    client,
+                    anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
+                    botUserId: process.env.SLACK_BOT_USER_ID!,
+                    providerManager: baseAgent.providerManager,
+                    memoryService: baseAgent.memoryService!,
+                });
+                slackBot.start();
+                logger.info(MODULE_AGENT, 'Slack bot started (subscribed to Slack mention events)', timer.elapsed('main'));
+            }
+
+            // Start Discord Bot if enabled
+            const shouldEnableDiscordBot = (process.env.ENABLE_DISCORD_BOT === 'true' || process.env.ENABLE_DISCORD_BOT === undefined);
+            if (shouldEnableDiscordBot) {
+                logger.info(MODULE_AGENT, 'Starting Discord bot...', timer.elapsed('main'));
+                const { DiscordBot } = await import('./bot/discord-bot.js');
+                discordBot = new DiscordBot({
+                    client,
+                    anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
+                    botUserId: process.env.DISCORD_BOT_USER_ID!,
+                    providerManager: baseAgent.providerManager,
+                    memoryService: baseAgent.memoryService!,
+                });
+                discordBot.start();
+                logger.info(MODULE_AGENT, 'Discord bot started (subscribed to Discord mention events)', timer.elapsed('main'));
+            }
         } else {
-            logger.info(MODULE_AGENT, 'Bots disabled (configure ANTHROPIC_API_KEY to enable)', timer.elapsed('main'));
+            logger.info(MODULE_AGENT, 'LLM features disabled (configure ANTHROPIC_API_KEY to enable)', timer.elapsed('main'));
             logger.info(MODULE_AGENT, '', timer.elapsed('main'));
         }
 
-        // OLD task completion handler - DISABLED (replaced by task 2.7 handler with LLM verification)
-        // The new handler in task-completion.ts now handles all role-specific task.completed events
-        // setTimeout(async () => {
-        //     try {
-        //         await setupTaskCompletionHandlers(client);
-        //         logger.info(MODULE_AGENT, 'Task completion event handlers registered', timer.elapsed('main'));
-        //     } catch (error) {
-        //         logger.error(MODULE_AGENT, 'Failed to setup task completion handlers', "+0ms", error as Error | string);
-        //     }
-        // }, 2000);
+        // ----------------------------------------------------------------
+        // Step 4: Setup event subscriptions (always active, no LLM needed)
+        // ----------------------------------------------------------------
 
-        // Setup task completion notifier for user notifications
-        setTimeout(async () => {
-            try {
-                await setupTaskCompletionNotifier(client);
-                logger.info(MODULE_AGENT, 'Task completion notifier registered', timer.elapsed('main'));
-            } catch (error) {
-                logger.error(MODULE_AGENT, 'Failed to setup task completion notifier', "+0ms", error as Error | string);
-            }
-        }, 2000);
+        // Task rejection handler
+        try {
+            await subscribeToTaskRejections(client);
+            logger.info(MODULE_AGENT, 'Task rejection event handler registered', timer.elapsed('main'));
+        } catch (error) {
+            logger.error(MODULE_AGENT, 'Failed to setup task rejection handler', "+0ms", error as Error | string);
+        }
 
-        // Connect to KĀDI broker and start serving (BLOCKING - never returns)
-        await client.serve('broker');
+        // Task completion notifier (user notifications)
+        try {
+            await setupTaskCompletionNotifier(client);
+            logger.info(MODULE_AGENT, 'Task completion notifier registered', timer.elapsed('main'));
+        } catch (error) {
+            logger.error(MODULE_AGENT, 'Failed to setup task completion notifier', "+0ms", error as Error | string);
+        }
+
+        // ----------------------------------------------------------------
+        // Ready
+        // ----------------------------------------------------------------
+        logger.info(MODULE_AGENT, '', timer.elapsed('main'));
+        logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('main'));
+        logger.info(MODULE_AGENT, '✅ Agent Producer ready and listening for events', timer.elapsed('main'));
+        logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('main'));
+
     } catch (error: any) {
         logger.error(MODULE_AGENT, 'Fatal error', "+0ms", error);
         if (error.stack) {

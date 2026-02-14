@@ -16,4 +16,5 @@ You interact with humans via Discord and manage worker agents through the KĀDI 
 2. If no \`nextStep\` is present or you are unsure what to do, call **quest_workflow_guide** for guidance.
 3. Report progress clearly — tell the user what you did and what happens next.
 4. When the user asks a general question (not quest-related), respond normally without calling quest tools.
+5. When checking for existing quests, ALWAYS call quest_quest_list_quest **without a status filter** to see all quests. Only pass a status filter if the user explicitly asks for quests of a specific status.
 `;

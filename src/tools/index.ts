@@ -42,10 +42,11 @@
 
 import type { KadiClient } from '@kadi.build/core';
 import { logger, timer, MODULE_TOOLS } from 'agents-library';
+import type { LlmOrchestrator } from '../services/llm-orchestrator.js';
 import { registerEchoTool } from './echo.js';
 import { registerListToolsTool } from './list-tools.js';
 import { registerTaskExecutionTool } from './task-execution.js';
-import { registerQuestApproveTool, registerQuestRequestRevisionTool, registerQuestRejectTool } from './quest-approval.js';
+import { registerQuestApproveTool, registerQuestRequestRevisionTool, registerQuestRejectTool, setQuestApprovalOrchestrator } from './quest-approval.js';
 import { registerTaskApproveTool, registerTaskRequestRevisionTool, registerTaskRejectTool } from './task-approval.js';
 
 /**
@@ -87,4 +88,16 @@ export function registerAllTools(client: KadiClient): void {
   } else {
     logger.info(MODULE_TOOLS, 'No custom tools registered (add tools to src/tools/ to extend functionality)', timer.elapsed('tools-registry'));
   }
+}
+
+/**
+ * Inject LlmOrchestrator into tool handlers that need it.
+ *
+ * Called AFTER providerManager is initialized (inside the setTimeout block in index.ts).
+ * Tools are registered synchronously at startup, but the orchestrator is created later
+ * once the broker connection and providers are ready.
+ */
+export function injectOrchestrator(orchestrator: LlmOrchestrator): void {
+  setQuestApprovalOrchestrator(orchestrator);
+  logger.info(MODULE_TOOLS, 'LlmOrchestrator injected into quest-approval tools', timer.elapsed('tools-registry'));
 }
