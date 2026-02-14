@@ -34,40 +34,47 @@ export async function executeDiff(
   ) => Promise<{ stdout: string; stderr: string }>,
 ): Promise<GitDiffResult> {
   try {
-    const args: string[] = [];
+    // Base args shared by both content and stat commands
+    const baseArgs: string[] = [];
 
     if (options.staged) {
-      args.push('--cached');
+      baseArgs.push('--cached');
     }
 
     if (options.commit1) {
-      args.push(options.commit1);
+      baseArgs.push(options.commit1);
     }
 
     if (options.commit2) {
-      args.push(options.commit2);
+      baseArgs.push(options.commit2);
     }
 
     if (options.path) {
-      args.push('--', options.path);
+      baseArgs.push('--', options.path);
     }
 
     if (options.unified) {
-      args.push(`--unified=${options.unified}`);
+      baseArgs.push(`--unified=${options.unified}`);
+    }
+
+    // Content-specific args (nameOnly is a display format, not for stat)
+    const contentArgs = [...baseArgs];
+    if (options.nameOnly) {
+      contentArgs.push('--name-only');
     }
 
     // Get diff content
-    const diffCmd = buildGitCommand({ command: 'diff', args: [...args] });
+    const diffCmd = buildGitCommand({ command: 'diff', args: contentArgs });
     const diffResult = await execGit(
       diffCmd,
       context.workingDirectory,
       context.requestContext,
     );
 
-    // Get diff stats
+    // Get diff stats (always use --stat, never --name-only)
     const statCmd = buildGitCommand({
       command: 'diff',
-      args: [...args, '--stat'],
+      args: [...baseArgs, '--stat'],
     });
     const statResult = await execGit(
       statCmd,

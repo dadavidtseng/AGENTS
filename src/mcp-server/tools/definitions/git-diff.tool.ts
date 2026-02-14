@@ -87,32 +87,39 @@ async function gitDiffLogic(
   input: ToolInput,
   { provider, targetPath, appContext }: ToolLogicDependencies,
 ): Promise<ToolOutput> {
-  // Build options object with only defined properties
+  // Build GitDiffOptions, mapping tool schema fields to provider fields
   const diffOptions: {
-    target?: string;
-    source?: string;
-    paths?: string[];
+    commit1?: string;
+    commit2?: string;
+    path?: string;
     staged?: boolean;
     includeUntracked?: boolean;
     nameOnly?: boolean;
     stat?: boolean;
-    contextLines?: number;
+    unified?: number;
   } = {
     staged: input.staged,
     includeUntracked: input.includeUntracked,
     nameOnly: input.nameOnly,
     stat: input.stat,
-    contextLines: input.contextLines,
   };
 
-  if (input.target !== undefined) {
-    diffOptions.target = input.target;
+  if (input.contextLines !== undefined) {
+    diffOptions.unified = input.contextLines;
   }
-  if (input.source !== undefined) {
-    diffOptions.source = input.source;
+
+  // Map source/target to commit1/commit2
+  // git diff source target = changes from source to target
+  // git diff target = changes between target and working tree
+  if (input.source !== undefined && input.target !== undefined) {
+    diffOptions.commit1 = input.source;
+    diffOptions.commit2 = input.target;
+  } else if (input.target !== undefined) {
+    diffOptions.commit1 = input.target;
   }
-  if (input.paths !== undefined) {
-    diffOptions.paths = input.paths;
+
+  if (input.paths && input.paths.length > 0 && input.paths[0] !== undefined) {
+    diffOptions.path = input.paths[0];
   }
 
   const result = await provider.diff(diffOptions, {

@@ -338,6 +338,8 @@ export interface GitDiffOptions {
   includeUntracked?: boolean;
   /** Show statistics only */
   stat?: boolean;
+  /** Show only names of changed files */
+  nameOnly?: boolean;
 }
 
 export interface GitDiffResult {
