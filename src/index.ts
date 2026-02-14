@@ -1,31 +1,34 @@
 /**
- * Artist Agent for KĀDI Protocol
+ * Worker Agent for KĀDI Protocol
  * ================================
  *
- * Worker agent specialized in creative and artistic tasks using WorkerAgentFactory.
+ * Generic worker agent for the KĀDI multi-agent system.
+ * Supports multiple roles (artist, programmer, designer) via role configuration.
+ *
+ * Architecture (Task 3.15):
+ * - BaseAgent provides KadiClient + ProviderManager + MemoryService
+ * - RoleLoader loads role config from config/roles/{role}.json
+ * - WorkerAgentFactory creates BaseWorkerAgent with tool-calling loop
+ * - BaseWorkerAgent.setProviderManager() injects ProviderManager from BaseAgent
+ * - BaseWorkerAgent.applyRoleConfig() applies role-specific settings
  *
  * Event Topics:
- * - Listens: artist.task.assigned
- * - Publishes: artist.task.completed, artist.task.failed, artist.file.created
+ * - Listens: task.assigned (filtered by role in payload)
+ * - Publishes: task.completed, task.failed, task.rejected
  *
- * Commit Format: feat: create artwork for task {taskId}
- *
- * Agent Registration:
- * - Registers with mcp-server-quest on startup
- * - Sends heartbeat every 30 seconds
- * - Unregisters on graceful shutdown
- *
- * Environment Variables:
- * - KADI_BROKER_URL: WebSocket URL for KĀDI broker (required)
- * - ANTHROPIC_API_KEY: Anthropic API key for Claude (required)
- * - DISCORD_BOT_TOKEN: Discord bot token (optional)
- * - SLACK_BOT_TOKEN: Slack bot token (optional)
- *
- * @module agent-artist
+ * @module agent-worker
  */
 
 import 'dotenv/config';
-import { createWorkerAgent, logger, MODULE_AGENT, timer } from 'agents-library';
+import {
+  BaseAgent,
+  type BaseAgentConfig,
+  createWorkerAgent,
+  logger,
+  MODULE_AGENT,
+  timer
+} from 'agents-library';
+import { RoleLoader } from './roles/RoleLoader.js';
 
 // ============================================================================
 // Agent Registration and Heartbeat
@@ -33,17 +36,15 @@ import { createWorkerAgent, logger, MODULE_AGENT, timer } from 'agents-library';
 
 /**
  * Register agent with mcp-server-quest
- *
- * @param agent - Worker agent instance with KĀDI client
  */
-async function registerAgent(agent: any): Promise<void> {
+async function registerAgent(client: any, role: string): Promise<void> {
   try {
     logger.info(MODULE_AGENT, '📝 Registering agent with mcp-server-quest...', timer.elapsed('main'));
 
-    const result = await agent.client.invokeRemote('quest_quest_register_agent', {
-      agentId: 'agent-artist',
-      name: 'Artist Agent',
-      role: 'artist',
+    const result = await client.invokeRemote('quest_quest_register_agent', {
+      agentId: `agent-${role}`,
+      name: `${role.charAt(0).toUpperCase() + role.slice(1)} Agent`,
+      role,
       capabilities: ['file-creation', 'image-generation', 'creative-content'],
       maxConcurrentTasks: 3
     });
@@ -51,80 +52,51 @@ async function registerAgent(agent: any): Promise<void> {
     const resultText = result.content[0].text;
     const registrationData = JSON.parse(resultText);
 
-    logger.info(MODULE_AGENT, `✅ Agent registered successfully`, timer.elapsed('main'));
-    logger.info(MODULE_AGENT, `   Agent ID: ${registrationData.agentId}`, timer.elapsed('main'));
-    logger.info(MODULE_AGENT, `   Message: ${registrationData.message}`, timer.elapsed('main'));
+    logger.info(MODULE_AGENT, `✅ Agent registered: ${registrationData.message}`, timer.elapsed('main'));
   } catch (error: any) {
     logger.error(MODULE_AGENT, `Failed to register agent: ${error.message}`, timer.elapsed('main'), error);
-    // Don't throw - agent can still function without registration
   }
 }
 
 /**
  * Send heartbeat to mcp-server-quest
- *
- * @param agent - Worker agent instance with KĀDI client
  */
-async function sendHeartbeat(agent: any): Promise<void> {
+async function sendHeartbeat(client: any, role: string): Promise<void> {
   try {
-    await agent.client.invokeRemote('quest_quest_agent_heartbeat', {
-      agentId: 'agent-artist',
+    await client.invokeRemote('quest_quest_agent_heartbeat', {
+      agentId: `agent-${role}`,
       status: 'available',
-      currentTasks: [], // TODO: Track current tasks
+      currentTasks: [],
       timestamp: new Date().toISOString()
     });
-
     logger.debug(MODULE_AGENT, '💓 Heartbeat sent', timer.elapsed('main'));
   } catch (error: any) {
     logger.warn(MODULE_AGENT, `Heartbeat failed: ${error.message}`, timer.elapsed('main'));
-    // Don't throw - heartbeat failures should not crash the agent
   }
 }
 
 /**
  * Start heartbeat interval (every 30 seconds)
- *
- * @param agent - Worker agent instance with KĀDI client
- * @returns Interval ID for cleanup
  */
-function startHeartbeat(agent: any): NodeJS.Timeout {
+function startHeartbeat(client: any, role: string): NodeJS.Timeout {
   logger.info(MODULE_AGENT, '💓 Starting heartbeat (30s interval)...', timer.elapsed('main'));
-
-  // Send initial heartbeat immediately
-  sendHeartbeat(agent).catch((error) => {
-    logger.warn(MODULE_AGENT, `Initial heartbeat failed: ${error.message}`, timer.elapsed('main'));
-  });
-
-  // Set up 30-second interval
-  const intervalId = setInterval(() => {
-    sendHeartbeat(agent).catch((error) => {
-      logger.warn(MODULE_AGENT, `Heartbeat failed: ${error.message}`, timer.elapsed('main'));
-    });
-  }, 30000); // 30 seconds
-
-  logger.info(MODULE_AGENT, '✅ Heartbeat started', timer.elapsed('main'));
-
-  return intervalId;
+  sendHeartbeat(client, role).catch(() => {});
+  return setInterval(() => sendHeartbeat(client, role).catch(() => {}), 30000);
 }
 
 /**
  * Unregister agent from mcp-server-quest
- *
- * @param agent - Worker agent instance with KĀDI client
  */
-async function unregisterAgent(agent: any): Promise<void> {
+async function unregisterAgent(client: any, role: string): Promise<void> {
   try {
-    logger.info(MODULE_AGENT, '📝 Unregistering agent from mcp-server-quest...', timer.elapsed('main'));
-
-    await agent.client.invokeRemote('quest_quest_unregister_agent', {
-      agentId: 'agent-artist',
+    logger.info(MODULE_AGENT, '📝 Unregistering agent...', timer.elapsed('main'));
+    await client.invokeRemote('quest_quest_unregister_agent', {
+      agentId: `agent-${role}`,
       reason: 'Graceful shutdown'
     });
-
-    logger.info(MODULE_AGENT, '✅ Agent unregistered successfully', timer.elapsed('main'));
+    logger.info(MODULE_AGENT, '✅ Agent unregistered', timer.elapsed('main'));
   } catch (error: any) {
-    logger.error(MODULE_AGENT, `Failed to unregister agent: ${error.message}`, timer.elapsed('main'), error);
-    // Don't throw - shutdown should continue even if unregistration fails
+    logger.error(MODULE_AGENT, `Failed to unregister: ${error.message}`, timer.elapsed('main'), error);
   }
 }
 
@@ -133,12 +105,14 @@ async function unregisterAgent(agent: any): Promise<void> {
 // ============================================================================
 
 async function main() {
-  // Start main timer for application lifetime tracking
   timer.start('main');
 
   // Validate required environment variables
   const brokerUrl = process.env.KADI_BROKER_URL;
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+  const modelManagerBaseUrl = process.env.MODEL_MANAGER_BASE_URL;
+  const modelManagerApiKey = process.env.MODEL_MANAGER_API_KEY;
+  const dataPath = process.env.DATA_PATH || './data';
 
   if (!brokerUrl) {
     logger.error(MODULE_AGENT, 'KADI_BROKER_URL environment variable is required', timer.elapsed('main'));
@@ -149,48 +123,85 @@ async function main() {
     process.exit(1);
   }
 
-  // Create artist agent using createWorkerAgent factory
-  const agent = createWorkerAgent({
-    role: 'artist',
-    worktreePath: 'C:/GitHub/agent-playground-artist',
+  // Step 1: Load role configuration
+  logger.info(MODULE_AGENT, '📋 Loading role configuration...', timer.elapsed('main'));
+  const roleLoader = new RoleLoader(process.cwd());
+  const roleName = process.env.AGENT_ROLE || 'artist';
+  const roleConfig = roleLoader.loadRole(roleName);
+  logger.info(MODULE_AGENT, `   ✅ Role loaded: ${roleConfig.role}`, timer.elapsed('main'));
+  logger.info(MODULE_AGENT, `   Model: ${roleConfig.provider?.model || 'default'}`, timer.elapsed('main'));
+  logger.info(MODULE_AGENT, `   Tools: ${roleConfig.tools?.join(', ') || 'none'}`, timer.elapsed('main'));
+
+  // Step 2: Create BaseAgent for shared infrastructure
+  const baseAgentConfig: BaseAgentConfig = {
+    agentId: `agent-${roleConfig.role}`,
+    agentRole: roleConfig.role,
+    version: '1.0.0',
+    brokerUrl,
+    networks: ['utility', 'global'],
+    provider: {
+      anthropicApiKey,
+      modelManagerBaseUrl,
+      modelManagerApiKey,
+      primaryProvider: modelManagerBaseUrl ? 'model-manager' : 'anthropic',
+      fallbackProvider: modelManagerBaseUrl ? 'anthropic' : undefined,
+    },
+    ...(roleConfig.memory?.enabled && {
+      memory: {
+        dataPath,
+        arcadedbUrl: process.env.ARCADEDB_URL,
+        arcadedbPassword: process.env.ARCADEDB_PASSWORD
+      }
+    })
+  };
+
+  const baseAgent = new BaseAgent(baseAgentConfig);
+
+  // Step 3: Create worker agent using factory
+  const workerAgent = createWorkerAgent({
+    role: roleConfig.role as 'artist' | 'designer' | 'programmer',
+    worktreePath: roleConfig.worktreePath,
     brokerUrl,
     anthropicApiKey,
-    networks: ['utility','global'],
-    claudeModel: 'claude-sonnet-4-5-20250929',
+    networks: ['utility', 'global'],
+    claudeModel: roleConfig.provider?.model,
+    capabilities: roleConfig.capabilities,
     customBehaviors: {
-      // Preserve original commit message format
-      formatCommitMessage: (taskId: string) => `feat: create artwork for task ${taskId}`
+      formatCommitMessage: (taskId: string) =>
+        roleConfig.commitFormat.replace('{taskId}', taskId)
     }
   });
 
-  // Start agent
-  await agent.start();
+  // Step 4: Inject ProviderManager from BaseAgent into WorkerAgent
+  if (baseAgent.providerManager) {
+    workerAgent.setProviderManager(baseAgent.providerManager);
+    logger.info(MODULE_AGENT, '   ✅ ProviderManager injected into WorkerAgent', timer.elapsed('main'));
+  }
 
-  // Register agent with mcp-server-quest
-  await registerAgent(agent);
+  // Step 5: Apply role config (capabilities, tools, temperature, maxTokens)
+  workerAgent.applyRoleConfig(roleConfig);
+  logger.info(MODULE_AGENT, '   ✅ Role config applied', timer.elapsed('main'));
 
-  // Start heartbeat interval
-  const heartbeatInterval = startHeartbeat(agent);
+  // Step 6: Start worker agent (connects to broker, subscribes to events)
+  await workerAgent.start();
 
-  // Graceful shutdown handler
+  // Step 7: Register with quest server and start heartbeat
+  const client = (workerAgent as any).client;
+  await registerAgent(client, roleConfig.role);
+  const heartbeatInterval = startHeartbeat(client, roleConfig.role);
+
+  // Step 8: Graceful shutdown
   const shutdown = async (signal: string) => {
-    logger.info(MODULE_AGENT, `${signal} received, shutting down artist agent...`, timer.elapsed('main'));
-
-    // Stop heartbeat
+    logger.info(MODULE_AGENT, `${signal} received, shutting down...`, timer.elapsed('main'));
     clearInterval(heartbeatInterval);
-    logger.info(MODULE_AGENT, '💓 Heartbeat stopped', timer.elapsed('main'));
-
-    // Unregister agent
-    await unregisterAgent(agent);
-
-    // Stop agent
-    await agent.stop();
-
+    await unregisterAgent(client, roleConfig.role);
+    await workerAgent.stop();
+    // BaseAgent cleanup (ProviderManager, MemoryService)
+    await baseAgent.shutdown();
     logger.info(MODULE_AGENT, 'Shutdown complete', timer.elapsed('main'));
     process.exit(0);
   };
 
-  // Register shutdown handlers
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 }

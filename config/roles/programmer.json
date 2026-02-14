@@ -1,0 +1,29 @@
+{
+  "$schema": "../role-schema.json",
+  "role": "programmer",
+  "capabilities": [
+    "code-generation",
+    "programming",
+    "software-development",
+    "debugging",
+    "refactoring",
+    "testing"
+  ],
+  "maxConcurrentTasks": 1,
+  "worktreePath": "C:/GitHub/agent-playground-programmer",
+  "eventTopic": "task",
+  "commitFormat": "feat: implement code for task {taskId}",
+  "provider": {
+    "model": "gpt-5-mini",
+    "temperature": 0.3,
+    "maxTokens": 16384
+  },
+  "memory": {
+    "enabled": true,
+    "namespace": "programmer"
+  },
+  "tools": [
+    "git_git_",
+    "ability_file_"
+  ]
+}

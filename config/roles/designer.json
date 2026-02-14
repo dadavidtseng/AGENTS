@@ -1,0 +1,29 @@
+{
+  "$schema": "../role-schema.json",
+  "role": "designer",
+  "capabilities": [
+    "ui-design",
+    "ux-design",
+    "css",
+    "responsive-layout",
+    "wireframing",
+    "prototyping"
+  ],
+  "maxConcurrentTasks": 1,
+  "worktreePath": "C:/GitHub/agent-playground-designer",
+  "eventTopic": "task",
+  "commitFormat": "feat: create design for task {taskId}",
+  "provider": {
+    "model": "gpt-5-mini",
+    "temperature": 0.7,
+    "maxTokens": 8192
+  },
+  "memory": {
+    "enabled": true,
+    "namespace": "designer"
+  },
+  "tools": [
+    "git_git_",
+    "ability_file_"
+  ]
+}
