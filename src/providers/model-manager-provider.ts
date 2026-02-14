@@ -118,7 +118,7 @@ export class ModelManagerProvider implements LLMProvider {
   /**
    * Default configuration
    */
-  private readonly defaultModel = 'gpt-4o-mini';
+  private readonly defaultModel = 'gpt-5-mini';
   private readonly defaultMaxTokens = 4096;
 
   /**
@@ -139,7 +139,7 @@ export class ModelManagerProvider implements LLMProvider {
   constructor(
     private readonly baseURL: string,
     private readonly apiKey: string,
-    private readonly timeoutMs: number = 30000
+    private readonly timeoutMs: number = 90000
   ) {
     if (!baseURL || baseURL.trim() === '') {
       throw new Error('Model Manager base URL is required');

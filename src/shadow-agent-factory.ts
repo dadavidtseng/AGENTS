@@ -27,6 +27,7 @@
 
 import { KadiClient, z } from '@kadi.build/core';
 import type { ShadowAgentConfig } from './types/agent-config.js';
+import { BaseAgent } from './base-agent.js';
 import chokidar, { type FSWatcher } from 'chokidar';
 import fs from 'fs';
 import path from 'path';
@@ -98,7 +99,7 @@ export class BaseShadowAgent {
    * Agent role (matches corresponding worker agent)
    *
    * Used for:
-   * - Event topic construction (shadow-{role}.backup.completed)
+   * - Event payload agent identification (shadow-agent-{role})
    * - Logging and identification
    */
   protected role: string;
@@ -193,6 +194,12 @@ export class BaseShadowAgent {
   private readonly config: ShadowAgentConfig;
 
   /**
+   * Whether this agent delegates connection management to a BaseAgent instance.
+   * When true, start() skips broker connection and stop() skips disconnection.
+   */
+  private readonly usesBaseAgent: boolean;
+
+  /**
    * Filesystem watcher instance for monitoring worker worktree
    *
    * Monitors file operations (create, modify, delete) in worker worktree.
@@ -260,7 +267,7 @@ export class BaseShadowAgent {
    * });
    * ```
    */
-  constructor(config: ShadowAgentConfig) {
+  constructor(config: ShadowAgentConfig, baseAgent?: BaseAgent) {
     // Start timer for performance tracking
     timer.start('shadow-factory');
 
@@ -273,16 +280,23 @@ export class BaseShadowAgent {
     this.shadowBranch = config.shadowBranch;
     this.debounceMs = config.debounceMs || 1000;
 
-    // Initialize KĀDI client
-    this.client = new KadiClient({
-      name: `shadow-agent-${config.role}`,
-      version: '1.0.0',
-      brokers: {
-        default: config.brokerUrl
-      },
-      defaultBroker: 'default',
-      networks: config.networks
-    });
+    // Initialize KĀDI client — delegate to BaseAgent if provided, else create own
+    if (baseAgent) {
+      this.client = baseAgent.client;
+      this.usesBaseAgent = true;
+      logger.info(MODULE_AGENT, '   ✅ Using BaseAgent client (connection managed externally)', timer.elapsed('shadow-factory'));
+    } else {
+      this.client = new KadiClient({
+        name: `shadow-agent-${config.role}`,
+        version: '1.0.0',
+        brokers: {
+          default: config.brokerUrl
+        },
+        defaultBroker: 'default',
+        networks: config.networks
+      });
+      this.usesBaseAgent = false;
+    }
 
     logger.info(MODULE_AGENT, `🔧 BaseShadowAgent initialized for role: ${this.role}`, timer.elapsed('shadow-factory'));
     logger.info(MODULE_AGENT, `   Worker worktree: ${this.workerWorktreePath}`, timer.elapsed('shadow-factory'));
@@ -317,14 +331,18 @@ export class BaseShadowAgent {
   async start(): Promise<void> {
     logger.info(MODULE_AGENT, `🚀 Starting shadow agent for role: ${this.role}`, timer.elapsed('shadow-factory'));
 
-    // Connect to KĀDI broker and wait for ready state
-    logger.info(MODULE_AGENT, '   → Connecting to KĀDI broker...', timer.elapsed('shadow-factory'));
-    try {
-      await this.client.connect();
-      logger.info(MODULE_AGENT, '   ✅ Connected to KĀDI broker', timer.elapsed('shadow-factory'));
-    } catch (error: any) {
-      logger.error(MODULE_AGENT, '❌ Broker connection error', timer.elapsed('shadow-factory'), error);
-      process.exit(1);
+    // Connect to KĀDI broker (skip if BaseAgent manages connection)
+    if (this.usesBaseAgent) {
+      logger.info(MODULE_AGENT, '   ✅ Broker connection managed by BaseAgent (skipping)', timer.elapsed('shadow-factory'));
+    } else {
+      logger.info(MODULE_AGENT, '   → Connecting to KĀDI broker...', timer.elapsed('shadow-factory'));
+      try {
+        await this.client.connect();
+        logger.info(MODULE_AGENT, '   ✅ Connected to KĀDI broker', timer.elapsed('shadow-factory'));
+      } catch (error: any) {
+        logger.error(MODULE_AGENT, '❌ Broker connection error', timer.elapsed('shadow-factory'), error);
+        process.exit(1);
+      }
     }
 
     // Setup filesystem watcher for worker worktree
@@ -394,10 +412,14 @@ export class BaseShadowAgent {
       logger.info(MODULE_AGENT, '✅ Debounce timers cleared', timer.elapsed('shadow-factory'));
     }
 
-    // Disconnect KĀDI client
-    logger.info(MODULE_AGENT, '   → Disconnecting from KĀDI broker...', timer.elapsed('shadow-factory'));
-    await this.client.disconnect();
-    logger.info(MODULE_AGENT, '   ✅ Disconnected from KĀDI broker', timer.elapsed('shadow-factory'));
+    // Disconnect KĀDI client (skip if BaseAgent manages connection)
+    if (this.usesBaseAgent) {
+      logger.info(MODULE_AGENT, '   ✅ Broker disconnection managed by BaseAgent (skipping)', timer.elapsed('shadow-factory'));
+    } else {
+      logger.info(MODULE_AGENT, '   → Disconnecting from KĀDI broker...', timer.elapsed('shadow-factory'));
+      await this.client.disconnect();
+      logger.info(MODULE_AGENT, '   ✅ Disconnected from KĀDI broker', timer.elapsed('shadow-factory'));
+    }
 
     logger.info(MODULE_AGENT, '✅ Shadow agent stopped', timer.elapsed('shadow-factory'));
   }
@@ -773,6 +795,18 @@ export class BaseShadowAgent {
           encoding: 'utf-8'
         });
 
+        // Step 5.5: Check if there are staged changes (FS watcher may have already committed)
+        try {
+          execSync('git diff --cached --quiet', { cwd: this.shadowWorktreePath });
+          // Exit code 0 = nothing staged — FS watcher already backed up this change
+          logger.info(MODULE_AGENT, `ℹ️  No new changes to commit (already backed up by filesystem watcher)`, timer.elapsed('shadow-factory'));
+          this.recordGitSuccess();
+          await this.publishBackupStatus(true, changedFiles, 'mirror-commit-skipped');
+          return;
+        } catch {
+          // Exit code 1 = staged changes exist — proceed with commit
+        }
+
         // Step 6: Create mirror commit in shadow worktree
         const shadowCommitMessage = `Shadow: ${operation} ${fileName}\n\nMirror of: ${commitMessage}\nOriginal SHA: ${commitHash}`;
 
@@ -832,6 +866,18 @@ export class BaseShadowAgent {
           });
         }
 
+        // Check if there are actually staged changes (FS watcher may fire duplicate events)
+        try {
+          execSync('git diff --cached --quiet', { cwd: this.shadowWorktreePath });
+          // Exit code 0 = nothing staged — content is identical to HEAD
+          logger.info(MODULE_AGENT, `ℹ️  No new changes to commit (file unchanged)`, timer.elapsed('shadow-factory'));
+          this.recordGitSuccess();
+          await this.publishBackupStatus(true, [fileName], `file-${operation.toLowerCase()}-skipped`);
+          return;
+        } catch {
+          // Exit code 1 = staged changes exist — proceed with commit
+        }
+
         // Create backup commit
         const commitMessage = `Shadow: ${operation} ${fileName}`;
         execSync(`git commit -m "${commitMessage}"`, {
@@ -876,7 +922,7 @@ export class BaseShadowAgent {
    * Publish backup status event to KĀDI broker
    *
    * Publishes standardized BackupEvent with schema compliance for both success
-   * and failure scenarios. Events follow topic pattern: shadow-{role}.backup.{completed|failed}.
+   * and failure scenarios. Events follow generic topic pattern: backup.{completed|failed} with agent identity in payload.
    *
    * Uses KadiEventPublisher for resilient event publishing with connection retry logic.
    * Handles publishing failures gracefully without throwing errors.
@@ -901,11 +947,12 @@ export class BaseShadowAgent {
     operation: string,
     error?: Error
   ): Promise<void> {
-    // Construct topic with shadow- prefix
-    const topic = `shadow-${this.role}.backup.${success ? 'completed' : 'failed'}`;
+    // Generic topic — agent identity is in the payload, not the topic
+    const topic = `backup.${success ? 'completed' : 'failed'}`;
 
     // Create payload matching BackupEvent schema
     const payload: {
+      agent: string;
       role: string;
       operation: string;
       status: 'success' | 'failure';
@@ -913,6 +960,7 @@ export class BaseShadowAgent {
       error?: string;
       timestamp: string;
     } = {
+      agent: `shadow-agent-${this.role}`,
       role: this.role,
       operation,
       status: success ? 'success' : 'failure',
@@ -1156,13 +1204,13 @@ export class ShadowAgentFactory {
    * await agent.start();
    * ```
    */
-  static createAgent(config: ShadowAgentConfig): BaseShadowAgent {
+  static createAgent(config: ShadowAgentConfig, baseAgent?: BaseAgent): BaseShadowAgent {
     // Validate configuration with Zod schema
     // Throws ZodError with descriptive messages if validation fails
     const validatedConfig = ShadowAgentConfigSchema.parse(config);
 
     // Create and return BaseShadowAgent instance with validated config
-    return new BaseShadowAgent(validatedConfig);
+    return new BaseShadowAgent(validatedConfig, baseAgent);
   }
 }
 
@@ -1189,6 +1237,6 @@ export class ShadowAgentFactory {
  * await agent.start();
  * ```
  */
-export function createShadowAgent(config: ShadowAgentConfig): BaseShadowAgent {
-  return ShadowAgentFactory.createAgent(config);
+export function createShadowAgent(config: ShadowAgentConfig, baseAgent?: BaseAgent): BaseShadowAgent {
+  return ShadowAgentFactory.createAgent(config, baseAgent);
 }

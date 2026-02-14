@@ -16,18 +16,26 @@
  * - Strategy pattern for role-specific customization via WorkerBehaviors
  * - Template method pattern for lifecycle management (start/stop)
  *
+ * Tool-Calling Agent Loop (Task 3.15):
+ * - executeTask sends task + available tools to LLM via ProviderManager
+ * - LLM calls tools iteratively (file ops, git ops via MCP)
+ * - Loop continues until LLM returns final text response
+ * - Git operations use client.invokeRemote() MCP tools, NOT child_process
+ *
  * @module worker-agent-factory
  */
 
 import { KadiClient, z } from '@kadi.build/core';
-import Anthropic from '@anthropic-ai/sdk';
 import type { WorkerAgentConfig, AgentRole } from './types/agent-config.js';
 import { BaseBot, BaseBotConfig } from './base-bot.js';
+import type { ProviderManager } from './providers/provider-manager.js';
+import type { Message, ToolDefinition, ChatOptions } from './providers/types.js';
 import {
   TaskAssignedEvent,
   TaskAssignedEventSchema,
   TaskCompletedEvent,
-  TaskFailedEvent
+  TaskFailedEvent,
+  TaskRejectedEvent
 } from './types/event-schemas.js';
 import { logger, MODULE_AGENT } from './utils/logger.js';
 import { timer } from './utils/timer.js';
@@ -69,6 +77,7 @@ const WorkerAgentConfigSchema = z.object({
     .min(1, 'At least one network is required'),
   anthropicApiKey: z.string().min(1, 'Anthropic API key is required'),
   claudeModel: z.string().optional(),
+  capabilities: z.array(z.string()).optional(),
   customBehaviors: z.any().optional() // Use any() for customBehaviors to avoid complex function type inference
 });
 
@@ -121,36 +130,29 @@ export class BaseWorkerAgent {
    * KĀDI client for broker communication
    *
    * Used for:
-   * - Registering tools
    * - Subscribing to events
    * - Publishing completion/failure events
-   * - Accessing broker protocol for tool invocation
+   * - Invoking remote MCP tools (git, file management)
    */
   protected client: KadiClient;
 
   /**
-   * Broker protocol for tool invocation
+   * LLM provider manager for model selection and chat
    *
-   * Initialized in start() via client.getBrokerProtocol().
-   * Used to invoke tools on other agents via broker.
-   */
-  protected protocol: any = null;
-
-  /**
-   * Anthropic API client for Claude integration
+   * Replaces direct Anthropic SDK usage. Provides:
+   * - Model-based routing (claude→Anthropic, gpt→Model Manager)
+   * - Automatic fallback on provider failure
+   * - Tool-calling via ChatOptions.tools
    *
-   * Used for task execution orchestration:
-   * - Analyzing task requirements
-   * - Generating creative content
-   * - Making decisions about file structure
+   * Optional — if null, agent cannot execute tasks requiring LLM.
    */
-  protected anthropic: Anthropic;
+  protected providerManager: ProviderManager | null = null;
 
   /**
    * Agent role (artist, designer, programmer)
    *
    * Used for:
-   * - Event topic construction ({role}.task.assigned)
+   * - Event topic filtering (generic task.assigned, role in payload)
    * - Default file extensions
    * - Commit message prefixes
    */
@@ -162,7 +164,7 @@ export class BaseWorkerAgent {
    * Agent creates files and commits in this directory.
    * Must be a valid git worktree with initialized repository.
    *
-   * @example 'C:/p4/Personal/SD/agent-playground-artist'
+   * @example 'C:/GitHub/agent-playground-artist'
    */
   protected worktreePath: string;
 
@@ -178,11 +180,59 @@ export class BaseWorkerAgent {
   protected networks: string[];
 
   /**
-   * Claude model to use for task execution
+   * Claude model to use for task execution (from role config or WorkerAgentConfig)
    *
    * @default 'claude-sonnet-4-20250514'
    */
   protected claudeModel: string;
+
+  /**
+   * Temperature for LLM requests (from role config)
+   *
+   * @default undefined (uses provider default)
+   */
+  protected temperature?: number;
+
+  /**
+   * Max tokens for LLM responses (from role config)
+   *
+   * @default undefined (uses provider default)
+   */
+  protected maxTokens?: number;
+
+  /**
+   * Commit message format template from role config
+   *
+   * Supports `{taskId}` placeholder. Used in the system prompt to guide
+   * the LLM on commit message formatting.
+   *
+   * @default 'feat({role}): <description> [{taskId}]'
+   */
+  protected commitFormat?: string;
+
+  /**
+   * Agent capabilities for task validation
+   *
+   * Used to validate incoming tasks before execution.
+   * If a task description doesn't match any capabilities, the agent rejects the task.
+   */
+  protected capabilities: string[];
+
+  /**
+   * MCP tool prefixes this agent is allowed to invoke (from role config)
+   *
+   * Controls which remote tools the agent can call via client.invokeRemote().
+   * Examples: ['git_git_', 'ability_file_']
+   *
+   * If empty, no remote tools are available to the agent.
+   */
+  protected toolPrefixes: string[];
+
+  /**
+   * Maximum iterations for the tool-calling loop.
+   * Prevents infinite loops if Claude keeps calling tools.
+   */
+  protected static readonly MAX_TOOL_LOOP_ITERATIONS = 25;
 
   // ============================================================================
   // Private Properties (internal use only)
@@ -191,18 +241,10 @@ export class BaseWorkerAgent {
   /**
    * BaseBot instance for circuit breaker and retry logic (COMPOSITION)
    *
-   * This is the key to our composition pattern:
-   * - We create a BaseBot instance and delegate resilience operations to it
-   * - We do NOT extend BaseBot (inheritance would couple us to its interface)
-   * - We can call baseBot.invokeToolWithRetry() for resilient tool invocation
-   * - We can call baseBot.checkCircuitBreaker() to respect circuit breaker state
-   *
-   * Why private?
-   * - Implementation detail of composition pattern
-   * - External code should not depend on BaseBot's interface
-   * - Keeps BaseWorkerAgent API stable if BaseBot changes
+   * Used for resilient tool invocation with exponential backoff.
+   * Created lazily when anthropicApiKey is available.
    */
-  private baseBot: BaseBot;
+  private baseBot: BaseBot | null = null;
 
   /**
    * Full agent configuration
@@ -210,6 +252,13 @@ export class BaseWorkerAgent {
    * Stored for reference and potential reconfiguration.
    */
   private config: WorkerAgentConfig;
+
+  /**
+   * Set of task IDs that have been processed or are currently in-flight.
+   * Prevents duplicate execution when the same task.assigned event arrives
+   * multiple times (e.g., retry re-publish while first execution is still running).
+   */
+  private processedTaskIds = new Set<string>();
 
   // ============================================================================
   // Constructor
@@ -251,6 +300,8 @@ export class BaseWorkerAgent {
     this.worktreePath = config.worktreePath;
     this.networks = config.networks;
     this.claudeModel = config.claudeModel || 'claude-sonnet-4-20250514';
+    this.capabilities = config.capabilities || [];
+    this.toolPrefixes = [];
 
     // Initialize KĀDI client
     this.client = new KadiClient({
@@ -263,29 +314,20 @@ export class BaseWorkerAgent {
       networks: config.networks
     });
 
-    // Initialize Anthropic API client
-    this.anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
-
     // COMPOSITION: Create BaseBot instance for circuit breaker and retry logic
-    // We pass a minimal BaseBotConfig - BaseBot only needs client, apiKey, and botUserId
-    const baseBotConfig: BaseBotConfig = {
-      client: this.client,
-      anthropicApiKey: config.anthropicApiKey,
-      botUserId: `agent-${config.role}` // Use agent name as bot ID
-    };
-    this.baseBot = new (class extends BaseBot {
-      // Anonymous class to satisfy BaseBot's abstract methods
-      // We don't use these methods - BaseWorkerAgent has its own task handling
-      protected async handleMention(_event: any): Promise<void> {
-        // No-op: worker agents don't handle mentions
-      }
-      public async start(): Promise<void> {
-        // No-op: lifecycle managed by BaseWorkerAgent
-      }
-      public stop(): void {
-        // No-op: lifecycle managed by BaseWorkerAgent
-      }
-    })(baseBotConfig);
+    // Only created when anthropicApiKey is available (backward compatibility)
+    if (config.anthropicApiKey) {
+      const baseBotConfig: BaseBotConfig = {
+        client: this.client,
+        anthropicApiKey: config.anthropicApiKey,
+        botUserId: `agent-${config.role}`
+      };
+      this.baseBot = new (class extends BaseBot {
+        protected async handleMention(_event: any): Promise<void> { /* No-op */ }
+        public async start(): Promise<void> { /* No-op */ }
+        public stop(): void { /* No-op */ }
+      })(baseBotConfig);
+    }
   }
 
   // ============================================================================
@@ -328,10 +370,12 @@ export class BaseWorkerAgent {
         throw error;
       }
 
-      // Step 2: Initialize ability response subscription
-      logger.info(MODULE_AGENT, '   → Initializing ability response subscription...', timer.elapsed('factory'));
-      await this.baseBot['initializeAbilityResponseSubscription']();
-      logger.info(MODULE_AGENT, '   ✅ Ability response subscription initialized', timer.elapsed('factory'));
+      // Step 2: Initialize ability response subscription (if BaseBot available)
+      if (this.baseBot) {
+        logger.info(MODULE_AGENT, '   → Initializing ability response subscription...', timer.elapsed('factory'));
+        await this.baseBot['initializeAbilityResponseSubscription']();
+        logger.info(MODULE_AGENT, '   ✅ Ability response subscription initialized', timer.elapsed('factory'));
+      }
 
       logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
       logger.info(MODULE_AGENT, '✅ KĀDI client initialized successfully', timer.elapsed('factory'));
@@ -458,6 +502,51 @@ export class BaseWorkerAgent {
         return;
       }
 
+      // Deduplication: skip tasks already processed or in-flight
+      // Allow retries (events with feedback) by clearing the previous entry
+      if (this.processedTaskIds.has(validatedEvent.taskId)) {
+        if (validatedEvent.feedback) {
+          // Retry with feedback — allow re-processing
+          logger.info(MODULE_AGENT, `   🔄 Retry detected for task ${validatedEvent.taskId}, allowing re-execution`, timer.elapsed('factory'));
+          this.processedTaskIds.delete(validatedEvent.taskId);
+        } else {
+          // Duplicate without feedback — skip
+          logger.warn(MODULE_AGENT, `   ⚠️  Duplicate task.assigned for ${validatedEvent.taskId}, skipping (already processed/in-flight)`, timer.elapsed('factory'));
+          logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
+          return;
+        }
+      }
+      // Mark task as in-flight before execution
+      this.processedTaskIds.add(validatedEvent.taskId);
+
+      // Capability validation: check if task matches this agent's capabilities
+      if (this.capabilities.length > 0) {
+        const rejectionReason = this.validateTaskCapability(validatedEvent);
+        if (rejectionReason) {
+          logger.warn(MODULE_AGENT, `   ⚠️  Task capability mismatch`, timer.elapsed('factory'));
+          logger.warn(MODULE_AGENT, `   Reason: ${rejectionReason}`, timer.elapsed('factory'));
+          logger.warn(MODULE_AGENT, `   Publishing task.rejected event`, timer.elapsed('factory'));
+          await this.publishRejection(validatedEvent.taskId, validatedEvent.questId, rejectionReason);
+          logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
+          return;
+        }
+        logger.info(MODULE_AGENT, `   ✅ Capability check passed`, timer.elapsed('factory'));
+      }
+
+      // Worktree scope validation: soft warning only (worker always operates within its worktree directory)
+      const outOfScopeReason = this.validateTaskScope(validatedEvent);
+      if (outOfScopeReason) {
+        logger.warn(MODULE_AGENT, `   ⚠️  Path reference outside worktree detected (non-blocking)`, timer.elapsed('factory'));
+        logger.warn(MODULE_AGENT, `   Note: ${outOfScopeReason}`, timer.elapsed('factory'));
+        logger.warn(MODULE_AGENT, `   Proceeding — worker operates within worktree "${this.worktreePath}"`, timer.elapsed('factory'));
+      }
+
+      // Log retry context if present
+      if (validatedEvent.feedback) {
+        logger.info(MODULE_AGENT, `   🔄 RETRY attempt #${validatedEvent.retryAttempt || 1}`, timer.elapsed('factory'));
+        logger.info(MODULE_AGENT, `   Feedback: ${validatedEvent.feedback.substring(0, 120)}${validatedEvent.feedback.length > 120 ? '...' : ''}`, timer.elapsed('factory'));
+      }
+
       // Execute task
       await this.executeTask(validatedEvent);
       logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
@@ -493,29 +582,24 @@ export class BaseWorkerAgent {
   }
 
   /**
-   * Execute task with Claude API integration
+   * Execute task using tool-calling agent loop
    *
-   * Workflow:
-   * 1. Change to worktree directory
-   * 2. Determine filename using AI or custom behavior
-   * 3. Generate content with Claude API
-   * 4. Write file to worktree
-   * 5. (Git operations handled in next task)
+   * Replaces the old linear pipeline (generate content → write file → git commit)
+   * with an iterative tool-calling loop where the LLM decides what tools to use.
    *
-   * Uses BaseBot retry logic for resilience against transient failures.
+   * Flow:
+   * 1. Fetch full task details from quest (if questId provided)
+   * 2. Set git working directory to worktree via MCP
+   * 3. Build system prompt with task context and available tools
+   * 4. Enter tool-calling loop:
+   *    a. Send messages + tools to ProviderManager.chat()
+   *    b. If response contains __TOOL_CALLS__, execute each tool via invokeRemote
+   *    c. Feed tool results back as messages
+   *    d. Repeat until LLM returns plain text (done) or max iterations reached
+   * 5. Extract files created/modified and commit SHA from tool call history
+   * 6. Publish task.completed event
    *
    * @param task - Validated task assignment event
-   *
-   * @example
-   * ```typescript
-   * await this.executeTask({
-   *   taskId: 'task-123',
-   *   role: 'artist',
-   *   description: 'Create hero banner',
-   *   requirements: 'Size: 1920x1080',
-   *   timestamp: '2025-12-04T10:30:00.000Z'
-   * });
-   * ```
    */
   protected async executeTask(task: TaskAssignedEvent): Promise<void> {
     logger.info(MODULE_AGENT, `🎨 Processing ${this.role} task: ${task.taskId}`, timer.elapsed('factory'));
@@ -525,378 +609,536 @@ export class BaseWorkerAgent {
       // Step 1: Get full task details if questId is provided
       let implementationGuide = task.requirements;
       let verificationCriteria = '';
-      
+
       if (task.questId) {
         logger.info(MODULE_AGENT, `📋 Fetching full task details from quest ${task.questId}...`, timer.elapsed('factory'));
-        
         try {
           const taskDetails = await this.client.invokeRemote<{
             content: Array<{ type: string; text: string }>;
-          }>('quest_quest_get_task_details', {
-            taskId: task.taskId
-          });
+          }>('quest_quest_query_task', { taskId: task.taskId });
 
-          // Parse task details
           const detailsText = taskDetails.content[0].text;
           const details = JSON.parse(detailsText);
-          
-          implementationGuide = details.implementationGuide || task.requirements;
-          verificationCriteria = details.verificationCriteria || '';
-          
+          implementationGuide = details.task?.implementationGuide || task.requirements;
+          verificationCriteria = details.task?.verificationCriteria || '';
+
           logger.info(MODULE_AGENT, `   ✅ Task details fetched`, timer.elapsed('factory'));
-          logger.info(MODULE_AGENT, `   Implementation guide: ${implementationGuide.substring(0, 100)}...`, timer.elapsed('factory'));
-          if (verificationCriteria) {
-            logger.info(MODULE_AGENT, `   Verification criteria: ${verificationCriteria.substring(0, 100)}...`, timer.elapsed('factory'));
-          }
         } catch (error: any) {
           logger.warn(MODULE_AGENT, `   ⚠️  Failed to fetch task details: ${error.message}`, timer.elapsed('factory'));
-          logger.warn(MODULE_AGENT, `   Continuing with basic requirements`, timer.elapsed('factory'));
         }
       }
 
-      // Step 2: Change to worktree directory
-      const originalCwd = process.cwd();
-      logger.info(MODULE_AGENT, `📂 Changing to worktree: ${this.worktreePath}`, timer.elapsed('factory'));
-      process.chdir(this.worktreePath);
-
+      // Step 2: Set git working directory via MCP tool
+      logger.info(MODULE_AGENT, `📂 Setting git working directory: ${this.worktreePath}`, timer.elapsed('factory'));
       try {
-        // Step 3: Determine filename
-        const fileName = await this.determineFilename(task);
-        const filePath = `${this.worktreePath}/${fileName}`;
-
-        // Validate file path is within worktree
-        if (!filePath.startsWith(this.worktreePath)) {
-          throw new Error(`Invalid file path: must be within worktree ${this.worktreePath}`);
-        }
-
-        logger.info(MODULE_AGENT, `📝 Target file: ${fileName}`, timer.elapsed('factory'));
-
-        // Step 4: Generate content with Claude API using implementation guide
-        logger.info(MODULE_AGENT, `🤖 Generating content with Claude AI...`, timer.elapsed('factory'));
-
-        const prompt = `You are a ${this.role} agent. Create content for this task:
-
-Task ID: ${task.taskId}
-Description: ${task.description}
-Implementation Guide: ${implementationGuide}
-${verificationCriteria ? `Verification Criteria: ${verificationCriteria}` : ''}
-
-Instructions:
-1. Follow the implementation guide carefully
-2. Create appropriate content based on the task description
-3. Ensure the output meets the verification criteria (if provided)
-4. Make the content professional and high-quality
-5. For ${this.role} role, focus on ${this.role === 'artist' ? 'creative and artistic elements' : this.role === 'designer' ? 'design principles and aesthetics' : 'code quality and best practices'}
-
-Respond with ONLY the file content, no explanations or markdown code blocks.`;
-
-        const stream = await this.anthropic.messages.stream({
-          model: this.claudeModel,
-          max_tokens: 4096,
-          messages: [{
-            role: 'user',
-            content: prompt
-          }]
-        });
-
-        // Collect streamed content
-        let content = '';
-        for await (const chunk of stream) {
-          if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-            content += chunk.delta.text;
-          }
-        }
-
-        logger.info(MODULE_AGENT, `   ✅ Content generated (${content.length} characters)`, timer.elapsed('factory'));
-
-        // Step 5: Write file to worktree
-        logger.info(MODULE_AGENT, `💾 Writing file: ${filePath}`, timer.elapsed('factory'));
-
-        const fs = await import('fs/promises');
-        await fs.writeFile(filePath, content, 'utf-8');
-
-        logger.info(MODULE_AGENT, `   ✅ File written: ${fileName}`, timer.elapsed('factory'));
-
-        // Step 6: Commit changes with git
-        const commitSha = await this.commitChanges(task.taskId, [fileName]);
-
-        // Step 7: Publish completion event with questId
-        await this.publishCompletion(
-          task.taskId,
-          task.questId,
-          [fileName],  // filesCreated
-          [],          // filesModified (none in this implementation)
-          commitSha
-        );
-
-        logger.info(MODULE_AGENT, `✅ Task ${task.taskId} execution completed`, timer.elapsed('factory'));
-
-      } finally {
-        // Always restore original working directory
-        process.chdir(originalCwd);
+        await this.client.invokeRemote('git_git_set_working_dir', { path: this.worktreePath });
+        logger.info(MODULE_AGENT, `   ✅ Git working directory set`, timer.elapsed('factory'));
+      } catch (error: any) {
+        logger.warn(MODULE_AGENT, `   ⚠️  Failed to set git working dir: ${error.message}`, timer.elapsed('factory'));
+        // Non-fatal — tools can still pass explicit path
       }
+
+      // Step 3: Check if ProviderManager is available
+      if (!this.providerManager) {
+        throw new Error('ProviderManager not initialized — cannot execute task without LLM');
+      }
+
+      // Step 4: Build tool definitions — local tools + dynamic discovery from broker
+      const tools = await this.buildToolDefinitionsAsync();
+      logger.info(MODULE_AGENT, `🔧 Available tools: ${tools.length} (prefixes: ${this.toolPrefixes.join(', ') || 'none'})`, timer.elapsed('factory'));
+
+      // Step 5: Build initial system prompt
+      const systemPrompt = this.buildTaskSystemPrompt(task, implementationGuide, verificationCriteria);
+
+      // Step 6: Enter tool-calling agent loop
+      const messages: Message[] = [
+        { role: 'user', content: systemPrompt }
+      ];
+
+      const chatOptions: ChatOptions = {
+        model: this.claudeModel,
+        maxTokens: this.maxTokens || 8192,
+        temperature: this.temperature,
+        tools: tools.length > 0 ? tools : undefined,
+        tool_choice: tools.length > 0 ? 'auto' : undefined
+      };
+
+      // Track files created/modified and commit SHA across tool calls
+      const filesCreated: string[] = [];
+      const filesModified: string[] = [];
+      let commitSha = 'unknown';
+      let finalResponse = '';
+
+      for (let iteration = 0; iteration < BaseWorkerAgent.MAX_TOOL_LOOP_ITERATIONS; iteration++) {
+        logger.info(MODULE_AGENT, `🔄 Agent loop iteration ${iteration + 1}/${BaseWorkerAgent.MAX_TOOL_LOOP_ITERATIONS}`, timer.elapsed('factory'));
+
+        const result = await this.providerManager.chat(messages, chatOptions);
+
+        if (!result.success) {
+          throw new Error(`LLM chat failed: ${result.error?.message || 'Unknown error'}`);
+        }
+
+        const responseText = result.data;
+
+        // Check if response contains tool calls
+        if (responseText.startsWith('__TOOL_CALLS__')) {
+          const toolCallsData = JSON.parse(responseText.substring('__TOOL_CALLS__'.length));
+          const toolCalls: Array<{
+            id: string;
+            type: 'function';
+            function: { name: string; arguments: string };
+          }> = toolCallsData.tool_calls;
+          const assistantMessage = toolCallsData.message || '';
+
+          logger.info(MODULE_AGENT, `   🤖 LLM requested ${toolCalls.length} tool call(s)`, timer.elapsed('factory'));
+          if (assistantMessage) {
+            logger.info(MODULE_AGENT, `   💬 ${assistantMessage.substring(0, 120)}${assistantMessage.length > 120 ? '...' : ''}`, timer.elapsed('factory'));
+          }
+
+          // Add assistant message with tool_calls to conversation
+          messages.push({
+            role: 'assistant',
+            content: assistantMessage || null,
+            tool_calls: toolCalls
+          });
+
+          // Execute each tool call and collect results
+          for (const toolCall of toolCalls) {
+            const toolName = toolCall.function.name;
+            const toolArgs = JSON.parse(toolCall.function.arguments);
+
+            logger.info(MODULE_AGENT, `   🔧 Executing tool: ${toolName}`, timer.elapsed('factory'));
+
+            try {
+              const toolResult = await this.executeRemoteTool(toolName, toolArgs);
+              const resultText = typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult);
+
+              // Track file operations from tool results
+              this.trackFileOperations(toolName, toolArgs, toolResult, filesCreated, filesModified);
+
+              // Track commit SHA from git_commit results
+              if (toolName === 'git_git_commit' || toolName === 'git_commit') {
+                const sha = this.extractCommitSha(toolResult);
+                if (sha) commitSha = sha;
+              }
+
+              messages.push({
+                role: 'tool',
+                content: resultText,
+                tool_call_id: toolCall.id
+              });
+
+              logger.info(MODULE_AGENT, `   ✅ Tool ${toolName} succeeded`, timer.elapsed('factory'));
+            } catch (error: any) {
+              const errorMsg = `Tool ${toolName} failed: ${error.message || String(error)}`;
+              logger.error(MODULE_AGENT, `   ❌ ${errorMsg}`, timer.elapsed('factory'));
+
+              messages.push({
+                role: 'tool',
+                content: JSON.stringify({ error: errorMsg }),
+                tool_call_id: toolCall.id
+              });
+            }
+          }
+          // Continue loop — LLM will process tool results
+        } else {
+          // Plain text response — agent is done
+          finalResponse = responseText;
+          logger.info(MODULE_AGENT, `   ✅ Agent completed (${finalResponse.length} chars response)`, timer.elapsed('factory'));
+          break;
+        }
+      }
+
+      // Step 7: Publish completion event
+      const contentSummary = finalResponse.length > 500
+        ? finalResponse.substring(0, 500) + `... (${finalResponse.length} chars total)`
+        : finalResponse;
+
+      await this.publishCompletion(
+        task.taskId,
+        task.questId,
+        filesCreated,
+        filesModified,
+        commitSha,
+        contentSummary
+      );
+
+      logger.info(MODULE_AGENT, `✅ Task ${task.taskId} execution completed`, timer.elapsed('factory'));
 
     } catch (error: any) {
       logger.error(MODULE_AGENT, `Failed to execute task ${task.taskId}`, timer.elapsed('factory'), error);
       logger.error(MODULE_AGENT, `   Error: ${error.message || String(error)}`, timer.elapsed('factory'));
       logger.error(MODULE_AGENT, `   Stack: ${error.stack || 'No stack trace'}`, timer.elapsed('factory'));
 
-      // Publish failure event
-      await this.publishFailure(task.taskId, error);
-
-      throw error; // Re-throw for caller to handle
+      await this.publishFailure(task.taskId, error, task.questId);
+      throw error;
     }
   }
 
+  // ============================================================================
+  // Tool-Calling Loop Helpers
+  // ============================================================================
+
   /**
-   * Determine filename for task output
+   * Build the system prompt for the tool-calling agent loop
    *
-   * Strategy:
-   * 1. If config.customBehaviors.determineFilename exists, use it
-   * 2. Otherwise, use Claude API to determine filename from task description
-   * 3. Fallback to default pattern if AI determination fails
-   *
-   * Uses Claude Haiku for fast, cost-effective filename generation.
-   *
-   * @param task - Task assignment event
-   * @returns Sanitized filename
-   *
-   * @example
-   * ```typescript
-   * const filename = await this.determineFilename({
-   *   taskId: 'task-123',
-   *   role: 'artist',
-   *   description: 'Create file named hero-banner.png',
-   *   requirements: '',
-   *   timestamp: '2025-12-04T10:30:00.000Z'
-   * });
-   * // Returns: "hero-banner.png"
-   * ```
+   * Includes task context, role identity, worktree path, and instructions
+   * for using available tools (git, file operations).
    */
-  protected async determineFilename(task: TaskAssignedEvent): Promise<string> {
-    // Check if custom behavior is provided
-    if (this.config.customBehaviors?.determineFilename) {
-      logger.info(MODULE_AGENT, `🔧 Using custom filename behavior`, timer.elapsed('factory'));
-      const customFilename = await this.config.customBehaviors.determineFilename(task.taskId, task.description);
-      return this.sanitizeFilename(customFilename);
-    }
+  protected buildTaskSystemPrompt(
+    task: TaskAssignedEvent,
+    implementationGuide: string,
+    verificationCriteria: string
+  ): string {
+    const retryContext = task.feedback
+      ? `\n⚠️ REVISION REQUIRED (Attempt #${task.retryAttempt || 1})\nPrevious attempt was rejected. Feedback:\n${task.feedback}\nPlease carefully address the feedback above.\n`
+      : '';
 
-    // Use Claude API to determine filename
-    logger.info(MODULE_AGENT, `🤖 Using Claude AI to determine filename...`, timer.elapsed('factory'));
+    return `You are a ${this.role} agent working in the KĀDI multi-agent system.
+Your worktree directory is: ${this.worktreePath}
 
-    try {
-      const response = await this.anthropic.messages.create({
-        model: 'claude-3-haiku-20240307', // Fast and cost-effective
-        max_tokens: 200,
-        messages: [{
-          role: 'user',
-          content: `You are a ${this.role} agent. Analyze this task description and determine the appropriate filename:
-
-Task: "${task.description}"
+Task ID: ${task.taskId}
+Description: ${task.description}
+Implementation Guide: ${implementationGuide}
+${verificationCriteria ? `Verification Criteria: ${verificationCriteria}` : ''}
+${retryContext}
 
 Instructions:
-1. If the description explicitly specifies a filename (e.g., "create file named X", "name it Y", "call it Z"), use that EXACT name
-2. Remove any angle brackets, quotes, or other markup (e.g., "<placeholder>" becomes "placeholder")
-3. If no explicit filename is given, extract a meaningful name from the task description
-4. Add appropriate extension based on role:
-   - artist: .txt, .md, .html, .svg, etc.
-   - designer: .css, .scss, .json, .md, etc.
-   - programmer: .ts, .js, .py, .java, etc.
-5. If you cannot determine a good filename, respond with: ${this.role}-${task.taskId.substring(0, 8)}.txt
+1. Analyze the task requirements carefully
+2. Create the necessary files in the worktree using available tools
+3. Stage and commit your changes using git tools
+4. When done, provide a brief summary of what you created
 
-Respond with ONLY the filename, nothing else. No explanations, no markdown, just the filename.`
-        }]
-      });
-
-      const filename = (response.content[0] as any).text.trim();
-      const sanitized = this.sanitizeFilename(filename);
-
-      logger.info(MODULE_AGENT, `   ✅ AI determined filename: ${sanitized}`, timer.elapsed('factory'));
-      return sanitized;
-
-    } catch (error: any) {
-      logger.error(MODULE_AGENT, `   AI filename determination failed: ${error.message}`, timer.elapsed('factory'), error);
-      logger.warn(MODULE_AGENT, `   ⚠️  Falling back to default filename pattern`, timer.elapsed('factory'));
-      return `${this.role}-${task.taskId.substring(0, 8)}.txt`;
-    }
+Important:
+- All file operations must be within the worktree: ${this.worktreePath}
+- Use git_git_add to stage files and git_git_commit to commit
+- If the task description specifies an exact commit message, you MUST use that exact message
+- Default commit message format (use ONLY when no commit message is specified in the task): "${this.commitFormat ? this.commitFormat.replace('{taskId}', task.taskId) : `feat(${this.role}): <description> [${task.taskId}]`}"
+- Focus on ${this.role === 'artist' ? 'creative and artistic elements' : this.role === 'designer' ? 'design principles and aesthetics' : 'code quality and best practices'}`;
   }
 
   /**
-   * Sanitize filename to remove unsafe characters
+   * Build tool definitions: local tools + dynamic discovery from KĀDI broker
    *
-   * Removes all characters except:
-   * - Alphanumeric: a-z, A-Z, 0-9
-   * - Safe punctuation: . - _
-   *
-   * @param filename - Raw filename from AI or user
-   * @returns Sanitized filename safe for filesystem
-   *
-   * @example
-   * ```typescript
-   * this.sanitizeFilename('my file!.txt') // Returns: "my_file_.txt"
-   * this.sanitizeFilename('<hero-banner>.png') // Returns: "hero-banner.png"
-   * ```
+   * 1. Always includes local tools (write_file, read_file)
+   * 2. Discovers network tools from broker via kadi.ability.list
+   * 3. Filters network tools by toolPrefixes from role config
+   * 4. Converts to OpenAI-compatible ToolDefinition format
    */
-  private sanitizeFilename(filename: string): string {
-    return filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-  }
+  protected async buildToolDefinitionsAsync(): Promise<ToolDefinition[]> {
+    const tools: ToolDefinition[] = [];
 
-  /**
-   * Commit changes to git repository
-   *
-   * Workflow:
-   * 1. Stage files with `git add`
-   * 2. Commit with formatted message via `git commit`
-   * 3. Extract commit SHA from output
-   *
-   * Uses child_process.exec for git commands with retry logic for transient failures.
-   * All commands are executed in config.worktreePath directory.
-   *
-   * @param taskId - Task ID for commit message formatting
-   * @param files - Array of filenames to stage (relative to worktree)
-   * @returns Promise that resolves to commit SHA
-   *
-   * @throws {Error} If git operations fail after retries
-   *
-   * @example
-   * ```typescript
-   * const commitSha = await this.commitChanges('task-123', ['artwork.png', 'README.md']);
-   * // Runs: git add artwork.png README.md
-   * // Then: git commit -m "feat: create artwork for task task-123"
-   * // Returns: "a1b2c3d4e5f6g7h8i9j0"
-   * ```
-   */
-  protected async commitChanges(taskId: string, files: string[]): Promise<string> {
-    const { exec } = await import('child_process');
-    const { promisify } = await import('util');
-    const execAsync = promisify(exec);
-
-    logger.info(MODULE_AGENT, `📦 Committing changes for task ${taskId}`, timer.elapsed('factory'));
-    logger.info(MODULE_AGENT, `   Files: ${files.join(', ')}`, timer.elapsed('factory'));
-
-    try {
-      // Step 1: Stage files with git add
-      const addCommand = `git add ${files.join(' ')}`;
-      logger.info(MODULE_AGENT, `   → Running: ${addCommand}`, timer.elapsed('factory'));
-
-      await execAsync(addCommand, { cwd: this.worktreePath });
-      logger.info(MODULE_AGENT, `   ✅ Files staged`, timer.elapsed('factory'));
-
-      // Step 2: Generate commit message
-      const commitMessage = this.formatCommitMessage(taskId, files);
-      logger.info(MODULE_AGENT, `   → Commit message: ${commitMessage}`, timer.elapsed('factory'));
-
-      // Step 3: Commit changes
-      const commitCommand = `git commit -m "${commitMessage}"`;
-      logger.info(MODULE_AGENT, `   → Running: git commit`, timer.elapsed('factory'));
-
-      const { stdout } = await execAsync(commitCommand, { cwd: this.worktreePath });
-
-      // Extract commit SHA from output
-      // Git commit output format: "[branch commitSha] commit message"
-      const shaMatch = stdout.match(/\[[\w-]+\s+([a-f0-9]+)\]/);
-      const commitSha = shaMatch ? shaMatch[1] : 'unknown';
-
-      logger.info(MODULE_AGENT, `   ✅ Changes committed (SHA: ${commitSha.substring(0, 7)})`, timer.elapsed('factory'));
-      logger.info(MODULE_AGENT, `   Full output: ${stdout.trim()}`, timer.elapsed('factory'));
-
-      return commitSha;
-
-    } catch (error: any) {
-      // Classify error for retry logic
-      const errorMessage = error.message?.toLowerCase() || '';
-
-      // Check if this is a transient error (network, lock file, etc.)
-      const isTransient =
-        errorMessage.includes('lock') ||
-        errorMessage.includes('timeout') ||
-        errorMessage.includes('connection') ||
-        errorMessage.includes('unable to access');
-
-      if (isTransient) {
-        logger.warn(MODULE_AGENT, `   ⚠️  Transient git error detected: ${error.message}`, timer.elapsed('factory'));
-        logger.warn(MODULE_AGENT, `   Retrying with exponential backoff...`, timer.elapsed('factory'));
-
-        // Retry with exponential backoff for transient errors
-        // Note: In production, this should use baseBot.retryWithBackoff
-        // For now, implement simple retry logic
-        let retries = 3;
-        let delay = 1000;
-
-        for (let attempt = 1; attempt <= retries; attempt++) {
-          try {
-            logger.info(MODULE_AGENT, `   Retry attempt ${attempt}/${retries} (delay: ${delay}ms)`, timer.elapsed('factory'));
-            await new Promise(resolve => setTimeout(resolve, delay));
-
-            // Retry git add
-            await execAsync(`git add ${files.join(' ')}`, { cwd: this.worktreePath });
-
-            // Retry git commit
-            const commitMessage = this.formatCommitMessage(taskId, files);
-            const { stdout: retryStdout } = await execAsync(`git commit -m "${commitMessage}"`, { cwd: this.worktreePath });
-
-            // Extract commit SHA from retry output
-            const retryShaMatch = retryStdout.match(/\[[\w-]+\s+([a-f0-9]+)\]/);
-            const retryCommitSha = retryShaMatch ? retryShaMatch[1] : 'unknown';
-
-            logger.info(MODULE_AGENT, `   ✅ Git operation succeeded on retry ${attempt}`, timer.elapsed('factory'));
-            return retryCommitSha; // Success - return SHA
-
-          } catch (retryError: any) {
-            if (attempt === retries) {
-              // Final attempt failed
-              logger.error(MODULE_AGENT, `   All retry attempts exhausted`, timer.elapsed('factory'), retryError);
-              throw retryError;
-            }
-            delay *= 2; // Exponential backoff
-          }
+    // Always include local file tools (not MCP — handled directly in executeRemoteTool)
+    tools.push({
+      type: 'function',
+      function: {
+        name: 'write_file',
+        description: 'Write content to a file in the worktree. Creates parent directories if needed.',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Absolute file path within the worktree' },
+            content: { type: 'string', description: 'File content to write' }
+          },
+          required: ['path', 'content']
         }
+      }
+    });
 
-        // This should never be reached - all code paths above either return or throw
-        throw new Error('Unexpected: retry loop completed without return or throw');
+    tools.push({
+      type: 'function',
+      function: {
+        name: 'read_file',
+        description: 'Read content from a file in the worktree.',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Absolute file path within the worktree' }
+          },
+          required: ['path']
+        }
+      }
+    });
 
-      } else {
-        // Permanent error - fail immediately
-        logger.error(MODULE_AGENT, `Git operation failed (permanent error)`, timer.elapsed('factory'), error);
-        logger.error(MODULE_AGENT, `   Error: ${error.message || String(error)}`, timer.elapsed('factory'));
-        logger.error(MODULE_AGENT, `   Command output: ${error.stdout || 'none'}`, timer.elapsed('factory'));
-        logger.error(MODULE_AGENT, `   Command stderr: ${error.stderr || 'none'}`, timer.elapsed('factory'));
-        throw error;
+    // Discover network tools from broker, filtered by toolPrefixes
+    if (this.toolPrefixes.length > 0 && this.client.isConnected()) {
+      try {
+        const response = await this.client.invokeRemote<{ tools: Array<{
+          name: string;
+          description?: string;
+          inputSchema?: Record<string, unknown>;
+        }> }>('kadi.ability.list', { includeProviders: false });
+
+        if (response?.tools && Array.isArray(response.tools)) {
+          for (const tool of response.tools) {
+            // Only include tools matching one of the configured prefixes
+            if (this.toolPrefixes.some(prefix => tool.name.startsWith(prefix))) {
+              tools.push({
+                type: 'function',
+                function: {
+                  name: tool.name,
+                  description: tool.description || '',
+                  parameters: (tool.inputSchema as ToolDefinition['function']['parameters']) || {
+                    type: 'object',
+                    properties: {},
+                    required: []
+                  }
+                }
+              });
+            }
+          }
+          logger.info(
+            MODULE_AGENT,
+            `Discovered ${tools.length - 2} network tools from broker (filtered by prefixes: ${this.toolPrefixes.join(', ')})`,
+            timer.elapsed('factory')
+          );
+        }
+      } catch (error: any) {
+        logger.warn(
+          MODULE_AGENT,
+          `Failed to discover network tools from broker: ${error.message} — falling back to hardcoded definitions`,
+          timer.elapsed('factory')
+        );
+        // Fallback: use hardcoded git tools if discovery fails
+        this.appendHardcodedGitTools(tools);
+      }
+    } else if (this.toolPrefixes.length > 0) {
+      // Not connected to broker — use hardcoded fallback
+      logger.warn(MODULE_AGENT, 'Not connected to broker — using hardcoded tool definitions', timer.elapsed('factory'));
+      this.appendHardcodedGitTools(tools);
+    }
+
+    return tools;
+  }
+
+  /**
+   * Fallback: append hardcoded git tool definitions when broker discovery fails
+   */
+  private appendHardcodedGitTools(tools: ToolDefinition[]): void {
+    if (!this.toolPrefixes.some(p => p.startsWith('git_git_'))) return;
+
+    tools.push(
+      {
+        type: 'function',
+        function: {
+          name: 'git_git_status',
+          description: 'Show git working tree status',
+          parameters: { type: 'object', properties: { path: { type: 'string', description: 'Repository path (defaults to working dir)' } } }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'git_git_add',
+          description: 'Stage files for commit',
+          parameters: { type: 'object', properties: { files: { type: 'array', items: { type: 'string' }, description: 'File paths to stage' }, all: { type: 'boolean', description: 'Stage all changes' }, path: { type: 'string', description: 'Repository path' } }, required: ['files'] }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'git_git_commit',
+          description: 'Create a new git commit with staged changes',
+          parameters: { type: 'object', properties: { message: { type: 'string', description: 'Commit message' }, path: { type: 'string', description: 'Repository path' } }, required: ['message'] }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'git_git_log',
+          description: 'View recent commit history',
+          parameters: { type: 'object', properties: { maxCount: { type: 'number', description: 'Max commits to show' }, path: { type: 'string', description: 'Repository path' } } }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'git_git_diff',
+          description: 'Show changes between commits or working tree',
+          parameters: { type: 'object', properties: { path: { type: 'string', description: 'Repository path' } } }
+        }
+      }
+    );
+  }
+
+  /**
+   * @deprecated Use buildToolDefinitionsAsync() instead. Kept for backward compatibility.
+   */
+  protected buildToolDefinitions(): ToolDefinition[] {
+    const tools: ToolDefinition[] = [];
+
+    tools.push({
+      type: 'function',
+      function: {
+        name: 'write_file',
+        description: 'Write content to a file in the worktree. Creates parent directories if needed.',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Absolute file path within the worktree' },
+            content: { type: 'string', description: 'File content to write' }
+          },
+          required: ['path', 'content']
+        }
+      }
+    });
+
+    tools.push({
+      type: 'function',
+      function: {
+        name: 'read_file',
+        description: 'Read content from a file in the worktree.',
+        parameters: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Absolute file path within the worktree' }
+          },
+          required: ['path']
+        }
+      }
+    });
+
+    this.appendHardcodedGitTools(tools);
+
+    return tools;
+  }
+
+  /**
+   * Execute a remote MCP tool or local file operation via KĀDI broker
+   *
+   * Routes tool calls to either local file operations (write_file, read_file)
+   * or remote MCP tools via client.invokeRemote().
+   *
+   * @param toolName - Tool name (e.g., 'git_git_add', 'write_file')
+   * @param toolArgs - Tool arguments object
+   * @returns Tool execution result
+   */
+  protected async executeRemoteTool(toolName: string, toolArgs: Record<string, any>): Promise<any> {
+    // Handle local file operations (not MCP)
+    if (toolName === 'write_file') {
+      const filePath = toolArgs.path as string;
+      // Validate path is within worktree
+      const normalizedPath = filePath.replace(/\\/g, '/');
+      const normalizedWorktree = this.worktreePath.replace(/\\/g, '/');
+      if (!normalizedPath.startsWith(normalizedWorktree)) {
+        throw new Error(`Path ${filePath} is outside worktree ${this.worktreePath}`);
+      }
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      // Ensure parent directory exists
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, toolArgs.content as string, 'utf-8');
+      return { success: true, path: filePath, bytesWritten: (toolArgs.content as string).length };
+    }
+
+    if (toolName === 'read_file') {
+      const filePath = toolArgs.path as string;
+      const normalizedPath = filePath.replace(/\\/g, '/');
+      const normalizedWorktree = this.worktreePath.replace(/\\/g, '/');
+      if (!normalizedPath.startsWith(normalizedWorktree)) {
+        throw new Error(`Path ${filePath} is outside worktree ${this.worktreePath}`);
+      }
+      const fs = await import('fs/promises');
+      const content = await fs.readFile(filePath, 'utf-8');
+      return { success: true, content };
+    }
+
+    // Route to MCP tool via KĀDI broker
+    const result = await this.client.invokeRemote<any>(toolName, toolArgs);
+
+    // invokeRemote returns { content: [{ type, text }] } — extract text
+    if (result?.content?.[0]?.text) {
+      try {
+        return JSON.parse(result.content[0].text);
+      } catch {
+        return result.content[0].text;
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Track file operations from tool call results
+   *
+   * Inspects tool name and arguments to determine which files were
+   * created or modified during the agent loop.
+   */
+  private trackFileOperations(
+    toolName: string,
+    toolArgs: Record<string, any>,
+    _toolResult: any,
+    filesCreated: string[],
+    filesModified: string[]
+  ): void {
+    if (toolName === 'write_file') {
+      const filePath = toolArgs.path as string;
+      // Extract relative path from worktree
+      const relativePath = filePath.replace(/\\/g, '/').replace(
+        this.worktreePath.replace(/\\/g, '/') + '/',
+        ''
+      );
+      if (!filesCreated.includes(relativePath) && !filesModified.includes(relativePath)) {
+        filesCreated.push(relativePath);
       }
     }
   }
 
   /**
+   * Extract commit SHA from git_commit tool result
+   */
+  private extractCommitSha(toolResult: any): string | null {
+    if (typeof toolResult === 'string') {
+      const match = toolResult.match(/\b([a-f0-9]{7,40})\b/);
+      return match ? match[1] : null;
+    }
+    // Check common property names for commit SHA (including mcp-server-git's "commitHash")
+    if (toolResult?.commitHash) return toolResult.commitHash;
+    if (toolResult?.sha) return toolResult.sha;
+    if (toolResult?.commit) return toolResult.commit;
+    if (toolResult?.hash) return toolResult.hash;
+    // Try to find SHA in stringified result
+    const str = JSON.stringify(toolResult);
+    const match = str.match(/"(?:commitHash|sha|hash|commit)":\s*"([a-f0-9]{7,40})"/);
+    return match ? match[1] : null;
+  }
+
+  /**
+   * Sanitize filename to remove unsafe characters
+   *
+   * Utility method kept for subclass use and backward compatibility.
+   *
+   * @param filename - Raw filename
+   * @returns Sanitized filename safe for filesystem
+   */
+  protected sanitizeFilename(filename: string): string {
+    return filename.replace(/[^a-zA-Z0-9._\-/]/g, '_');
+  }
+
+  /**
    * Format commit message for git commit
    *
-   * Strategy pattern implementation:
-   * 1. If config.customBehaviors.formatCommitMessage exists, use it
-   * 2. Otherwise, use default format: "feat: create {role} for task {taskId}"
+   * Utility method kept for subclass use. The tool-calling loop
+   * instructs the LLM to use this format in the system prompt.
    *
    * @param taskId - Task ID to include in commit message
    * @param files - Array of file paths that were modified/created
+   * @param taskDescription - Optional task description for context
    * @returns Formatted commit message
-   *
-   * @example
-   * ```typescript
-   * // Default format
-   * this.formatCommitMessage('task-123', ['artwork.png'])
-   * // Returns: "feat: create artist for task task-123"
-   *
-   * // Custom format (if customBehaviors.formatCommitMessage provided)
-   * config.customBehaviors.formatCommitMessage = (taskId, files) =>
-   *   `feat: add ${files.join(', ')} for task ${taskId}`;
-   * this.formatCommitMessage('task-123', ['artwork.png', 'README.md'])
-   * // Returns: "feat: add artwork.png, README.md for task task-123"
-   * ```
    */
-  protected formatCommitMessage(taskId: string, files: string[]): string {
-    // Check if custom behavior is provided
+  protected formatCommitMessage(taskId: string, files: string[], taskDescription?: string): string {
     if (this.config.customBehaviors?.formatCommitMessage) {
       return this.config.customBehaviors.formatCommitMessage(taskId, files);
     }
 
-    // Default format: "feat: create {role} for task {taskId}"
+    if (taskDescription) {
+      const commitMsgMatch = taskDescription.match(
+        /(?:commit.*?(?:with\s+)?message|commit\s+message)[\s:]*['"`]([^'"`]+)['"`]/i
+      );
+      if (commitMsgMatch) {
+        return commitMsgMatch[1];
+      }
+    }
+
     return `feat: create ${this.role} for task ${taskId}`;
   }
 
@@ -922,7 +1164,7 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
    *   [],
    *   'a1b2c3d4e5f6g7h8i9j0'
    * );
-   * // Publishes to: artist.task.completed
+   * // Publishes to: task.completed
    * ```
    */
   protected async publishCompletion(
@@ -930,10 +1172,13 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
     questId: string | undefined,
     filesCreated: string[],
     filesModified: string[],
-    commitSha: string
+    commitSha: string,
+    contentSummary?: string
   ): Promise<void> {
-    // Construct topic dynamically from role (no hardcoding)
-    const topic = `${this.role}.task.completed`;
+    // Include worktree path for independent verification by agent-producer
+    const worktreePath = this.worktreePath;
+    // Generic topic — agent identity is in the payload (agent, role fields)
+    const topic = `task.completed`;
 
     // Create payload matching TaskCompletedEvent schema
     const payload: TaskCompletedEvent = {
@@ -945,7 +1190,9 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
       filesModified,
       commitSha,
       timestamp: new Date().toISOString(),
-      agent: `agent-${this.role}`
+      agent: `agent-${this.role}`,
+      ...(contentSummary ? { contentSummary } : {}),
+      ...(worktreePath ? { worktreePath } : {})
     };
 
     try {
@@ -988,17 +1235,18 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
    *   await this.executeTask(task);
    * } catch (error) {
    *   await this.publishFailure('task-123', error as Error);
-   *   // Publishes to: artist.task.failed
+   *   // Publishes to: task.failed
    * }
    * ```
    */
-  protected async publishFailure(taskId: string, error: Error): Promise<void> {
-    // Construct topic dynamically from role (no hardcoding)
-    const topic = `${this.role}.task.failed`;
+  protected async publishFailure(taskId: string, error: Error, questId?: string): Promise<void> {
+    // Generic topic — agent identity is in the payload (agent, role fields)
+    const topic = `task.failed`;
 
     // Create payload matching TaskFailedEvent schema
     const payload: TaskFailedEvent = {
       taskId,
+      questId: questId || '',
       role: this.role,
       error: error.message || String(error),
       timestamp: new Date().toISOString(),
@@ -1020,6 +1268,117 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
       logger.error(MODULE_AGENT, `Failed to publish failure event (non-fatal)`, timer.elapsed('factory'), publishError);
       logger.error(MODULE_AGENT, `   Error: ${publishError.message || String(publishError)}`, timer.elapsed('factory'));
       // Don't throw - cascading event publishing failure is worse than no event
+    }
+  }
+
+  /**
+   * Validate whether a task matches this agent's capabilities
+   *
+   * Performs keyword matching between the task description and the agent's
+   * capability list. If no overlap is found, returns a rejection reason.
+   *
+   * @param task - Task assignment event to validate
+   * @returns Rejection reason string if task doesn't match, null if it does
+   */
+  protected validateTaskCapability(task: TaskAssignedEvent): string | null {
+    const taskText = `${task.description} ${task.requirements}`.toLowerCase();
+
+    // Check if any capability keyword appears in the task description
+    const matchedCapabilities: string[] = [];
+    for (const capability of this.capabilities) {
+      const capWords = capability.toLowerCase().split('-');
+      for (const word of capWords) {
+        if (word.length > 2 && taskText.includes(word)) {
+          matchedCapabilities.push(capability);
+          break;
+        }
+      }
+    }
+
+    if (matchedCapabilities.length > 0) {
+      logger.info(MODULE_AGENT, `   Matched capabilities: ${matchedCapabilities.join(', ')}`, timer.elapsed('factory'));
+      return null; // Task matches capabilities
+    }
+
+    // No capability match found — reject
+    return `Task "${task.description.substring(0, 80)}" does not match agent capabilities [${this.capabilities.join(', ')}]. This ${this.role} agent cannot handle this type of work.`;
+  }
+
+  /**
+   * Validate that task targets paths within this agent's worktree.
+   *
+   * Extracts absolute file paths from task description and requirements,
+   * then checks if any fall outside the agent's worktree directory.
+   *
+   * @param task - Task assignment event to validate
+   * @returns Rejection reason string if task targets out-of-scope paths, null if OK
+   */
+  protected validateTaskScope(task: TaskAssignedEvent): string | null {
+    const combined = `${task.description || ''} ${task.requirements || ''}`;
+
+    // Extract absolute file paths (Windows C:\... and Unix /foo/bar with 2+ segments)
+    const pathPattern = /[A-Za-z]:\\[\w\\.\-\s]+|\/[\w.\-]+(?:\/[\w.\-]+)+/g;
+    const paths = combined.match(pathPattern) || [];
+
+    if (paths.length === 0) {
+      return null; // No absolute paths found — allow execution
+    }
+
+    const worktreeNormalized = this.worktreePath.replace(/\\/g, '/').replace(/\/+/g, '/').toLowerCase();
+
+    for (const rawPath of paths) {
+      const normalized = rawPath.replace(/\\/g, '/').replace(/\/+/g, '/').toLowerCase().trimEnd();
+      // Only check absolute paths
+      const isAbsolute = /^[a-z]:\//.test(normalized) || normalized.startsWith('/');
+      if (isAbsolute && !normalized.startsWith(worktreeNormalized)) {
+        return `Task references path "${rawPath.trim()}" which is outside this agent's worktree "${this.worktreePath}". Agent cannot operate on files outside its designated directory.`;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Publish task rejection event
+   *
+   * Publishes TaskRejectedEvent to KĀDI broker with topic: task.rejected
+   * This notifies agent-producer that the task was rejected due to capability mismatch,
+   * allowing it to reassign or escalate to the human.
+   *
+   * @param taskId - Task ID that was rejected
+   * @param questId - Quest ID (optional)
+   * @param reason - Reason for rejection
+   */
+  protected async publishRejection(
+    taskId: string,
+    questId: string | undefined,
+    reason: string
+  ): Promise<void> {
+    const topic = `task.rejected`;
+
+    const payload: TaskRejectedEvent = {
+      taskId,
+      questId,
+      role: this.role,
+      reason,
+      timestamp: new Date().toISOString(),
+      agent: `agent-${this.role}`
+    };
+
+    try {
+      logger.info(MODULE_AGENT, `📢 Publishing rejection event`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Topic: ${topic}`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Task ID: ${taskId}`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Reason: ${reason.substring(0, 100)}${reason.length > 100 ? '...' : ''}`, timer.elapsed('factory'));
+
+      await this.client.publish(topic, payload, { broker: 'default', network: 'global' });
+
+      logger.info(MODULE_AGENT, `   ✅ Rejection event published`, timer.elapsed('factory'));
+
+    } catch (error: any) {
+      // Handle publishing failures gracefully — don't throw
+      logger.error(MODULE_AGENT, `Failed to publish rejection event (non-fatal)`, timer.elapsed('factory'), error);
+      logger.error(MODULE_AGENT, `   Error: ${error.message || String(error)}`, timer.elapsed('factory'));
     }
   }
 
@@ -1055,7 +1414,7 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
     logger.info(MODULE_AGENT, `Broker URL: ${this.config.brokerUrl}`, timer.elapsed('factory'));
     logger.info(MODULE_AGENT, `Networks: ${this.networks.join(', ')}`, timer.elapsed('factory'));
     logger.info(MODULE_AGENT, `Worktree Path: ${this.worktreePath}`, timer.elapsed('factory'));
-    logger.info(MODULE_AGENT, `Claude Model: ${this.claudeModel}`, timer.elapsed('factory'));
+    logger.info(MODULE_AGENT, `LLM Model: ${this.claudeModel}`, timer.elapsed('factory'));
     logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('factory'));
 
     // Initialize KĀDI client and connect to broker
@@ -1098,8 +1457,8 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
       await this.client.disconnect();
       logger.info(MODULE_AGENT, '   ✅ KĀDI client disconnected', timer.elapsed('factory'));
 
-      // Clear protocol reference
-      this.protocol = null;
+      // Clear references
+      this.providerManager = null;
 
       logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
       logger.info(MODULE_AGENT, '✅ Worker agent stopped successfully', timer.elapsed('factory'));
@@ -1144,29 +1503,56 @@ Respond with ONLY the filename, nothing else. No explanations, no markdown, just
     toolInput: any;
     timeout: number;
   }): Promise<any> {
-    // Delegate to BaseBot's retry logic (composition pattern)
+    if (!this.baseBot) {
+      // Fallback: direct invocation without retry
+      return this.client.invokeRemote(params.toolName, params.toolInput);
+    }
     return this.baseBot['invokeToolWithRetry'](params);
   }
 
   /**
    * Check circuit breaker state using composed BaseBot
    *
-   * Returns true if circuit is open (blocking requests).
-   * This demonstrates composition - we delegate to BaseBot's circuit breaker.
-   *
-   * @returns True if circuit is open, false if closed
-   *
-   * @example
-   * ```typescript
-   * if (this.checkCircuitBreaker()) {
-   *   console.log('Circuit open - skipping task execution');
-   *   return;
-   * }
-   * ```
+   * @returns True if circuit is open, false if closed (or no BaseBot)
    */
   protected checkCircuitBreaker(): boolean {
-    // Delegate to BaseBot's circuit breaker (composition pattern)
+    if (!this.baseBot) return false;
     return this.baseBot['checkCircuitBreaker']();
+  }
+
+  // ============================================================================
+  // Public Setters (for dependency injection)
+  // ============================================================================
+
+  /**
+   * Set the ProviderManager for LLM chat
+   *
+   * Called by the agent entry point after constructing BaseAgent
+   * (which creates the ProviderManager).
+   *
+   * @param pm - ProviderManager instance from BaseAgent
+   */
+  public setProviderManager(pm: ProviderManager): void {
+    this.providerManager = pm;
+  }
+
+  /**
+   * Configure role-specific settings from a loaded RoleConfig
+   *
+   * @param roleConfig - Parsed role configuration
+   */
+  public applyRoleConfig(roleConfig: {
+    capabilities?: string[];
+    tools?: string[];
+    provider?: { model?: string; temperature?: number; maxTokens?: number };
+    commitFormat?: string;
+  }): void {
+    if (roleConfig.capabilities) this.capabilities = roleConfig.capabilities;
+    if (roleConfig.tools) this.toolPrefixes = roleConfig.tools;
+    if (roleConfig.provider?.model) this.claudeModel = roleConfig.provider.model;
+    if (roleConfig.provider?.temperature !== undefined) this.temperature = roleConfig.provider.temperature;
+    if (roleConfig.provider?.maxTokens !== undefined) this.maxTokens = roleConfig.provider.maxTokens;
+    if (roleConfig.commitFormat) this.commitFormat = roleConfig.commitFormat;
   }
 }
 
