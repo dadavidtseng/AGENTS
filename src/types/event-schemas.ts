@@ -9,7 +9,7 @@
  * - artist.task.assigned
  * - artist.task.completed
  * - artist.task.failed
- * - shadow-artist.backup.completed
+ * - backup.completed / backup.failed
  *
  * Design Principles:
  * - All timestamps use ISO 8601 format (YYYY-MM-DDTHH:mm:ss.sssZ)
@@ -66,6 +66,12 @@ export interface TaskAssignedEvent {
 
   /** User or agent that assigned this task (optional) */
   assignedBy?: string;
+
+  /** Feedback from previous verification failure (present on retry) */
+  feedback?: string;
+
+  /** Retry attempt number (0 = first attempt, 1+ = retry) */
+  retryAttempt?: number;
 }
 
 /**
@@ -78,7 +84,9 @@ export const TaskAssignedEventSchema = z.object({
   description: z.string().min(1, 'Description is required'),
   requirements: z.string(),
   timestamp: z.string().datetime('Invalid ISO 8601 timestamp'),
-  assignedBy: z.string().optional()
+  assignedBy: z.string().optional(),
+  feedback: z.string().optional(),
+  retryAttempt: z.number().optional()
 });
 
 // ============================================================================
@@ -136,6 +144,12 @@ export interface TaskCompletedEvent {
 
   /** Agent identifier (e.g., 'agent-artist', 'agent-designer') */
   agent: string;
+
+  /** Truncated summary of generated content for verification (optional) */
+  contentSummary?: string;
+
+  /** Absolute path to the git worktree where the worker executed (for independent verification) */
+  worktreePath?: string;
 }
 
 /**
@@ -150,7 +164,9 @@ export const TaskCompletedEventSchema = z.object({
   filesModified: z.array(z.string()),
   commitSha: z.string().min(1, 'Commit SHA is required'),
   timestamp: z.string().datetime('Invalid ISO 8601 timestamp'),
-  agent: z.string().min(1, 'Agent identifier is required')
+  agent: z.string().min(1, 'Agent identifier is required'),
+  contentSummary: z.string().optional(),
+  worktreePath: z.string().optional()
 });
 
 // ============================================================================
@@ -182,6 +198,9 @@ export interface TaskFailedEvent {
   /** Unique task identifier */
   taskId: string;
 
+  /** Quest identifier this task belongs to */
+  questId: string;
+
   /** Agent role that attempted this task */
   role: string;
 
@@ -200,8 +219,66 @@ export interface TaskFailedEvent {
  */
 export const TaskFailedEventSchema = z.object({
   taskId: z.string().min(1, 'Task ID is required'),
+  questId: z.string().min(1, 'Quest ID is required'),
   role: z.string().min(1, 'Role is required'),
   error: z.string().min(1, 'Error message is required'),
+  timestamp: z.string().datetime('Invalid ISO 8601 timestamp'),
+  agent: z.string().min(1, 'Agent identifier is required')
+});
+
+// ============================================================================
+// Task Rejection Event
+// ============================================================================
+
+/**
+ * Event published when a worker agent rejects a task due to capability mismatch
+ *
+ * Topic Pattern: task.rejected
+ *
+ * Worker agents validate incoming tasks against their capabilities before execution.
+ * If the task description doesn't match the agent's skill set, the agent publishes
+ * this event instead of attempting execution.
+ *
+ * @example
+ * ```typescript
+ * const event: TaskRejectedEvent = {
+ *   taskId: 'task-123',
+ *   questId: 'quest-456',
+ *   role: 'artist',
+ *   reason: 'Task requires database/backend skills, not artistic capabilities',
+ *   timestamp: '2025-12-04T10:45:00.000Z',
+ *   agent: 'agent-artist'
+ * };
+ * ```
+ */
+export interface TaskRejectedEvent {
+  /** Unique task identifier */
+  taskId: string;
+
+  /** Quest identifier (optional, for quest-based workflows) */
+  questId?: string;
+
+  /** Agent role that rejected this task */
+  role: string;
+
+  /** Reason for rejection (capability mismatch explanation) */
+  reason: string;
+
+  /** ISO 8601 timestamp when task was rejected */
+  timestamp: string;
+
+  /** Agent identifier (e.g., 'agent-artist', 'agent-designer') */
+  agent: string;
+}
+
+/**
+ * Zod schema for TaskRejectedEvent runtime validation
+ */
+export const TaskRejectedEventSchema = z.object({
+  taskId: z.string().min(1, 'Task ID is required'),
+  questId: z.string().optional(),
+  role: z.string().min(1, 'Role is required'),
+  reason: z.string().min(1, 'Rejection reason is required'),
   timestamp: z.string().datetime('Invalid ISO 8601 timestamp'),
   agent: z.string().min(1, 'Agent identifier is required')
 });
@@ -213,16 +290,15 @@ export const TaskFailedEventSchema = z.object({
 /**
  * Event published when a shadow agent completes a backup operation
  *
- * Topic Pattern: shadow-{role}.backup.completed
- * - shadow-artist.backup.completed
- * - shadow-designer.backup.completed
- * - shadow-programmer.backup.completed
+ * Topic Pattern: backup.{completed|failed}
+ * Agent identity is carried in the payload `agent` field (e.g., 'shadow-agent-artist').
  *
  * Shadow agents watch worker worktrees and create mirror commits in shadow worktrees.
  *
  * @example
  * ```typescript
  * const event: BackupEvent = {
+ *   agent: 'shadow-agent-artist',
  *   role: 'artist',
  *   operation: 'mirror-commit',
  *   status: 'success',
@@ -232,6 +308,9 @@ export const TaskFailedEventSchema = z.object({
  * ```
  */
 export interface BackupEvent {
+  /** Agent identifier (e.g., 'shadow-agent-artist', 'shadow-agent-designer') */
+  agent: string;
+
   /** Agent role being backed up */
   role: string;
 
@@ -255,6 +334,7 @@ export interface BackupEvent {
  * Zod schema for BackupEvent runtime validation
  */
 export const BackupEventSchema = z.object({
+  agent: z.string().min(1, 'Agent identifier is required'),
   role: z.string().min(1, 'Role is required'),
   operation: z.string().min(1, 'Operation type is required'),
   status: z.enum(['success', 'failure']),
@@ -307,6 +387,16 @@ export function isBackupEvent(obj: unknown): obj is BackupEvent {
   return BackupEventSchema.safeParse(obj).success;
 }
 
+/**
+ * Type guard to check if an object is a valid TaskRejectedEvent
+ *
+ * @param obj - Object to validate
+ * @returns True if obj matches TaskRejectedEvent schema
+ */
+export function isTaskRejectedEvent(obj: unknown): obj is TaskRejectedEvent {
+  return TaskRejectedEventSchema.safeParse(obj).success;
+}
+
 // ============================================================================
 // Validation Helpers
 // ============================================================================
@@ -353,4 +443,15 @@ export function parseTaskFailedEvent(obj: unknown): TaskFailedEvent {
  */
 export function parseBackupEvent(obj: unknown): BackupEvent {
   return BackupEventSchema.parse(obj);
+}
+
+/**
+ * Validate and parse TaskRejectedEvent with detailed error messages
+ *
+ * @param obj - Object to validate
+ * @returns Parsed TaskRejectedEvent
+ * @throws ZodError with detailed validation errors
+ */
+export function parseTaskRejectedEvent(obj: unknown): TaskRejectedEvent {
+  return TaskRejectedEventSchema.parse(obj);
 }

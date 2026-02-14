@@ -164,6 +164,18 @@ export interface WorkerAgentConfig {
   claudeModel?: string;
 
   /**
+   * Agent capabilities for task validation
+   *
+   * List of capability keywords that describe what this agent can do.
+   * Used to validate incoming tasks before execution — if a task description
+   * doesn't match any capabilities, the agent rejects the task.
+   *
+   * @example ['file-creation', 'image-generation', 'creative-content']
+   * @example ['ui-design', 'css', 'responsive-layout']
+   */
+  capabilities?: string[];
+
+  /**
    * Custom behavior overrides for role-specific functionality
    *
    * Optional strategy pattern implementation for customizing agent behavior
@@ -200,7 +212,7 @@ export interface ShadowAgentConfig {
   /**
    * Agent role type (matches corresponding worker agent)
    *
-   * Used for event topic construction (e.g., 'shadow-artist.backup.completed').
+   * Used for event payload agent identification (e.g., 'shadow-agent-artist').
    */
   role: string;
 

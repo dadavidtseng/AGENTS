@@ -45,6 +45,7 @@
  * - **TaskAssignedEvent** - Event schema for task assignments
  * - **TaskCompletedEvent** - Event schema for task completions
  * - **TaskFailedEvent** - Event schema for task failures
+ * - **TaskRejectedEvent** - Event schema for task rejections (capability mismatch)
  * - **BackupEvent** - Event schema for shadow agent backups
  * - Event validation schemas and type guards
  *
@@ -75,6 +76,12 @@
 // ============================================================================
 
 export { BaseBot, BaseBotConfig } from './base-bot.js';
+export {
+  BaseAgent,
+  type BaseAgentConfig,
+  type BaseAgentProviderConfig,
+  type BaseAgentMemoryConfig
+} from './base-agent.js';
 export { KadiEventPublisher, PublisherConfig, validateTopicPattern } from './kadi-event-publisher.js';
 export { logger, MODULE_AGENT, MODULE_SLACK_BOT, MODULE_DISCORD_BOT, MODULE_TASK_HANDLER, MODULE_TOOLS } from './utils/logger.js';
 export { timer, type Timer } from './utils/timer.js';
@@ -127,18 +134,22 @@ export {
   type TaskAssignedEvent,
   type TaskCompletedEvent,
   type TaskFailedEvent,
+  type TaskRejectedEvent,
   type BackupEvent,
   TaskAssignedEventSchema,
   TaskCompletedEventSchema,
   TaskFailedEventSchema,
+  TaskRejectedEventSchema,
   BackupEventSchema,
   isTaskAssignedEvent,
   isTaskCompletedEvent,
   isTaskFailedEvent,
+  isTaskRejectedEvent,
   isBackupEvent,
   parseTaskAssignedEvent,
   parseTaskCompletedEvent,
   parseTaskFailedEvent,
+  parseTaskRejectedEvent,
   parseBackupEvent
 } from './types/event-schemas.js';
 
