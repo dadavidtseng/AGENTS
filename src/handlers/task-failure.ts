@@ -82,10 +82,10 @@ async function sendFailureNotification(
     const { taskChannelMap } = await import('../index.js');
     const channelContext = taskChannelMap.get(event.taskId);
 
-    if (!channelContext || channelContext.type !== 'discord') {
+    if (!channelContext || (channelContext.type !== 'discord' && channelContext.type !== 'desktop')) {
       logger.info(
         MODULE_AGENT,
-        'No Discord channel context found for task, skipping notification',
+        'No Discord/desktop channel context found for task, skipping notification',
         timer.elapsed('main')
       );
       return undefined;

@@ -333,7 +333,7 @@ async function rejectTask(
         dependencies: fullTask.dependencies || [],
         relatedFiles: fullTask.relatedFiles || [],
         feedback: 'Task rejected by human reviewer. Please review the requirements and try again.',
-        retryAttempt: (fullTask.metadata?.retryAttempt || 0) + 1,
+        retryAttempt: (fullTask.artifacts?.verificationHistory?.length || 0) + 1,
         timestamp: new Date().toISOString(),
       },
       {
@@ -432,7 +432,7 @@ async function requestChanges(
         dependencies: fullTask.dependencies || [],
         relatedFiles: fullTask.relatedFiles || [],
         feedback: feedback,
-        retryAttempt: (fullTask.metadata?.retryAttempt || 0) + 1,
+        retryAttempt: (fullTask.artifacts?.verificationHistory?.length || 0) + 1,
         timestamp: new Date().toISOString(),
       },
       {

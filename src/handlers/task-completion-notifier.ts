@@ -5,9 +5,9 @@
  * Handles sending task completion notifications to users via their current channel.
  * Supports Slack, Discord, and Claude Desktop (console log).
  *
- * This module listens to task.ready_for_approval events (published by task completion
- * event handlers) and routes notifications to the appropriate channel based on where
- * the user initiated the task.
+ * This module listens to task.ready_for_approval events and routes informational
+ * notifications to the appropriate channel. Actual approval is handled at the
+ * quest level (batch approval) when all tasks are complete.
  */
 
 import { KadiClient } from '@kadi.build/core';
@@ -182,7 +182,7 @@ function formatNotificationMessage(data: TaskCompletionData): string {
   const { filesCreated, filesModified, commitSha, completedAt } = completionDetails;
 
   const lines = [
-    `✅ Task Completed - Ready for Approval`,
+    `✅ Task Completed`,
     ``,
     `**Task ID:** ${taskId}`,
     `**Task Name:** ${taskName}`,
@@ -204,12 +204,6 @@ function formatNotificationMessage(data: TaskCompletionData): string {
 
   lines.push(``);
   lines.push(`**Git Commit:** ${commitSha.substring(0, 7)}`);
-  lines.push(``);
-  lines.push(`**Next Steps:**`);
-  lines.push(`To approve this task, use: \`approve_completion\``);
-  lines.push(`  - Task ID: ${taskId}`);
-  lines.push(`  - Summary: (your review summary)`);
-  lines.push(`  - Score: (0-100, recommended: 80+)`);
 
   return lines.join('\n');
 }
