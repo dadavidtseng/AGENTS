@@ -394,12 +394,24 @@ async function createQuestPullRequest(
     timer.elapsed('main')
   );
 
-  // Step 4: Checkout main branch in main repo
+  // Step 4: Ensure clean working tree (abort any leftover merge from previous runs)
+  try {
+    await client.invokeRemote('git_git_merge', {
+      path: mainRepoPath,
+      branch: '',
+      abort: true,
+    });
+  } catch {
+    // No merge in progress — expected
+  }
+
+  // Checkout main branch in main repo
   const questBranch = `quest/${questId}`;
 
   await client.invokeRemote('git_git_checkout', {
     path: mainRepoPath,
     target: mainBranch,
+    force: true,
   });
 
   // Step 5: Create quest branch from main
