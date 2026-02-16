@@ -170,18 +170,31 @@ export async function getAssignedTasks(client: KadiClient, questId: string, task
       logger.info(MODULE_AGENT, `Task ${taskId} has status '${task.status}', not assigned or in_progress`, timer.elapsed('main'));
       return [];
     } else {
-      // Get all assigned tasks
+      // Get all in-progress tasks (quest_assign_task sets status to 'in_progress', not 'assigned')
       const result = await client.invokeRemote<{
         content: Array<{ type: string; text: string }>;
       }>('quest_quest_query_task', {
         questId,
-        status: 'assigned'
+        status: 'in_progress'
       });
 
       const resultText = result.content[0].text;
       const tasksData = JSON.parse(resultText);
 
-      return tasksData.tasks || [];
+      // Map raw API objects to Task interface
+      // quest_query_task returns: taskId, taskName, taskDescription, assignedAgent
+      const rawTasks: any[] = tasksData.tasks || [];
+      return rawTasks.map((taskInfo: any) => ({
+        taskId: taskInfo.taskId || taskInfo.id,
+        name: taskInfo.taskName || taskInfo.name || taskInfo.title || 'Unknown Task',
+        description: taskInfo.taskDescription || taskInfo.description || 'No description',
+        status: (taskInfo.status || 'unknown').toLowerCase(),
+        assignedTo: taskInfo.assignedAgent || taskInfo.assignedTo || taskInfo.assigned_to,
+        implementationGuide: taskInfo.implementationGuide || taskInfo.implementation_guide,
+        verificationCriteria: taskInfo.verificationCriteria || taskInfo.verification_criteria,
+        dependencies: taskInfo.dependencies,
+        relatedFiles: taskInfo.relatedFiles || taskInfo.related_files
+      } as Task));
     }
   } catch (error: any) {
     logger.error(
