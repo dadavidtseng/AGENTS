@@ -216,6 +216,13 @@ export class DiscordBot extends BaseBot {
             }
 
             // Step 2: Pass all other messages to LLM for natural language understanding
+            // Send immediate acknowledgment so user doesn't wait in silence
+            await this.sendDiscordReply(
+                mention.channel,
+                mention.id,
+                '🤔 Processing your request...'
+            );
+
             await this.processMention(mention);
         } catch (error: any) {
             logger.error(MODULE_DISCORD_BOT, `Error handling mention from @${mention.user}`, timer.elapsed('main'), error);
