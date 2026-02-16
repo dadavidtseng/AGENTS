@@ -40,7 +40,7 @@
  * ```
  */
 
-import type { KadiClient } from '@kadi.build/core';
+import type { KadiClient, RegisterToolOptions } from '@kadi.build/core';
 import { logger, timer, MODULE_TOOLS } from 'agents-library';
 import type { LlmOrchestrator } from '../services/llm-orchestrator.js';
 import { registerEchoTool } from './echo.js';
@@ -48,6 +48,26 @@ import { registerListToolsTool } from './list-tools.js';
 import { registerTaskExecutionTool } from './task-execution.js';
 import { registerQuestApproveTool, registerQuestRequestRevisionTool, registerQuestRejectTool, setQuestApprovalOrchestrator } from './quest-approval.js';
 import { registerTaskApproveTool, registerTaskRequestRevisionTool, registerTaskRejectTool } from './task-approval.js';
+
+/**
+ * Network scoping map: tool name → networks where the tool should be discoverable.
+ *
+ * - `global`: core orchestration tools (echo, list_tools, task_execution)
+ * - `slack, discord`: user-facing approval tools invoked via chat bots
+ *
+ * Tools NOT in this map register on ALL networks (default kadi-core behavior).
+ */
+const TOOL_NETWORK_SCOPE: Record<string, string[]> = {
+  echo: ['global'],
+  list_tools: ['global'],
+  task_execution: ['global'],
+  quest_approve: ['slack', 'discord'],
+  quest_request_revision: ['slack', 'discord'],
+  quest_reject: ['slack', 'discord'],
+  task_approve: ['slack', 'discord'],
+  task_request_revision: ['slack', 'discord'],
+  task_reject: ['slack', 'discord'],
+};
 
 /**
  * Tool Registry Array
@@ -70,17 +90,43 @@ export const toolRegistry: Array<(client: KadiClient) => void> = [
 ];
 
 /**
- * Register all tools from the registry
+ * Register all tools from the registry with network-scoped visibility.
  *
- * This function is called by the main agent to register all tools.
- * You don't need to modify this function - just add your tools to the array above.
+ * Uses a Proxy to intercept registerTool() calls and inject per-tool
+ * network scoping from TOOL_NETWORK_SCOPE. Individual tool files remain
+ * unchanged — scoping is applied transparently at registration time.
+ *
+ * @param client - KadiClient instance to register tools on
+ * @param brokerName - Broker name for network scoping (default: 'default')
  */
-export function registerAllTools(client: KadiClient): void {
+export function registerAllTools(client: KadiClient, brokerName: string = 'default'): void {
   timer.start('tools-registry');
-  logger.info(MODULE_TOOLS, `Registering ${toolRegistry.length} custom tool(s)...`, timer.elapsed('tools-registry'));
+  logger.info(MODULE_TOOLS, `Registering ${toolRegistry.length} custom tool(s) with network scoping...`, timer.elapsed('tools-registry'));
+
+  // Create proxy that injects network scoping into registerTool calls
+  const scopedClient = new Proxy(client, {
+    get(target, prop, receiver) {
+      if (prop === 'registerTool') {
+        return (definition: any, handler: any, options: RegisterToolOptions = {}) => {
+          const networks = TOOL_NETWORK_SCOPE[definition.name];
+          if (networks) {
+            options = {
+              ...options,
+              brokers: { [brokerName]: { networks } },
+            };
+            logger.info(MODULE_TOOLS, `  → ${definition.name} → [${networks.join(', ')}]`, timer.elapsed('tools-registry'));
+          } else {
+            logger.info(MODULE_TOOLS, `  → ${definition.name} → [all networks]`, timer.elapsed('tools-registry'));
+          }
+          return target.registerTool(definition, handler, options);
+        };
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
 
   for (const registerTool of toolRegistry) {
-    registerTool(client);
+    registerTool(scopedClient);
   }
 
   if (toolRegistry.length > 0) {
