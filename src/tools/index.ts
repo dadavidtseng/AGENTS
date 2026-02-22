@@ -52,8 +52,11 @@ import { registerTaskApproveTool, registerTaskRequestRevisionTool, registerTaskR
 /**
  * Network scoping map: tool name → networks where the tool should be discoverable.
  *
- * - `global`: core orchestration tools (echo, list_tools, task_execution)
+ * - `global`: core orchestration tools + approval tools (dashboard access)
  * - `slack, discord`: user-facing approval tools invoked via chat bots
+ *
+ * Approval tools include `global` so the dashboard (mcp-client-quest), which
+ * connects as a plain MCP client on the `global` network, can invoke them.
  *
  * Tools NOT in this map register on ALL networks (default kadi-core behavior).
  */
@@ -61,12 +64,12 @@ const TOOL_NETWORK_SCOPE: Record<string, string[]> = {
   echo: ['global'],
   list_tools: ['global'],
   task_execution: ['global'],
-  quest_approve: ['slack', 'discord'],
-  quest_request_revision: ['slack', 'discord'],
-  quest_reject: ['slack', 'discord'],
-  task_approve: ['slack', 'discord'],
-  task_request_revision: ['slack', 'discord'],
-  task_reject: ['slack', 'discord'],
+  quest_approve: ['global', 'slack', 'discord'],
+  quest_request_revision: ['global', 'slack', 'discord'],
+  quest_reject: ['global', 'slack', 'discord'],
+  task_approve: ['global', 'slack', 'discord'],
+  task_request_revision: ['global', 'slack', 'discord'],
+  task_reject: ['global', 'slack', 'discord'],
 };
 
 /**
@@ -96,10 +99,17 @@ export const toolRegistry: Array<(client: KadiClient) => void> = [
  * network scoping from TOOL_NETWORK_SCOPE. Individual tool files remain
  * unchanged — scoping is applied transparently at registration time.
  *
+ * When multiple brokers are configured, scoping is applied to each broker
+ * that shares at least one network with the tool's scope. Brokers with no
+ * overlapping networks simply won't receive the tool.
+ *
  * @param client - KadiClient instance to register tools on
- * @param brokerName - Broker name for network scoping (default: 'default')
+ * @param brokerNetworks - Map of broker name → available networks (default: { default: all })
  */
-export function registerAllTools(client: KadiClient, brokerName: string = 'default'): void {
+export function registerAllTools(
+  client: KadiClient,
+  brokerNetworks: Record<string, string[]> = { default: [] },
+): void {
   timer.start('tools-registry');
   logger.info(MODULE_TOOLS, `Registering ${toolRegistry.length} custom tool(s) with network scoping...`, timer.elapsed('tools-registry'));
 
@@ -108,13 +118,23 @@ export function registerAllTools(client: KadiClient, brokerName: string = 'defau
     get(target, prop, receiver) {
       if (prop === 'registerTool') {
         return (definition: any, handler: any, options: RegisterToolOptions = {}) => {
-          const networks = TOOL_NETWORK_SCOPE[definition.name];
-          if (networks) {
-            options = {
-              ...options,
-              brokers: { [brokerName]: { networks } },
-            };
-            logger.info(MODULE_TOOLS, `  → ${definition.name} → [${networks.join(', ')}]`, timer.elapsed('tools-registry'));
+          const scopedNetworks = TOOL_NETWORK_SCOPE[definition.name];
+          if (scopedNetworks) {
+            // Build per-broker scoping: intersect tool networks with each broker's networks.
+            // When intersection is empty the tool is still registered on that broker
+            // without network restriction so it remains discoverable (e.g. in observer).
+            const brokers: Record<string, { networks: string[] }> = {};
+            for (const [name, available] of Object.entries(brokerNetworks)) {
+              const intersection = available.length > 0
+                ? scopedNetworks.filter(n => available.includes(n))
+                : scopedNetworks; // empty = unknown, pass through
+              brokers[name] = { networks: intersection };
+            }
+            options = { ...options, brokers };
+            const summary = Object.entries(brokers)
+              .map(([b, s]) => `${b}:[${s.networks.length > 0 ? s.networks : '*'}]`)
+              .join(', ');
+            logger.info(MODULE_TOOLS, `  → ${definition.name} → ${summary}`, timer.elapsed('tools-registry'));
           } else {
             logger.info(MODULE_TOOLS, `  → ${definition.name} → [all networks]`, timer.elapsed('tools-registry'));
           }

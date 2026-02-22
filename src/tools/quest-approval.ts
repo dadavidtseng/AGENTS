@@ -188,7 +188,7 @@ export function registerQuestApproveTool(client: KadiClient): void {
       // Query quest for conversation context (channelId for Discord notification)
       const ctx = await getQuestConversationContext(client, params.questId);
       const notifyInstruction = ctx?.channelId
-        ? `\n\nAfter completing all workflow steps, notify the user by calling discord_server_send_message with ONLY these parameters: channel="${ctx.channelId}", text="<your summary>". Do NOT pass any other parameters.`
+        ? `\n\nAfter completing all workflow steps, notify the user by calling discord_send_message with ONLY these parameters: channel="${ctx.channelId}", text="<your summary>". Do NOT pass any other parameters.`
         : '';
 
       const llmResult = await orchestrator.run({
@@ -287,7 +287,7 @@ export function registerQuestRequestRevisionTool(client: KadiClient): void {
       // Query quest for conversation context (channelId for Discord notification)
       const ctx = await getQuestConversationContext(client, params.questId);
       const notifyInstruction = ctx?.channelId
-        ? `\n\nAfter revising and re-submitting, notify the user by calling discord_server_send_message with ONLY these parameters: channel="${ctx.channelId}", text="<your message explaining the quest was revised and re-submitted>". Do NOT pass any other parameters.`
+        ? `\n\nAfter revising and re-submitting, notify the user by calling discord_send_message with ONLY these parameters: channel="${ctx.channelId}", text="<your message explaining the quest was revised and re-submitted>". Do NOT pass any other parameters.`
         : '';
 
       const llmResult = await orchestrator.run({
@@ -354,7 +354,7 @@ export function registerQuestRejectTool(client: KadiClient): void {
       // Query quest for conversation context (channelId for Discord notification)
       const ctx = await getQuestConversationContext(client, params.questId);
       const notifyInstruction = ctx?.channelId
-        ? `\n\nNotify the user by calling discord_server_send_message with ONLY these parameters: channel="${ctx.channelId}", text="<your message explaining the quest was rejected and the reason>". Do NOT pass any other parameters.`
+        ? `\n\nNotify the user by calling discord_send_message with ONLY these parameters: channel="${ctx.channelId}", text="<your message explaining the quest was rejected and the reason>". Do NOT pass any other parameters.`
         : '';
 
       const llmResult = await orchestrator.run({
