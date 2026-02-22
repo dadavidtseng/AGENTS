@@ -56,3 +56,5 @@ data
 
 # KADI
 abilities/
+agent-lock.json
+secrets.toml
