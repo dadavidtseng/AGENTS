@@ -23,6 +23,8 @@ import { BaseBot, logger, MODULE_SLACK_BOT, timer } from 'agents-library';
 import type { Message, ProviderError } from 'agents-library';
 import type { MemoryError } from 'agents-library';
 import { SlackMentionEventSchema } from '../types/slack-events.js';
+import { QUEST_WORKFLOW_SYSTEM_PROMPT } from '../prompts/quest-workflow.js';
+import { getRandomAcknowledgment } from './acknowledgments.js';
 
 // ============================================================================
 // Types
@@ -100,8 +102,42 @@ export class SlackBot extends BaseBot {
    *
    * @param event - Slack mention event from KĀDI
    */
+  /**
+   * Handle structured commands (task approval, failure responses)
+   * Returns true if message was handled, false if should fall through to LLM
+   */
+  private async handleStructuredCommands(mention: SlackMention): Promise<boolean> {
+    const message = mention.text;
+
+    try {
+      // 1. Task Approval (approve/reject/request changes)
+      const { handleTaskApproval } = await import('../handlers/task-approval.js');
+      const approvalResult = await handleTaskApproval(this.client, message);
+
+      if (approvalResult) {
+        logger.info(MODULE_SLACK_BOT, 'Task approval command handled', timer.elapsed('main'));
+        await this.sendSlackReply(mention.channel, mention.thread_ts, approvalResult.message);
+        return true;
+      }
+
+      // 2. Task Failure Response (retry/skip/abort)
+      const { processFailureResponse } = await import('../handlers/task-failure.js');
+      const failureHandled = await processFailureResponse(this.client, message);
+      if (failureHandled) {
+        logger.info(MODULE_SLACK_BOT, 'Task failure response handled', timer.elapsed('main'));
+        await this.sendSlackReply(mention.channel, mention.thread_ts, '✅ Task failure response processed');
+        return true;
+      }
+
+      return false;
+    } catch (error: any) {
+      logger.error(MODULE_SLACK_BOT, `Error handling structured command: ${error.message}`, timer.elapsed('main'), error);
+      await this.sendSlackReply(mention.channel, mention.thread_ts, `❌ Error: ${error.message}`);
+      return true;
+    }
+  }
+
   protected async handleMention(event: any): Promise<void> {
-    // Convert to SlackMention format
     const slackMention: SlackMention = {
       id: event.id,
       user: event.user,
@@ -111,7 +147,28 @@ export class SlackBot extends BaseBot {
       ts: event.ts,
     };
 
-    await this.processMention(slackMention);
+    try {
+      logger.info(MODULE_SLACK_BOT, `Processing mention from @${slackMention.user}: "${slackMention.text}"`, timer.elapsed('main'));
+
+      // Step 1: Check for structured commands (task approval, failure responses)
+      const handled = await this.handleStructuredCommands(slackMention);
+      if (handled) {
+        logger.info(MODULE_SLACK_BOT, 'Message handled by structured command handler', timer.elapsed('main'));
+        return;
+      }
+
+      // Step 2: Send immediate acknowledgment
+      await this.sendSlackReply(slackMention.channel, slackMention.thread_ts, getRandomAcknowledgment());
+
+      await this.processMention(slackMention);
+    } catch (error: any) {
+      logger.error(MODULE_SLACK_BOT, `Error handling mention from @${slackMention.user}`, timer.elapsed('main'), error);
+      await this.sendSlackReply(
+        slackMention.channel,
+        slackMention.thread_ts,
+        'Sorry, I encountered an error processing your message. Please try again later.'
+      );
+    }
   }
 
   /**
@@ -206,6 +263,9 @@ export class SlackBot extends BaseBot {
       const context = contextResult.success ? contextResult.data : [];
 
       // Step 2: Build messages array (context + new user message)
+      // Append platform context so the LLM has real channel/user IDs for tool calls
+      const platformContext = `\n\n[Context: platform=slack, channelId=${mention.channel}, userId=${mention.user}, threadTs=${mention.thread_ts}]`;
+
       const messages: Message[] = [
         ...context.map(msg => ({
           role: msg.role,
@@ -213,17 +273,15 @@ export class SlackBot extends BaseBot {
         })),
         {
           role: 'user' as const,
-          content: mention.text,
+          content: mention.text + platformContext,
         },
       ];
 
       // Step 3: Detect model from message using regex /\[([^\]]+)\]/
       const modelMatch = mention.text.match(/\[([^\]]+)\]/);
-      const detectedModel = modelMatch ? modelMatch[1] : undefined;
+      const detectedModel = modelMatch ? modelMatch[1] : 'gpt-5-mini';
 
-      if (detectedModel) {
-        logger.info(MODULE_SLACK_BOT, `Model detected from message: ${detectedModel}`, timer.elapsed('main'));
-      }
+      logger.info(MODULE_SLACK_BOT, `Model: ${detectedModel}${modelMatch ? ' (from message)' : ' (default)'}`, timer.elapsed('main'));
 
       // Step 4: Get available tools and convert to OpenAI format
       const anthropicTools = await this.getAvailableTools();
@@ -245,14 +303,6 @@ export class SlackBot extends BaseBot {
         logger.info(MODULE_SLACK_BOT, `=== Iteration ${iteration} ===`, timer.elapsed('main'));
         logger.info(MODULE_SLACK_BOT, `Sending ${messages.length} messages to LLM with model: ${detectedModel || 'default'}${toolsExecuted ? ' (tools disabled - already executed)' : ''}`, timer.elapsed('main'));
 
-        // Add system message when tools are disabled to guide LLM behavior
-        if (toolsExecuted && iteration > 1) {
-          messages.push({
-            role: 'system',
-            content: 'The tool has completed its task (status: complete). Review the tool output and present the information to the user according to their specific request. Format or filter the data as needed based on what the user asked for. Do not call any more tools - just provide your final response.'
-          });
-        }
-
         // Log message roles for debugging
         const msgSummary = messages.map(m => `${m.role}${m.tool_call_id ? `(tool:${m.tool_call_id.substring(0,8)})` : ''}`).join(', ');
         logger.info(MODULE_SLACK_BOT, `Message roles: [${msgSummary}]`, timer.elapsed('main'));
@@ -269,6 +319,7 @@ export class SlackBot extends BaseBot {
 
           const result = await this.providerManager.chat(messages, {
             model: detectedModel,
+            system: QUEST_WORKFLOW_SYSTEM_PROMPT,
             tools: openaiTools,
             tool_choice: 'auto',
           });
@@ -297,6 +348,7 @@ export class SlackBot extends BaseBot {
 
           const streamResult = await this.providerManager.streamChat(messages, {
             model: detectedModel,
+            system: QUEST_WORKFLOW_SYSTEM_PROMPT,
           });
 
           // Handle stream error or success
@@ -344,7 +396,7 @@ export class SlackBot extends BaseBot {
 
           // Execute each tool and collect results
           for (const toolCall of toolCallData.toolCalls) {
-            const toolResult = await this.executeToolCall(toolCall);
+            const toolResult = await this.executeToolCall(toolCall, mention);
 
             logger.info(MODULE_SLACK_BOT, `Tool ${toolCall.function.name} result: ${toolResult.substring(0, 200)}...`, timer.elapsed('main'));
             logger.info(MODULE_SLACK_BOT, `Tool call ID: ${toolCall.id}`, timer.elapsed('main'));
@@ -471,7 +523,7 @@ export class SlackBot extends BaseBot {
     // If message fits in one reply, send directly
     if (text.length <= MAX_SLACK_MESSAGE_LENGTH) {
       await this.invokeToolWithRetry({
-        targetAgent: 'slack-server',
+        targetAgent: 'agent-chatbot',
         toolName: 'slack_send_reply',
         toolInput: {
           channel,
@@ -493,7 +545,7 @@ export class SlackBot extends BaseBot {
     // Send all chunks as threaded replies
     for (let i = 0; i < chunks.length; i++) {
       await this.invokeToolWithRetry({
-        targetAgent: 'slack-server',
+        targetAgent: 'agent-chatbot',
         toolName: 'slack_send_reply',
         toolInput: {
           channel,
@@ -596,7 +648,7 @@ export class SlackBot extends BaseBot {
       }
 
       // Convert broker tools to Anthropic format
-      const networkTools: Anthropic.Tool[] = response.tools.map(tool => ({
+      const networkTools: Anthropic.Tool[] = response.tools.map((tool: { name: string; description?: string; inputSchema?: Record<string, unknown> }) => ({
         name: tool.name,
         description: tool.description || '',
         input_schema: tool.inputSchema as Anthropic.Tool.InputSchema || {
@@ -637,7 +689,7 @@ export class SlackBot extends BaseBot {
     const networkTools = await this.queryNetworkTools();
 
     // 3. Deduplicate: prefer local tools over network tools (local tools are authoritative)
-    const localToolNames = new Set(localTools.map(t => t.name));
+    const localToolNames = new Set(localTools.map((t: Anthropic.Tool) => t.name));
     const uniqueNetworkTools = networkTools.filter(t => !localToolNames.has(t.name));
 
     // 4. Combine and return (local tools first, then unique network tools)
@@ -656,10 +708,10 @@ export class SlackBot extends BaseBot {
       return 'local'; // Special marker for local tools on this agent
     }
     if (toolName.startsWith('slack_')) {
-      return 'slack-server';
+      return 'agent-chatbot';
     }
     if (toolName.startsWith('discord_')) {
-      return 'discord-server';
+      return 'agent-chatbot';
     }
     if (toolName.startsWith('git_')) {
       return 'git';
@@ -721,13 +773,24 @@ export class SlackBot extends BaseBot {
    * Handles both synchronous and asynchronous tool responses.
    * If tool returns {status: 'pending', requestId: ...}, waits for async result.
    */
-  private async executeToolCall(toolCall: any): Promise<string> {
+  private async executeToolCall(toolCall: any, mention?: SlackMention): Promise<string> {
     const toolName = toolCall.function.name;
     const toolArgs = JSON.parse(toolCall.function.arguments);
 
     logger.info(MODULE_SLACK_BOT, `Executing tool: ${toolName}`, timer.elapsed('main'));
 
     try {
+      // Inject Slack channel context for task_execution tool
+      if (toolName === 'task_execution' && mention) {
+        toolArgs._context = {
+          type: 'slack',
+          channelId: mention.channel,
+          userId: mention.user,
+          threadTs: mention.thread_ts,
+        };
+        logger.info(MODULE_SLACK_BOT, `Injected Slack context for task_execution: channel ${mention.channel}, thread ${mention.thread_ts}`, timer.elapsed('main'));
+      }
+
       // Determine target agent based on tool name
       const targetAgent = this.resolveTargetAgent(toolName);
 

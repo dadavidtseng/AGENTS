@@ -24,6 +24,7 @@ import {BaseBot, BaseBotConfig, logger, MODULE_DISCORD_BOT, timer} from 'agents-
 import type { Message, ProviderError } from 'agents-library';
 import type { MemoryError } from 'agents-library';
 import { QUEST_WORKFLOW_SYSTEM_PROMPT } from '../prompts/quest-workflow.js';
+import { getRandomAcknowledgment } from './acknowledgments.js';
 
 // ============================================================================
 // Types
@@ -220,7 +221,7 @@ export class DiscordBot extends BaseBot {
             await this.sendDiscordReply(
                 mention.channel,
                 mention.id,
-                '🤔 Processing your request...'
+                getRandomAcknowledgment()
             );
 
             await this.processMention(mention);
@@ -738,8 +739,8 @@ export class DiscordBot extends BaseBot {
         // If message fits in one reply, send directly
         if (text.length <= MAX_DISCORD_MESSAGE_LENGTH) {
             await this.invokeToolWithRetry({
-                targetAgent: 'mcp-server-discord',
-                toolName: 'discord_server_send_reply',
+                targetAgent: 'agent-chatbot',
+                toolName: 'discord_send_reply',
                 toolInput: {
                     channel,
                     message_id,
@@ -759,8 +760,8 @@ export class DiscordBot extends BaseBot {
 
         // Send first chunk as a reply to the original message
         await this.invokeToolWithRetry({
-            targetAgent: 'mcp-server-discord',
-            toolName: 'discord_server_send_reply',
+            targetAgent: 'agent-chatbot',
+            toolName: 'discord_send_reply',
             toolInput: {
                 channel,
                 message_id,
@@ -772,8 +773,8 @@ export class DiscordBot extends BaseBot {
         // Send remaining chunks as regular messages (not replies)
         for (let i = 1; i < chunks.length; i++) {
             await this.invokeToolWithRetry({
-                targetAgent: 'mcp-server-discord',
-                toolName: 'discord_server_send_message',
+                targetAgent: 'agent-chatbot',
+                toolName: 'discord_send_message',
                 toolInput: {
                     channel,
                     text: chunks[i],
@@ -872,7 +873,7 @@ export class DiscordBot extends BaseBot {
             }
 
             // Convert broker tools to Anthropic format
-            const networkTools: Anthropic.Tool[] = response.tools.map(tool => ({
+            const networkTools: Anthropic.Tool[] = response.tools.map((tool: { name: string; description?: string; inputSchema?: Record<string, unknown> }) => ({
                 name: tool.name,
                 description: tool.description || '',
                 input_schema: tool.inputSchema as Anthropic.Tool.InputSchema || {
@@ -913,7 +914,7 @@ export class DiscordBot extends BaseBot {
         const networkTools = await this.queryNetworkTools();
 
         // 3. Deduplicate: prefer local tools over network tools (local tools are authoritative)
-        const localToolNames = new Set(localTools.map(t => t.name));
+        const localToolNames = new Set(localTools.map((t: Anthropic.Tool) => t.name));
         const uniqueNetworkTools = networkTools.filter(t => !localToolNames.has(t.name));
 
         // 4. Combine and return (local tools first, then unique network tools)
@@ -932,10 +933,10 @@ export class DiscordBot extends BaseBot {
             return 'local'; // Special marker for local tools on this agent
         }
         if (toolName.startsWith('slack_')) {
-            return 'slack-server';
+            return 'agent-chatbot';
         }
         if (toolName.startsWith('discord_')) {
-            return 'discord-server';
+            return 'agent-chatbot';
         }
         if (toolName.startsWith('git_')) {
             return 'git';
