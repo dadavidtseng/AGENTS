@@ -1,15 +1,13 @@
 /**
  * Task Execution Tool Registration
  *
- * Triggers task execution by publishing task.assigned events to worker agents.
- * Converts the handler logic from task-execution.ts into a KĀDI tool that can be
- * called by the Discord bot's LLM.
+ * Triggers task execution by publishing quest.tasks_ready to agent-lead.
+ * Agent-lead then handles task assignment to worker agents based on role.
  *
  * Flow:
  * 1. Get quest ID (use provided or find latest with assigned tasks)
- * 2. Get all assigned tasks for the quest
- * 3. Publish task.assigned event for each task to 'utility' network
- * 4. Return summary of triggered tasks
+ * 2. Publish quest.tasks_ready event for agent-lead to pick up
+ * 3. Return summary
  */
 
 import { z } from '@kadi.build/core';
@@ -67,19 +65,6 @@ export interface Task {
   verificationCriteria?: string;
   dependencies?: string[];
   relatedFiles?: string[];
-}
-
-/**
- * Task assigned event payload
- */
-interface TaskAssignedEvent {
-  taskId: string;
-  questId: string;
-  role: string;
-  description: string;
-  requirements: string;
-  timestamp: string;
-  assignedBy: string;
 }
 
 /**
@@ -208,69 +193,6 @@ export async function getAssignedTasks(client: KadiClient, questId: string, task
 }
 
 /**
- * Publish task.assigned event for a single task
- */
-export async function publishTaskAssignedEvent(
-  client: KadiClient,
-  task: Task,
-  questId: string,
-  assignedBy: string
-): Promise<void> {
-  try {
-    const role = task.assignedTo?.replace('agent-', '') || 'unknown';
-
-    // Update task status to 'in_progress' before publishing event
-    logger.info(
-      MODULE_AGENT,
-      `Updating task ${task.taskId} status to 'in_progress'`,
-      timer.elapsed('main')
-    );
-
-    await client.invokeRemote('quest_quest_update_task', {
-      questId,
-      taskId: task.taskId,
-      status: 'in_progress',
-      agentId: task.assignedTo || 'unknown',
-    });
-
-    logger.info(
-      MODULE_AGENT,
-      `Task ${task.taskId} status updated to 'in_progress'`,
-      timer.elapsed('main')
-    );
-
-    const eventPayload: TaskAssignedEvent = {
-      taskId: task.taskId,
-      questId,
-      role,
-      description: task.description,
-      requirements: task.implementationGuide || task.description,
-      timestamp: new Date().toISOString(),
-      assignedBy
-    };
-
-    await client.publish('task.assigned', eventPayload, {
-      broker: 'default',
-      network: 'global'
-    });
-
-    logger.info(
-      MODULE_AGENT,
-      `Published task.assigned event for task ${task.taskId} (${task.name})`,
-      timer.elapsed('main')
-    );
-  } catch (error: any) {
-    logger.error(
-      MODULE_AGENT,
-      `Failed to publish task.assigned event for task ${task.taskId}: ${error.message}`,
-      timer.elapsed('main'),
-      error
-    );
-    throw error;
-  }
-}
-
-/**
  * Register task_execution tool
  *
  * @param client - KĀDI client instance
@@ -279,32 +201,11 @@ export function registerTaskExecutionTool(client: KadiClient): void {
   /**
    * Task Execution Tool
    *
-   * Triggers task execution by publishing task.assigned events to worker agents.
-   * Can execute all assigned tasks in a quest or a specific task.
-   *
-   * @param params - Input parameters matching TaskExecutionInput schema
-   * @returns Execution result with triggered task count
-   *
-   * @example
-   * ```typescript
-   * // Execute all assigned tasks in latest quest
-   * const result = await client.invokeTool('task_execution', {});
-   *
-   * // Execute all assigned tasks in specific quest
-   * const result = await client.invokeTool('task_execution', {
-   *   questId: 'quest-123'
-   * });
-   *
-   * // Execute specific task
-   * const result = await client.invokeTool('task_execution', {
-   *   questId: 'quest-123',
-   *   taskId: 'task-456'
-   * });
-   * ```
+   * Publishes quest.tasks_ready for agent-lead to pick up and assign to workers.
    */
   client.registerTool({
     name: 'task_execution',
-    description: 'Trigger task execution by publishing task.assigned events to worker agents. Can execute all assigned tasks in a quest or a specific task.',
+    description: 'Trigger task execution by publishing quest.tasks_ready for agent-lead to assign tasks to worker agents.',
     input: taskExecutionInputSchema,
     output: taskExecutionOutputSchema
   }, async (params: TaskExecutionInput): Promise<TaskExecutionOutput> => {
@@ -329,11 +230,9 @@ export function registerTaskExecutionTool(client: KadiClient): void {
 
       logger.info(MODULE_AGENT, `Using quest ID: ${questId}`, timer.elapsed('main'));
 
-      // Step 2: Get assigned tasks — prefer explicit taskIds to avoid race condition
+      // Step 2: Verify there are assigned tasks
       let assignedTasks: Task[];
       if (params.taskIds && params.taskIds.length > 0) {
-        // Fetch each task by ID directly (avoids race condition with assign_task)
-        logger.info(MODULE_AGENT, `Using explicit taskIds: ${params.taskIds.join(', ')}`, timer.elapsed('main'));
         const taskResults = await Promise.all(
           params.taskIds.map(id => getAssignedTasks(client, questId!, id))
         );
@@ -347,7 +246,7 @@ export function registerTaskExecutionTool(client: KadiClient): void {
       if (assignedTasks.length === 0) {
         return {
           success: false,
-          message: params.taskId 
+          message: params.taskId
             ? `Task ${params.taskId} not found or not in assigned status.`
             : 'No assigned tasks found for the quest. Please assign tasks first.',
           tasksTriggered: 0,
@@ -358,109 +257,60 @@ export function registerTaskExecutionTool(client: KadiClient): void {
 
       logger.info(
         MODULE_AGENT,
-        `Found ${assignedTasks.length} assigned task(s)`,
+        `Found ${assignedTasks.length} assigned task(s) — publishing quest.tasks_ready`,
         timer.elapsed('main')
       );
 
-      // Step 3: Publish task.assigned events
-      logger.info(
-        MODULE_AGENT,
-        `Publishing task.assigned events to 'global' network...`,
-        timer.elapsed('main')
-      );
-
-      let publishedCount = 0;
-      const triggeredTaskIds: string[] = [];
-
-      // Import taskChannelMap for storing channel context
+      // Step 3: Store channel context for later notifications
       const { taskChannelMap } = await import('../index.js');
-
-      // Resolve channel context: ALWAYS prefer quest's conversationContext (LLM-provided _context is unreliable)
       let resolvedContext: typeof params._context | undefined = undefined;
-      if (questId) {
-        try {
-          const questResult = await client.invokeRemote<{
-            content: Array<{ type: string; text: string }>;
-          }>('quest_quest_query_quest', {
-            questId,
-            detail: 'full',
-          });
-          const questData = JSON.parse(questResult.content[0].text);
-          const ctx = questData.conversationContext;
-          if (ctx?.channelId) {
-            resolvedContext = {
-              type: ctx.platform || 'discord',
-              channelId: ctx.channelId,
-              userId: ctx.userId,
-              threadTs: ctx.threadTs,
-            };
-            logger.info(
-              MODULE_AGENT,
-              `Resolved channel context from quest conversationContext: ${ctx.platform || 'discord'} channel ${ctx.channelId}`,
-              timer.elapsed('main')
-            );
-          }
-        } catch {
-          logger.warn(MODULE_AGENT, `Could not resolve channel context from quest`, timer.elapsed('main'));
+
+      try {
+        const questResult = await client.invokeRemote<{
+          content: Array<{ type: string; text: string }>;
+        }>('quest_quest_query_quest', { questId, detail: 'full' });
+        const questData = JSON.parse(questResult.content[0].text);
+        const ctx = questData.conversationContext;
+        if (ctx?.channelId) {
+          resolvedContext = {
+            type: ctx.platform || 'discord',
+            channelId: ctx.channelId,
+            userId: ctx.userId,
+            threadTs: ctx.threadTs,
+          };
         }
+      } catch {
+        // Fall back to caller-provided context
       }
-      // Only fall back to _context if quest lookup failed (e.g. direct bot invocation without quest)
+
       if (!resolvedContext && params._context?.channelId) {
         resolvedContext = params._context;
-        logger.info(
-          MODULE_AGENT,
-          `Using caller-provided _context as fallback: ${params._context.type} channel ${params._context.channelId}`,
-          timer.elapsed('main')
-        );
       }
 
-      for (const task of assignedTasks) {
-        try {
-          await publishTaskAssignedEvent(client, task, questId, 'discord-bot');
-          publishedCount++;
-          triggeredTaskIds.push(task.taskId);
-
-          // Store channel context for later use by failure/rejection handlers
-          if (resolvedContext) {
-            taskChannelMap.set(task.taskId, {
-              type: resolvedContext.type,
-              channelId: resolvedContext.channelId,
-              userId: resolvedContext.userId,
-              threadTs: resolvedContext.threadTs,
-            });
-
-            logger.info(
-              MODULE_AGENT,
-              `Stored channel context for task ${task.taskId}: ${resolvedContext.type} channel ${resolvedContext.channelId}`,
-              timer.elapsed('main')
-            );
-          }
-        } catch (error) {
-          logger.warn(
-            MODULE_AGENT,
-            `Skipping task ${task.taskId} due to publish error`,
-            timer.elapsed('main')
-          );
+      if (resolvedContext) {
+        for (const task of assignedTasks) {
+          taskChannelMap.set(task.taskId, {
+            type: resolvedContext.type,
+            channelId: resolvedContext.channelId,
+            userId: resolvedContext.userId,
+            threadTs: resolvedContext.threadTs,
+          });
         }
       }
 
-      // Step 4: Return result
-      if (publishedCount === 0) {
-        return {
-          success: false,
-          message: 'Failed to publish task execution events. Please check the logs.',
-          tasksTriggered: 0,
-          questId,
-          taskIds: []
-        };
-      }
+      // Step 4: Publish quest.tasks_ready — agent-lead handles assignment
+      await client.publish('quest.tasks_ready', {
+        questId,
+      }, { broker: 'default', network: 'global' });
 
-      const workerAgents = [...new Set(assignedTasks.map(t => t.assignedTo))].join(', ');
+      logger.info(MODULE_AGENT, `Published quest.tasks_ready for ${questId}`, timer.elapsed('main'));
+
+      const triggeredTaskIds = assignedTasks.map(t => t.taskId);
 
       return {
         success: true,
-        message: `✅ Task execution triggered successfully!\n\n📊 Execution Summary:\n- Tasks triggered: ${publishedCount}\n- Events published to: 'utility' network\n- Worker agents notified: ${workerAgents}\n\n🚀 Worker agents will now execute the tasks.`,
-        tasksTriggered: publishedCount,
+        message: `✅ Task execution triggered!\n\n📊 Summary:\n- Quest: ${questId}\n- Tasks ready: ${assignedTasks.length}\n- Event: quest.tasks_ready published\n\n🚀 Agent-lead will assign tasks to worker agents.`,
+        tasksTriggered: assignedTasks.length,
         questId,
         taskIds: triggeredTaskIds
       };
@@ -572,7 +422,7 @@ export async function subscribeToTaskRejections(client: KadiClient): Promise<voi
             `**Reason:** ${reason}\n\n` +
             `The task has been unassigned and can be reassigned to a suitable agent.`;
 
-          await client.invokeRemote('discord_server_send_message', {
+          await client.invokeRemote('discord_send_message', {
             channel: channelId,
             text: message,
           });

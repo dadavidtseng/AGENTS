@@ -19,10 +19,11 @@
  * Event Flow:
  * 1. User calls tool (via Claude Code/Desktop or Slack/Discord)
  * 2. agent-producer validates and forwards to mcp-shrimp-task-manager
- * 3. agent-producer publishes 'task.assigned' event via KĀDI (generic topic, role in payload)
- * 4. Worker agent receives event, filters by role, executes task, commits to playground
- * 5. Worker agent publishes 'task.completed' event (generic topic, agent metadata in payload)
- * 6. agent-producer receives completion, awaits user approval
+ * 3. agent-producer publishes 'quest.tasks_ready' event via KĀDI
+ * 4. agent-lead receives event, assigns tasks to worker agents by role
+ * 5. Worker agent executes task, commits to playground
+ * 6. agent-lead verifies completion, publishes 'task.verified'
+ * 7. agent-producer relays status to HUMAN via Discord/Slack
  *
  * @module agent-producer
  * @version 1.0.0
@@ -33,7 +34,6 @@ import 'dotenv/config';
 import {BaseAgent, logger, MODULE_AGENT, timer} from 'agents-library';
 import type {BaseAgentConfig} from 'agents-library';
 
-import {setupTaskCompletionNotifier} from './handlers/task-completion-notifier.js';
 import {registerAllTools, injectOrchestrator} from './tools/index.js';
 
 // ============================================================================
@@ -50,7 +50,11 @@ import {registerAllTools, injectOrchestrator} from './tools/index.js';
 // ============================================================================
 
 const brokerUrl = process.env.KADI_BROKER_URL || 'ws://localhost:8080';
-const networks = (process.env.KADI_NETWORK || 'global,slack,discord,utility').split(',');
+const networks = (process.env.KADI_NETWORK || 'producer,quest,text').split(',');
+
+// Optional second broker for multi-broker connectivity
+const remoteBrokerUrl = process.env.KADI_BROKER_URL_2;
+const remoteBrokerNetworks = (process.env.KADI_NETWORK_2 || 'global').split(',');
 
 /**
  * Whether LLM-dependent features (bots, orchestrator, task handlers) are enabled.
@@ -75,6 +79,11 @@ const baseAgentConfig: BaseAgentConfig = {
   version: '1.0.0',
   brokerUrl,
   networks,
+  ...(remoteBrokerUrl && {
+    additionalBrokers: {
+      remote: { url: remoteBrokerUrl, networks: remoteBrokerNetworks },
+    },
+  }),
   ...(llmEnabled && {
     provider: {
       anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
@@ -123,7 +132,14 @@ export const taskChannelMap = new Map<string, {
 //
 // For more information on adding custom tools, see src/tools/index.ts
 //
-registerAllTools(client);
+// Build broker networks map for per-tool scoping
+const brokerNetworksMap: Record<string, string[]> = {
+  default: networks,
+};
+if (remoteBrokerUrl) {
+  brokerNetworksMap.remote = remoteBrokerNetworks;
+}
+registerAllTools(client, brokerNetworksMap);
 
 // Task rejection subscription is set up in main() after broker connection
 import { subscribeToTaskRejections } from './tools/task-execution.js';
@@ -217,15 +233,6 @@ async function main() {
             injectOrchestrator(orchestrator);
             logger.info(MODULE_AGENT, '   ✅ LlmOrchestrator created and injected', timer.elapsed('main'));
 
-            // Setup task completion event handler (requires providerManager for LLM verification)
-            try {
-                const { setupTaskCompletionHandler } = await import('./handlers/task-completion.js');
-                await setupTaskCompletionHandler(client, baseAgent.providerManager);
-                logger.info(MODULE_AGENT, 'Task completion event handler registered successfully (all roles)', timer.elapsed('main'));
-            } catch (error) {
-                logger.error(MODULE_AGENT, 'Failed to setup task completion event handler', "+0ms", error as Error | string);
-            }
-
             // Setup task failure event handler
             try {
                 const { setupTaskFailureHandler } = await import('./handlers/task-failure.js');
@@ -283,12 +290,13 @@ async function main() {
             logger.error(MODULE_AGENT, 'Failed to setup task rejection handler', "+0ms", error as Error | string);
         }
 
-        // Task completion notifier (user notifications)
+        // Task completion notifier → replaced by status-relay (v2 events)
         try {
-            await setupTaskCompletionNotifier(client);
-            logger.info(MODULE_AGENT, 'Task completion notifier registered', timer.elapsed('main'));
+            const { setupStatusRelay } = await import('./handlers/status-relay.js');
+            await setupStatusRelay(client);
+            logger.info(MODULE_AGENT, 'Status relay subscriptions registered', timer.elapsed('main'));
         } catch (error) {
-            logger.error(MODULE_AGENT, 'Failed to setup task completion notifier', "+0ms", error as Error | string);
+            logger.error(MODULE_AGENT, 'Failed to setup status relay', "+0ms", error as Error | string);
         }
 
         // ----------------------------------------------------------------

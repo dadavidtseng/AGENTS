@@ -233,19 +233,24 @@ async function approveTask(
       (t) => t.status === 'completed' || t.id === task.id
     );
 
+    // Publish task.approved — agent-lead handles "all done → PR" logic
+    await client.publish('task.approved', {
+      taskId: task.id,
+      questId: quest.questId,
+      approvedBy: 'human',
+      timestamp: new Date().toISOString(),
+    }, { broker: 'default', network: 'global' });
+
     if (allTasksCompleted) {
       logger.info(
         MODULE_AGENT,
-        `All tasks in quest ${quest.questId} are completed - triggering git workflow`,
+        `All tasks in quest ${quest.questId} approved — agent-lead will handle PR workflow`,
         timer.elapsed('main')
       );
 
-      // Trigger git merge workflow
-      await triggerGitWorkflow(client, quest);
-
       return {
         success: true,
-        message: `✅ Task approved and finalized!\n\n📋 Task: ${task.name}\n🎉 All quest tasks completed!\n\n🔄 Git merge workflow has been triggered to merge all changes.`,
+        message: `✅ Task approved and finalized!\n\n📋 Task: ${task.name}\n🎉 All quest tasks completed!\n\n🔄 Agent-lead will handle git merge + PR creation.`,
         questCompleted: true,
       };
     }
@@ -474,114 +479,7 @@ async function requestChanges(
  * @param client - KĀDI client instance
  * @param quest - Completed quest
  */
-async function triggerGitWorkflow(
-  client: KadiClient,
-  quest: Quest
-): Promise<void> {
-  logger.info(
-    MODULE_AGENT,
-    `Triggering git workflow for quest ${quest.questId}`,
-    timer.elapsed('main')
-  );
-
-  try {
-    // Get unique agents that worked on this quest
-    const uniqueAgents = new Set<string>();
-    for (const task of quest.tasks) {
-      if (task.assignedAgent) {
-        uniqueAgents.add(task.assignedAgent);
-      }
-    }
-
-    logger.info(
-      MODULE_AGENT,
-      `Found ${uniqueAgents.size} unique agents: ${Array.from(uniqueAgents).join(', ')}`,
-      timer.elapsed('main')
-    );
-
-    // For each agent, call git merge to merge their worktree branch
-    for (const agentId of uniqueAgents) {
-      // Extract role from agent ID (e.g., "agent-artist" -> "artist")
-      const roleMatch = agentId.match(/agent-(.+)/);
-      const role = roleMatch ? roleMatch[1] : agentId;
-
-      // Construct worktree path: C:/GitHub/agent-playground-{role}
-      const worktreePath = `C:/GitHub/agent-playground-${role}`;
-      const targetRepo = 'C:/GitHub/agent-playground';
-
-      logger.info(
-        MODULE_AGENT,
-        `Merging ${agentId} worktree: ${worktreePath} -> ${targetRepo}`,
-        timer.elapsed('main')
-      );
-
-      try {
-        // Call git_git_merge via KĀDI broker
-        await client.invokeRemote('git_git_merge', {
-          worktreePath,
-          targetRepo,
-          branch: 'main',
-        });
-
-        logger.info(
-          MODULE_AGENT,
-          `Successfully merged ${agentId} worktree`,
-          timer.elapsed('main')
-        );
-      } catch (error: any) {
-        logger.error(
-          MODULE_AGENT,
-          `Failed to merge ${agentId} worktree: ${error.message}`,
-          timer.elapsed('main'),
-          error
-        );
-        // Continue with other agents even if one fails
-      }
-    }
-
-    // After all merges, push to remote
-    logger.info(
-      MODULE_AGENT,
-      'All worktrees merged, pushing to remote...',
-      timer.elapsed('main')
-    );
-
-    try {
-      await client.invokeRemote('git_git_push', {
-        repositoryPath: 'C:/GitHub/agent-playground',
-        branch: 'main',
-        remote: 'origin',
-      });
-
-      logger.info(
-        MODULE_AGENT,
-        'Successfully pushed to remote',
-        timer.elapsed('main')
-      );
-    } catch (error: any) {
-      logger.error(
-        MODULE_AGENT,
-        `Failed to push to remote: ${error.message}`,
-        timer.elapsed('main'),
-        error
-      );
-    }
-
-    logger.info(
-      MODULE_AGENT,
-      `Git workflow completed for quest ${quest.questId}`,
-      timer.elapsed('main')
-    );
-  } catch (error: any) {
-    logger.error(
-      MODULE_AGENT,
-      `Failed to trigger git workflow: ${error.message}`,
-      timer.elapsed('main'),
-      error
-    );
-    throw error;
-  }
-}
+// triggerGitWorkflow removed — git merge + PR creation now handled by agent-lead (tasks 4.13-4.14)
 
 // ============================================================================
 // Main Handler

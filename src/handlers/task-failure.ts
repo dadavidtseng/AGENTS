@@ -110,7 +110,7 @@ What would you like to do?
 Task ID: ${event.taskId}`;
 
     // Send Discord message via mcp-server-discord
-    await client.invokeRemote('discord_server_send_message', {
+    await client.invokeRemote('discord_send_message', {
       channel: channelContext.channelId,
       text: message,
     });
@@ -180,7 +180,7 @@ async function handleRetry(
 
     // Send confirmation to Discord
     if (failure.channelId) {
-      await client.invokeRemote('discord_server_send_message', {
+      await client.invokeRemote('discord_send_message', {
         channel: failure.channelId,
         text: `🔄 Retrying task: ${failure.taskName}\n\nThe task has been republished to the worker agent.`,
       });
@@ -195,7 +195,7 @@ async function handleRetry(
 
     // Send error notification
     if (failure.channelId) {
-      await client.invokeRemote('discord_server_send_message', {
+      await client.invokeRemote('discord_send_message', {
         channel: failure.channelId,
         text: `❌ Failed to retry task: ${error.message}`,
       });
@@ -238,7 +238,7 @@ async function handleSkip(
 
     // Send confirmation to Discord
     if (failure.channelId) {
-      await client.invokeRemote('discord_server_send_message', {
+      await client.invokeRemote('discord_send_message', {
         channel: failure.channelId,
         text: `⏭️ Skipped task: ${failure.taskName}\n\nThe task has been marked as failed and will not be retried.`,
       });
@@ -253,7 +253,7 @@ async function handleSkip(
 
     // Send error notification
     if (failure.channelId) {
-      await client.invokeRemote('discord_server_send_message', {
+      await client.invokeRemote('discord_send_message', {
         channel: failure.channelId,
         text: `❌ Failed to skip task: ${error.message}`,
       });
@@ -282,7 +282,7 @@ async function handleAbort(
   try {
     // Send confirmation to Discord
     if (failure.channelId) {
-      await client.invokeRemote('discord_server_send_message', {
+      await client.invokeRemote('discord_send_message', {
         channel: failure.channelId,
         text: `🛑 Task execution aborted!\n\nAll pending tasks have been stopped. No further tasks will be executed until you restart execution.`,
       });
