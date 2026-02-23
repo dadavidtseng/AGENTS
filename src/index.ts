@@ -4,6 +4,7 @@ import type { BaseAgentConfig, AgentRole } from 'agents-library';
 import { setupTaskReceptionHandler } from './handlers/task-reception.js';
 import { setupTaskVerificationHandler } from './handlers/task-verification.js';
 import { setupPrWorkflowHandler } from './handlers/pr-workflow.js';
+import { setupPrPollingHandler } from './handlers/pr-polling.js';
 
 // Role-based network mapping
 const ROLE_NETWORKS: Record<string, string[]> = {
@@ -63,6 +64,9 @@ async function main(): Promise<void> {
 
   // Task 4.14: Subscribe to quest.verification_complete for PR creation
   await setupPrWorkflowHandler(client, role, agentName);
+
+  // Task 4.33: PR status polling fallback (when webhook is unavailable)
+  await setupPrPollingHandler(client, role, agentName);
 
   logger.info(MODULE_AGENT, `${agentName} ready`, timer.elapsed('main'));
 }
