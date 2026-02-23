@@ -42,7 +42,7 @@ async function registerAgent(client: any, role: string): Promise<void> {
     logger.info(MODULE_AGENT, '📝 Registering agent with mcp-server-quest...', timer.elapsed('main'));
 
     const result = await client.invokeRemote('quest_quest_register_agent', {
-      agentId: `agent-${role}`,
+      agentId: `agent-worker-${role}`,
       name: `${role.charAt(0).toUpperCase() + role.slice(1)} Agent`,
       role,
       capabilities: ['file-creation', 'image-generation', 'creative-content'],
@@ -64,7 +64,7 @@ async function registerAgent(client: any, role: string): Promise<void> {
 async function sendHeartbeat(client: any, role: string): Promise<void> {
   try {
     await client.invokeRemote('quest_quest_agent_heartbeat', {
-      agentId: `agent-${role}`,
+      agentId: `agent-worker-${role}`,
       status: 'available',
       currentTasks: [],
       timestamp: new Date().toISOString()
@@ -91,7 +91,7 @@ async function unregisterAgent(client: any, role: string): Promise<void> {
   try {
     logger.info(MODULE_AGENT, '📝 Unregistering agent...', timer.elapsed('main'));
     await client.invokeRemote('quest_quest_unregister_agent', {
-      agentId: `agent-${role}`,
+      agentId: `agent-worker-${role}`,
       reason: 'Graceful shutdown'
     });
     logger.info(MODULE_AGENT, '✅ Agent unregistered', timer.elapsed('main'));
@@ -134,7 +134,7 @@ async function main() {
 
   // Step 2: Create BaseAgent for shared infrastructure
   const baseAgentConfig: BaseAgentConfig = {
-    agentId: `agent-${roleConfig.role}`,
+    agentId: `agent-worker-${roleConfig.role}`,
     agentRole: roleConfig.role,
     version: '1.0.0',
     brokerUrl,
