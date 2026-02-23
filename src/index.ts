@@ -2,17 +2,21 @@
  * Slack Event Publisher for KĀDI
  * ================================
  *
- * Pure KĀDI event publisher that listens for Slack @mentions via Socket Mode
+ * Pure KĀDI event publisher that listens for Slack @mentions via HTTP Events API
  * and publishes them as real-time events to the KĀDI broker.
  *
  * Architecture:
- * - Slack Socket Mode: Receives @mention events in real-time
+ * - Slack HTTP Events API: Receives @mention events via HTTP POST (requires public URL)
  * - KĀDI Publisher: Publishes events to broker topics
  * - Event-Driven: No polling, push-based architecture
  *
+ * Transport:
+ * - Uses ngrok (or similar tunnel) to expose local HTTP server to Slack
+ * - More reliable than Socket Mode (stateless HTTP vs persistent WebSocket)
+ *
  * Flow:
  * 1. User @mentions bot in Slack channel
- * 2. Socket Mode receives app_mention event
+ * 2. Slack sends HTTP POST to public URL → ngrok → local HTTP server
  * 3. Event published to topic: slack.app_mention.{BOT_USER_ID}
  * 4. Subscribers receive event in real-time via KĀDI broker
  */
@@ -31,7 +35,8 @@ dotenv.config();
 
 const ConfigSchema = z.object({
   SLACK_BOT_TOKEN: z.string().min(1, 'SLACK_BOT_TOKEN is required'),
-  SLACK_APP_TOKEN: z.string().min(1, 'SLACK_APP_TOKEN is required'),
+  SLACK_SIGNING_SECRET: z.string().min(1, 'SLACK_SIGNING_SECRET is required'),
+  SLACK_HTTP_PORT: z.coerce.number().int().positive().default(3700),
   KADI_BROKER_URL: z
     .string()
     .url('KADI_BROKER_URL must be a valid WebSocket URL')
@@ -49,7 +54,8 @@ function loadConfig(): Config {
   try {
     return ConfigSchema.parse({
       SLACK_BOT_TOKEN: process.env.SLACK_BOT_TOKEN,
-      SLACK_APP_TOKEN: process.env.SLACK_APP_TOKEN,
+      SLACK_SIGNING_SECRET: process.env.SLACK_SIGNING_SECRET,
+      SLACK_HTTP_PORT: process.env.SLACK_HTTP_PORT || '3700',
       KADI_BROKER_URL: process.env.KADI_BROKER_URL,
       SLACK_BOT_USER_ID: process.env.SLACK_BOT_USER_ID,
       LOG_LEVEL: process.env.LOG_LEVEL || 'info',
@@ -91,29 +97,28 @@ class SlackManager {
   private publisher: KadiEventPublisher | null = null;
   private enabled: boolean = false;
   private botUserId: string = '';
+  private port: number = 3700;
 
   constructor(config: Config, publisher: KadiEventPublisher | null = null) {
     this.publisher = publisher;
+    this.port = config.SLACK_HTTP_PORT;
 
-    // Check if tokens look valid (not placeholders)
-    const hasValidTokens =
-      config.SLACK_BOT_TOKEN.startsWith('xoxb-') &&
-      config.SLACK_APP_TOKEN.startsWith('xapp-');
+    // Check if token looks valid (not placeholder)
+    const hasValidToken = config.SLACK_BOT_TOKEN.startsWith('xoxb-');
 
-    if (hasValidTokens) {
-      // Initialize Slack Bolt app with Socket Mode
+    if (hasValidToken) {
+      // Initialize Slack Bolt app with HTTP Events API (no Socket Mode)
       this.app = new App({
         token: config.SLACK_BOT_TOKEN,
-        appToken: config.SLACK_APP_TOKEN,
-        socketMode: true,
+        signingSecret: config.SLACK_SIGNING_SECRET,
       });
 
       this.botUserId = config.SLACK_BOT_USER_ID;
       this.registerEventHandlers();
       this.enabled = true;
     } else {
-      console.log('⚠️  Slack tokens appear to be placeholders - running in stub mode');
-      console.log('   Set valid SLACK_BOT_TOKEN and SLACK_APP_TOKEN to enable Slack integration');
+      console.log('⚠️  Slack bot token appears to be a placeholder - running in stub mode');
+      console.log('   Set valid SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET to enable Slack integration');
     }
   }
 
@@ -214,7 +219,7 @@ class SlackManager {
   }
 
   /**
-   * Start Slack Socket Mode listener
+   * Start Slack HTTP Events API listener
    */
   async start(): Promise<void> {
     if (!this.app || !this.enabled) {
@@ -222,16 +227,16 @@ class SlackManager {
       return;
     }
 
-    console.log('🚀 [START] Starting Slack Socket Mode listener...');
-    console.log('🚀 [START] Registering event handlers BEFORE starting app...');
+    console.log(`🚀 [START] Starting Slack HTTP Events API listener on port ${this.port}...`);
 
     try {
-      await this.app.start();
-      console.log('✅ [START] Slack Socket Mode listener started successfully');
-      console.log('🎧 [START] Ready to receive @mentions from Slack');
+      await this.app.start(this.port);
+      console.log(`✅ [START] Slack HTTP listener started on port ${this.port}`);
+      console.log('🎧 [START] Ready to receive @mentions from Slack via HTTP Events API');
+      console.log(`🎧 [START] Slack should POST events to: http://localhost:${this.port}/slack/events`);
       console.log('🎧 [START] Event handler registered for: app_mention');
     } catch (error) {
-      console.error('❌ [START] Failed to start Slack Socket Mode:', error);
+      console.error('❌ [START] Failed to start Slack HTTP listener:', error);
       throw error;
     }
   }
@@ -245,7 +250,7 @@ class SlackManager {
     }
 
     await this.app.stop();
-    console.log('🛑 Slack Socket Mode listener stopped');
+    console.log('🛑 Slack HTTP listener stopped');
   }
 }
 
@@ -276,14 +281,16 @@ class SlackEventPublisher {
     console.log(`   - Log Level: ${this.config.LOG_LEVEL}`);
     console.log(`   - Broker: ${this.config.KADI_BROKER_URL}`);
     console.log(`   - Bot User ID: ${this.config.SLACK_BOT_USER_ID}`);
+    console.log(`   - HTTP Port: ${this.config.SLACK_HTTP_PORT}`);
+    console.log(`   - Transport: HTTP Events API (via ngrok)`);
     console.log();
 
-    // Start Slack Socket Mode
-    console.log('[STEP 1] Starting Slack Socket Mode...');
+    // Start Slack HTTP Events API listener
+    console.log('[STEP 1] Starting Slack HTTP Events API listener...');
     const slackStartTime = Date.now();
     await this.slackManager.start();
     const slackDuration = Date.now() - slackStartTime;
-    console.log(`✅ [STEP 1] Slack Socket Mode started (+${slackDuration}ms)`);
+    console.log(`✅ [STEP 1] Slack HTTP listener started (+${slackDuration}ms)`);
     console.log();
 
     // Connect to KĀDI broker
