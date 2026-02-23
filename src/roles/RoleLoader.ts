@@ -35,12 +35,14 @@ const RoleConfigSchema = z.object({
   role: z.string().min(1, 'Role name is required'),
   capabilities: z.array(z.string().min(1)).min(1, 'At least one capability is required'),
   maxConcurrentTasks: z.number().int().min(1).max(10, 'maxConcurrentTasks must be between 1 and 10'),
+  mainRepoPath: z.string().min(1).optional(),
   worktreePath: z.string().min(1, 'worktreePath is required'),
   eventTopic: z.string().min(1, 'eventTopic is required'),
   commitFormat: z.string().min(1, 'commitFormat is required'),
   provider: ProviderConfigSchema.optional(),
   memory: MemoryConfigSchema.optional(),
   tools: z.array(z.string().min(1, 'Tool prefix must be non-empty')).optional(),
+  networks: z.array(z.string().min(1)).optional(),
 });
 
 // ============================================================================
@@ -65,12 +67,14 @@ export interface RoleConfig {
   role: string;
   capabilities: string[];
   maxConcurrentTasks: number;
+  mainRepoPath?: string;
   worktreePath: string;
   eventTopic: string;
   commitFormat: string;
   provider?: ProviderConfig;
   memory?: MemoryConfig;
   tools?: string[];
+  networks?: string[];
 }
 
 /** Validation result with typed errors */

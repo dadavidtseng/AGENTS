@@ -81,6 +81,16 @@
       "type": "array",
       "items": { "type": "string" },
       "description": "List of MCP tool prefixes this role can invoke (e.g., 'git_git_', 'ability_file_')"
+    },
+    "networks": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "KĀDI networks this role joins (e.g., ['artist', 'git', 'qa', 'file']). Defaults to ['utility', 'global'] if omitted."
+    },
+    "mainRepoPath": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Absolute path to the main git repository (for worktree creation)"
     }
   },
   "additionalProperties": false

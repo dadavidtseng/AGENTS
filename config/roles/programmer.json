@@ -1,6 +1,7 @@
 {
   "$schema": "../role-schema.json",
   "role": "programmer",
+  "networks": ["programmer", "git", "qa", "file", "quest"],
   "capabilities": [
     "code-generation",
     "programming",
@@ -10,7 +11,8 @@
     "testing"
   ],
   "maxConcurrentTasks": 1,
-  "worktreePath": "C:/GitHub/agent-playground-programmer",
+  "mainRepoPath": "/mnt/c/GitHub/agent-playground",
+  "worktreePath": "/mnt/c/GitHub/agent-playground-programmer",
   "eventTopic": "task",
   "commitFormat": "feat: implement code for task {taskId}",
   "provider": {

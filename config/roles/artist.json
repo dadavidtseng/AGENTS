@@ -1,6 +1,7 @@
 {
   "$schema": "../role-schema.json",
   "role": "artist",
+  "networks": ["artist", "git", "qa", "file", "quest"],
   "capabilities": [
     "file-creation",
     "image-generation",
@@ -10,7 +11,8 @@
     "design"
   ],
   "maxConcurrentTasks": 1,
-  "worktreePath": "C:/GitHub/agent-playground-artist",
+  "mainRepoPath": "/mnt/c/GitHub/agent-playground",
+  "worktreePath": "/mnt/c/GitHub/agent-playground-artist",
   "eventTopic": "task",
   "commitFormat": "feat: create artwork for task {taskId}",
   "provider": {

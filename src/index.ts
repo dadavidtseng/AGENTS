@@ -20,6 +20,7 @@
  */
 
 import 'dotenv/config';
+import fs from 'fs';
 import {
   BaseAgent,
   type BaseAgentConfig,
@@ -37,7 +38,7 @@ import { RoleLoader } from './roles/RoleLoader.js';
 /**
  * Register agent with mcp-server-quest
  */
-async function registerAgent(client: any, role: string): Promise<void> {
+async function registerAgent(client: any, role: string, capabilities: string[], maxConcurrentTasks: number): Promise<void> {
   try {
     logger.info(MODULE_AGENT, '📝 Registering agent with mcp-server-quest...', timer.elapsed('main'));
 
@@ -45,8 +46,8 @@ async function registerAgent(client: any, role: string): Promise<void> {
       agentId: `agent-worker-${role}`,
       name: `${role.charAt(0).toUpperCase() + role.slice(1)} Agent`,
       role,
-      capabilities: ['file-creation', 'image-generation', 'creative-content'],
-      maxConcurrentTasks: 3
+      capabilities,
+      maxConcurrentTasks
     });
 
     const resultText = result.content[0].text;
@@ -132,13 +133,45 @@ async function main() {
   logger.info(MODULE_AGENT, `   Model: ${roleConfig.provider?.model || 'default'}`, timer.elapsed('main'));
   logger.info(MODULE_AGENT, `   Tools: ${roleConfig.tools?.join(', ') || 'none'}`, timer.elapsed('main'));
 
+  // Step 1.5: Auto-create git worktree if it doesn't exist
+  if (roleConfig.mainRepoPath && roleConfig.worktreePath) {
+    if (!fs.existsSync(roleConfig.worktreePath)) {
+      logger.info(MODULE_AGENT, `   📂 Worktree not found at ${roleConfig.worktreePath} — creating...`, timer.elapsed('main'));
+      try {
+        const branch = `agent-playground-${roleConfig.role}`;
+        const { execSync } = await import('child_process');
+        execSync(`git worktree add "${roleConfig.worktreePath}" -b "${branch}"`, {
+          cwd: roleConfig.mainRepoPath,
+          stdio: 'pipe',
+        });
+        logger.info(MODULE_AGENT, `   ✅ Worktree created: ${roleConfig.worktreePath} (branch: ${branch})`, timer.elapsed('main'));
+      } catch (error: any) {
+        // Branch may already exist — try without -b
+        try {
+          const branch = `agent-playground-${roleConfig.role}`;
+          const { execSync } = await import('child_process');
+          execSync(`git worktree add "${roleConfig.worktreePath}" "${branch}"`, {
+            cwd: roleConfig.mainRepoPath,
+            stdio: 'pipe',
+          });
+          logger.info(MODULE_AGENT, `   ✅ Worktree created (existing branch): ${roleConfig.worktreePath}`, timer.elapsed('main'));
+        } catch (retryError: any) {
+          logger.error(MODULE_AGENT, `   ❌ Failed to create worktree: ${retryError.message}`, timer.elapsed('main'));
+          process.exit(1);
+        }
+      }
+    } else {
+      logger.info(MODULE_AGENT, `   📂 Worktree exists: ${roleConfig.worktreePath}`, timer.elapsed('main'));
+    }
+  }
+
   // Step 2: Create BaseAgent for shared infrastructure
   const baseAgentConfig: BaseAgentConfig = {
     agentId: `agent-worker-${roleConfig.role}`,
     agentRole: roleConfig.role,
     version: '1.0.0',
     brokerUrl,
-    networks: ['utility', 'global'],
+    networks: roleConfig.networks || ['utility', 'global'],
     provider: {
       anthropicApiKey,
       modelManagerBaseUrl,
@@ -159,11 +192,12 @@ async function main() {
 
   // Step 3: Create worker agent using factory
   const workerAgent = createWorkerAgent({
+    agentId: `agent-worker-${roleConfig.role}`,
     role: roleConfig.role as 'artist' | 'designer' | 'programmer',
     worktreePath: roleConfig.worktreePath,
     brokerUrl,
     anthropicApiKey,
-    networks: ['utility', 'global'],
+    networks: roleConfig.networks || ['utility', 'quest', 'global'],
     claudeModel: roleConfig.provider?.model,
     capabilities: roleConfig.capabilities,
     customBehaviors: {
@@ -187,7 +221,7 @@ async function main() {
 
   // Step 7: Register with quest server and start heartbeat
   const client = (workerAgent as any).client;
-  await registerAgent(client, roleConfig.role);
+  await registerAgent(client, roleConfig.role, roleConfig.capabilities, roleConfig.maxConcurrentTasks);
   const heartbeatInterval = startHeartbeat(client, roleConfig.role);
 
   // Step 8: Graceful shutdown

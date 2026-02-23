@@ -1,6 +1,7 @@
 {
   "$schema": "../role-schema.json",
   "role": "designer",
+  "networks": ["design", "git", "qa", "file", "quest"],
   "capabilities": [
     "ui-design",
     "ux-design",
@@ -10,7 +11,8 @@
     "prototyping"
   ],
   "maxConcurrentTasks": 1,
-  "worktreePath": "C:/GitHub/agent-playground-designer",
+  "mainRepoPath": "/mnt/c/GitHub/agent-playground",
+  "worktreePath": "/mnt/c/GitHub/agent-playground-designer",
   "eventTopic": "task",
   "commitFormat": "feat: create design for task {taskId}",
   "provider": {
