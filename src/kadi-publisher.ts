@@ -63,8 +63,7 @@ export class KadiEventPublisher {
       brokerUrl: config.KADI_BROKER_URL || '',
       clientName: 'mcp-client-discord',
       networks: ['discord'],
-      version: '1.0.0',
-      role: 'agent'
+      version: '1.0.0'
     };
 
     // Instantiate shared publisher with Discord config

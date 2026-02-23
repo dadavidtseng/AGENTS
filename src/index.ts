@@ -196,11 +196,12 @@ class DiscordManager {
   private registerEventHandlers(): void {
     if (!this.client) return;
 
-    // Listen for ready event to get bot user ID
-    this.client.on('ready', () => {
+    // Listen for clientReady event to get bot user ID (replaces deprecated 'ready')
+    this.client.on('clientReady', () => {
       if (!this.client?.user) return;
       this.botUserId = this.client.user.id;
       console.log(`✅ Discord bot logged in as ${this.client.user.tag}`);
+      console.log(`🆔 Bot User ID: ${this.botUserId}`);
     });
 
     // Listen for @mentions
@@ -222,8 +223,20 @@ class DiscordManager {
       // Ignore messages from bots
       if (message.author.bot) return;
 
+      // Debug: Log bot user ID status
+      if (!this.botUserId) {
+        console.warn('⚠️  Message received but botUserId not initialized yet. Waiting for clientReady event...');
+        return;
+      }
+
       // Check if bot was mentioned
-      if (!this.botUserId || !message.mentions.has(this.botUserId)) return;
+      if (!message.mentions.has(this.botUserId)) {
+        // Debug: Log non-mention messages in debug mode
+        if (this.config.MCP_LOG_LEVEL === 'debug') {
+          console.log(`🔇 Message from @${message.author.username} (no mention)`);
+        }
+        return;
+      }
 
       // Remove bot mention from text
       const cleanText = message.content
