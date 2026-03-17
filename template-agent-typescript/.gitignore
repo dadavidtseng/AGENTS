@@ -54,3 +54,4 @@ data/memory/
 # Claude configuration (keep private global instructions out of repo)
 .claude/
 CLAUDE.md
+*.tgz
