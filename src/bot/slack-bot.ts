@@ -293,13 +293,13 @@ export class SlackBot extends BaseBot {
         })),
         {
           role: 'user' as const,
-          content: mention.text + platformContext,
+          content: mention.text + imageContext + platformContext,
         },
       ];
 
       // Step 3: Detect model from message using regex /\[([^\]]+)\]/
       const modelMatch = mention.text.match(/\[([^\]]+)\]/);
-      const detectedModel = modelMatch ? modelMatch[1] : 'gpt-5-mini';
+      const detectedModel = modelMatch ? modelMatch[1] : 'gpt-5';
 
       logger.info(MODULE_SLACK_BOT, `Model: ${detectedModel}${modelMatch ? ' (from message)' : ' (default)'}`, timer.elapsed('main'));
 
@@ -846,6 +846,12 @@ export class SlackBot extends BaseBot {
     logger.info(MODULE_SLACK_BOT, `Executing tool: ${toolName}`, timer.elapsed('main'));
 
     try {
+      // Resolve vision tool image params from attachments
+      const visionTools = ['vision_analyze', 'vision_ocr', 'vision_describe_ui', 'vision_compare', 'vision_describe'];
+      if (visionTools.includes(toolName) && mention?.attachments) {
+        this.resolveVisionImageArgs(toolArgs, mention.attachments);
+      }
+
       // Inject Slack channel context for task_execution tool
       if (toolName === 'task_execution' && mention) {
         toolArgs._context = {
