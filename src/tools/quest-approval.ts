@@ -206,10 +206,11 @@ PATH A — SIMPLE QUEST (single file/config change, one repo, one agent role)
 1. Call quest_quest_list_agents to discover available worker roles.
 2. Call quest_quest_split_task with questId="${params.questId}" and a MINIMAL task array.
    RULES:
+   - Each task MUST include a "role" field: "programmer", "artist", or "designer".
    - Same agent + same repo = ONE task. Never split sequential git operations
      (branch, edit, commit, push) into separate tasks.
    - Each task must include a clear description, implementationGuide, and verificationCriteria.
-3. Call quest_quest_assign_task to assign tasks.
+3. You are DONE after split_task. Do NOT call quest_quest_assign_task or task_execution.
 
 ═══════════════════════════════════════════════════════════════
 PATH B — COMPLEX QUEST (multiple features, multiple agents/repos, architectural decisions)
@@ -219,19 +220,28 @@ PATH B — COMPLEX QUEST (multiple features, multiple agents/repos, architectura
 3. Call quest_quest_list_agents to discover available worker roles.
 4. Call quest_quest_split_task with questId="${params.questId}" and the task array derived from analysis.
    RULES:
+   - Each task MUST include a "role" field: "programmer", "artist", or "designer".
    - Only create tasks for roles that have registered agents.
    - Same agent + same repo = ONE task, unless truly independent parallel workstreams.
    - When creating multiple tasks, ALWAYS set explicit dependencies between sequential tasks.
      Tasks without dependencies will be dispatched in parallel.
    - Include globalAnalysisResult from the analysis and reflection steps.
-5. Call quest_quest_assign_task to assign tasks.
-
-After tasks are created and assigned, follow the nextStep instructions in the assign response.${notifyInstruction}`,
+5. You are DONE after split_task. Do NOT call quest_quest_assign_task or task_execution.${notifyInstruction}`,
         }],
       });
 
       if (llmResult.success && llmResult.response) {
         result.message += ` | LLM follow-up: ${llmResult.response.substring(0, 200)}`;
+      }
+
+      // Publish quest.tasks_ready — agent-lead handles assignment and dispatch
+      try {
+        await client.publish('quest.tasks_ready', {
+          questId: params.questId,
+        }, { broker: 'default', network: 'producer' });
+        logger.info(MODULE_AGENT, `[QuestApprove] Published quest.tasks_ready for ${params.questId}`, timer.elapsed('main'));
+      } catch (pubErr: any) {
+        logger.error(MODULE_AGENT, `[QuestApprove] Failed to publish quest.tasks_ready: ${pubErr.message}`, timer.elapsed('main'));
       }
     } else if (!orchestrator) {
       logger.warn(MODULE_AGENT, '[QuestApprove] Orchestrator not yet injected — skipping LLM follow-up', timer.elapsed('main'));

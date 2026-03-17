@@ -301,7 +301,7 @@ export function registerTaskExecutionTool(client: KadiClient): void {
       // Step 4: Publish quest.tasks_ready — agent-lead handles assignment
       await client.publish('quest.tasks_ready', {
         questId,
-      }, { broker: 'default', network: 'global' });
+      }, { broker: 'default', network: 'producer' });
 
       logger.info(MODULE_AGENT, `Published quest.tasks_ready for ${questId}`, timer.elapsed('main'));
 

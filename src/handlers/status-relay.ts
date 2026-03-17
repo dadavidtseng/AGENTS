@@ -56,6 +56,22 @@ interface QuestCompletedPayload {
   questId: string;
 }
 
+interface TaskFailedPayload {
+  taskId: string;
+  questId: string;
+  error?: string;
+  retryAttempt?: number;
+  maxRetries?: number;
+}
+
+interface QuestVerificationCompletePayload {
+  questId: string;
+  completedCount: number;
+  failedCount: number;
+  totalTasks: number;
+  verifiedBy: string;
+}
+
 // ============================================================================
 // Channel Resolution
 // ============================================================================
@@ -179,6 +195,17 @@ async function handleQuestMerged(client: KadiClient, event: unknown): Promise<vo
 
   logger.info(MODULE_AGENT, `Quest ${data.questId} PR merged`, timer.elapsed('main'));
 
+  // Mark quest as completed in mcp-server-quest
+  try {
+    await client.invokeRemote('quest_quest_update_quest', {
+      questId: data.questId,
+      status: 'completed',
+    });
+    logger.info(MODULE_AGENT, `Quest ${data.questId} status updated to completed`, timer.elapsed('main'));
+  } catch (err: any) {
+    logger.error(MODULE_AGENT, `Failed to mark quest ${data.questId} as completed: ${err.message}`, timer.elapsed('main'), err);
+  }
+
   const channel = await resolveChannel(client, data.questId);
   if (!channel) return;
 
@@ -201,6 +228,22 @@ async function handleQuestCompleted(client: KadiClient, event: unknown): Promise
   await sendNotification(client, channel, msg);
 }
 
+async function handleTaskFailed(client: KadiClient, event: unknown): Promise<void> {
+  const data = ((event as any)?.data || event) as TaskFailedPayload;
+  if (!data.taskId) return;
+
+  logger.warn(MODULE_AGENT, `Task ${data.taskId} failed (quest: ${data.questId})`, timer.elapsed('main'));
+
+  const channel = await resolveChannel(client, data.questId);
+  if (!channel) return;
+
+  const reason = data.error ?? 'Unknown error';
+  const attempt = data.retryAttempt ? ` (attempt ${data.retryAttempt}/${data.maxRetries ?? '?'})` : '';
+  const msg = `❌ **Task Failed**${attempt}\n\n📦 Quest: ${data.questId}\n🔧 Task: ${data.taskId}\n\n${reason}`;
+
+  await sendNotification(client, channel, msg);
+}
+
 async function handleQuestPrRejected(client: KadiClient, event: unknown): Promise<void> {
   const data = ((event as any)?.data || event) as QuestPrRejectedPayload;
   if (!data.questId) return;
@@ -211,6 +254,22 @@ async function handleQuestPrRejected(client: KadiClient, event: unknown): Promis
   if (!channel) return;
 
   const msg = `❌ **PR Rejected**\n\n📦 Quest: ${data.questId}\n\nThe pull request was closed without merging.\nWould you like to abandon this quest or rework it?`;
+
+  await sendNotification(client, channel, msg);
+}
+
+async function handleVerificationComplete(client: KadiClient, event: unknown): Promise<void> {
+  const data = ((event as any)?.data || event) as QuestVerificationCompletePayload;
+  if (!data.questId) return;
+
+  logger.info(MODULE_AGENT, `Quest ${data.questId} verification complete: ${data.completedCount} ok, ${data.failedCount} failed`, timer.elapsed('main'));
+
+  const channel = await resolveChannel(client, data.questId);
+  if (!channel) return;
+
+  const msg = data.failedCount > 0
+    ? `⚠️ **Quest Verification Complete**\n\n📦 Quest: ${data.questId}\n✅ ${data.completedCount} completed, ❌ ${data.failedCount} failed out of ${data.totalTasks} total.\n\nPR creation skipped due to failures.`
+    : `✅ **All Tasks Verified**\n\n📦 Quest: ${data.questId}\n✅ ${data.completedCount}/${data.totalTasks} tasks completed.\n\nPR creation in progress...`;
 
   await sendNotification(client, channel, msg);
 }
@@ -235,11 +294,13 @@ export async function setupStatusRelay(client: KadiClient): Promise<void> {
   };
 
   await sub('task.verified', handleTaskVerified);
+  await sub('task.failed', handleTaskFailed);
   await sub('quest.pr_created', handlePrCreated);
   await sub('conflict.escalation', handleConflictEscalation);
   await sub('quest.merged', handleQuestMerged);
   await sub('quest.pr_rejected', handleQuestPrRejected);
   await sub('quest.completed', handleQuestCompleted);
+  await sub('quest.verification_complete', handleVerificationComplete);
 
   logger.info(MODULE_AGENT, 'Status relay subscriptions active', timer.elapsed('main'));
 }
