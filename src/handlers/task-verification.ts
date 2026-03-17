@@ -1,24 +1,27 @@
 /**
- * Task Verification Handler — verifies task results from worker agents
+ * Task Verification Handler — receives QA-validated results and performs final verification
  *
- * Subscribes to task.completed and task.failed events.
- * Performs structural verification (no LLM — agent-lead is lightweight),
- * records results via quest_quest_verify_task, and handles retry/cascade logic.
+ * Subscribes to task.validated (from agent-qa) and task.failed (from worker) events.
+ * Records results via quest_quest_verify_task, handles retry/cascade logic.
  *
- * Validation chain: worker → agent-lead (structural) → agent-producer (LLM deep verify)
+ * Validation chain per QUEST_WORKFLOW_V2:
+ *   worker → task.review_requested → agent-qa → task.validated → agent-lead (final verify)
  *
  * @module handlers/task-verification
  */
 
 import { logger, MODULE_AGENT, timer } from 'agents-library';
+import type { ProviderManager, Message } from 'agents-library';
 import type { KadiClient } from '@kadi.build/core';
 import type {
-  TaskCompletedEvent,
+  TaskValidatedPayload,
   TaskFailedEvent,
+  TaskRevisionNeededPayload,
 } from 'agents-library';
 import {
-  TaskCompletedEventSchema,
+  TaskValidatedPayloadSchema,
   TaskFailedEventSchema,
+  TaskRevisionNeededPayloadSchema,
   KadiEventSchema,
 } from 'agents-library';
 
@@ -26,108 +29,59 @@ import {
 // Types
 // ============================================================================
 
-/** Structural verification result before forwarding to producer */
-export interface StructuralVerificationResult {
-  taskId: string;
-  questId: string;
-  passed: boolean;
-  score: number;
-  reason: string;
-}
-
-/** Result of handling a single task.completed event */
+/** Result of handling a single task.validated event */
 export interface TaskVerificationHandlerResult {
   taskId: string;
   questId: string;
-  verification: StructuralVerificationResult;
-  forwarded: boolean;
+  score: number;
+  passed: boolean;
 }
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-const TOPIC_COMPLETED = 'task.completed';
+const TOPIC_VALIDATED = 'task.validated';
 const TOPIC_FAILED = 'task.failed';
+const TOPIC_REVISION_NEEDED = 'task.revision_needed';
+const TOPIC_CASCADE_NEEDED = 'quest.cascade_needed';
 const MAX_RETRIES = 3;
-
-// ============================================================================
-// Structural Verification
-// ============================================================================
-
-/**
- * Perform structural verification on a task.completed event.
- *
- * Checks:
- * - Required fields present (taskId, questId, commitSha, agent)
- * - At least one file created or modified
- * - commitSha is a valid hex string
- *
- * This is a lightweight gate before forwarding to agent-producer for LLM review.
- */
-function verifyStructural(event: TaskCompletedEvent): StructuralVerificationResult {
-  const questId = event.questId ?? '';
-  let score = 100;
-  const issues: string[] = [];
-
-  // Check required fields
-  if (!event.taskId) {
-    issues.push('missing taskId');
-    score -= 40;
-  }
-  if (!questId) {
-    issues.push('missing questId');
-    score -= 20;
-  }
-  if (!event.agent) {
-    issues.push('missing agent identifier');
-    score -= 10;
-  }
-
-  // Check commit evidence
-  if (!event.commitSha || !/^[0-9a-f]{7,40}$/i.test(event.commitSha)) {
-    issues.push(`invalid or missing commitSha: "${event.commitSha ?? ''}"`);
-    score -= 30;
-  }
-
-  // Check file evidence
-  const filesCreated = event.filesCreated?.length ?? 0;
-  const filesModified = event.filesModified?.length ?? 0;
-  if (filesCreated + filesModified === 0) {
-    issues.push('no files created or modified');
-    score -= 20;
-  }
-
-  const passed = score >= 60;
-  const reason = issues.length > 0
-    ? `Structural issues: ${issues.join('; ')}`
-    : 'Structural verification passed';
-
-  return { taskId: event.taskId, questId, passed, score: Math.max(0, score), reason };
-}
+const MAX_REVISIONS = 3;
 
 // ============================================================================
 // Quest Tool Interactions
 // ============================================================================
 
 /**
- * Record structural verification result via quest_quest_verify_task.
+ * Record verification result via quest_quest_verify_task.
+ * Passes explicit `passed` flag so the quest server respects agent-qa's decision.
  */
 async function recordVerification(
   client: KadiClient,
-  result: StructuralVerificationResult,
+  taskId: string,
+  _questId: string,
+  score: number,
+  passed: boolean,
+  summary: string,
   verifiedBy: string,
 ): Promise<void> {
+  logger.info(
+    MODULE_AGENT,
+    `Calling quest_quest_verify_task for [${taskId}]: score=${score}, passed=${passed}, verifiedBy=${verifiedBy}`,
+    timer.elapsed('main'),
+  );
+
   await client.invokeRemote('quest_quest_verify_task', {
-    taskId: result.taskId,
-    summary: result.reason,
-    score: result.score,
+    taskId,
+    score,
+    passed,
+    summary,
     verifiedBy,
   });
 
   logger.info(
     MODULE_AGENT,
-    `Recorded verification for [${result.taskId}]: score=${result.score}, passed=${result.passed}`,
+    `Recorded verification for [${taskId}]: score=${score}, passed=${passed}`,
     timer.elapsed('main'),
   );
 }
@@ -156,18 +110,24 @@ async function updateTaskStatus(
 
 /**
  * Check if all tasks in a quest are terminal. If so, publish
- * task.quest_complete for agent-producer to handle PR/approval.
+ * quest.verification_complete for agent-producer to handle PR/approval.
  */
 async function checkQuestCompletion(
   client: KadiClient,
   questId: string,
   agentId: string,
+  canCreatePR: boolean = true,
 ): Promise<void> {
   const resp = await client.invokeRemote<{
     content: Array<{ type: string; text: string }>;
   }>('quest_quest_query_quest', { questId, detail: 'full' });
 
-  const questData = JSON.parse(resp.content[0].text);
+  const rawQuestText = resp.content[0].text;
+  if (rawQuestText.startsWith('Error:')) {
+    logger.warn(MODULE_AGENT, `checkQuestCompletion: server error: ${rawQuestText}`, timer.elapsed('main'));
+    return;
+  }
+  const questData = JSON.parse(rawQuestText);
   const tasks: any[] = questData.tasks ?? [];
 
   if (tasks.length === 0) return;
@@ -183,29 +143,72 @@ async function checkQuestCompletion(
     timer.elapsed('main'),
   );
 
+  const role = agentId.replace(/^agent-lead-/, '');
+
   if (!allTerminal) {
-    // Cascade: try to assign newly unblocked tasks
+    // Cascade: try to assign newly unblocked tasks.
+    // Each lead only cascades tasks for its own role. Cross-role unblocking is
+    // handled naturally because all leads receive task.validated events and each
+    // will cascade its own role's newly-unblocked tasks independently.
     try {
       const assignResult = await client.invokeRemote<{
         content: Array<{ type: string; text: string }>;
-      }>('quest_quest_assign_task', { questId });
+      }>('quest_quest_assign_task', { questId, role });
 
-      const assignData = JSON.parse(assignResult.content[0].text);
+      const rawText = assignResult.content[0].text;
+      if (rawText.startsWith('Error:')) {
+        logger.warn(MODULE_AGENT, `Cascade assign returned error: ${rawText}`, timer.elapsed('main'));
+        return;
+      }
+      const assignData = JSON.parse(rawText);
       const newIds: string[] = assignData.assignedTaskIds ?? [];
 
       if (newIds.length > 0) {
-        logger.info(
-          MODULE_AGENT,
-          `Cascade: ${newIds.length} newly unblocked task(s) — re-dispatching`,
-          timer.elapsed('main'),
-        );
+        // Re-fetch quest data to get current task statuses (stale data may be outdated)
+        const freshResp = await client.invokeRemote<{
+          content: Array<{ type: string; text: string }>;
+        }>('quest_quest_query_quest', { questId, detail: 'full' });
+        const freshRawText = freshResp.content[0].text;
+        if (freshRawText.startsWith('Error:')) {
+          logger.warn(MODULE_AGENT, `Cascade re-fetch returned error: ${freshRawText}`, timer.elapsed('main'));
+          return;
+        }
+        const freshQuestData = JSON.parse(freshRawText);
+        const freshTasks: any[] = freshQuestData.tasks ?? [];
 
-        // Import assignAndDispatchTasks to re-dispatch
-        const { assignAndDispatchTasks } = await import('./task-assignment.js');
-        const allTasks = questData.tasks ?? [];
-        const cascadeTasks = allTasks.filter((t: any) => newIds.includes(t.taskId));
+        // Filter out tasks that are already terminal — don't re-dispatch failed/rejected tasks
+        // Note: server returns `id` but agent-lead uses `taskId` — check both
+        const cascadeTasks = freshTasks
+          .filter(
+            (t: any) => newIds.includes(t.id ?? t.taskId) && !terminalStatuses.includes(t.status),
+          )
+          .map((t: any) => ({
+            taskId: (t.id ?? t.taskId) as string,
+            name: t.name as string,
+            description: t.description as string,
+            implementationGuide: t.implementationGuide as string | undefined,
+            verificationCriteria: t.verificationCriteria as string | undefined,
+            status: t.status as string,
+            assignedTo: (t.assignedAgent ?? t.assignedTo) as string | undefined,
+            role: t.role as string | undefined,
+            dependencies: t.dependencies as string[] | undefined,
+          }));
+
         if (cascadeTasks.length > 0) {
-          await assignAndDispatchTasks(client, questId, cascadeTasks, agentId);
+          logger.info(
+            MODULE_AGENT,
+            `Cascade: ${cascadeTasks.length} newly unblocked task(s) — re-dispatching`,
+            timer.elapsed('main'),
+          );
+
+          const { assignAndDispatchTasks } = await import('./task-assignment.js');
+          await assignAndDispatchTasks(client, questId, cascadeTasks, agentId, role);
+        } else {
+          logger.info(
+            MODULE_AGENT,
+            `Cascade: ${newIds.length} task(s) returned but all are terminal — skipping`,
+            timer.elapsed('main'),
+          );
         }
       }
     } catch (err: any) {
@@ -214,7 +217,16 @@ async function checkQuestCompletion(
     return;
   }
 
-  // All terminal — notify producer
+  // All terminal — only the verifying lead triggers the PR workflow
+  if (!canCreatePR) {
+    logger.info(
+      MODULE_AGENT,
+      `All tasks in quest ${questId} are terminal — but this lead is cascade-only, skipping PR`,
+      timer.elapsed('main'),
+    );
+    return;
+  }
+
   logger.info(
     MODULE_AGENT,
     `All tasks in quest ${questId} are terminal — forwarding to producer`,
@@ -228,7 +240,7 @@ async function checkQuestCompletion(
     totalTasks: tasks.length,
     verifiedBy: agentId,
     timestamp: new Date().toISOString(),
-  }, { broker: 'default', network: 'global' });
+  }, { broker: 'default', network: 'producer' });
 }
 
 // ============================================================================
@@ -236,16 +248,14 @@ async function checkQuestCompletion(
 // ============================================================================
 
 /**
- * Handle a task.completed event from a worker agent.
+ * Handle a task.validated event from agent-qa.
  *
- * 1. Parse and validate the event
- * 2. Run structural verification
- * 3. Record result in quest
- * 4. If passed, forward to producer via task.review_requested
- * 5. If failed, request revision from worker
- * 6. Check quest completion cascade
+ * Per QUEST_WORKFLOW_V2 step 17:
+ * 1. Parse TaskValidatedPayload (score, severity, feedback)
+ * 2. Record verification in quest (with explicit passed flag)
+ * 3. Check quest completion cascade
  */
-async function handleTaskCompleted(
+async function handleTaskValidated(
   client: KadiClient,
   agentId: string,
   event: unknown,
@@ -253,77 +263,94 @@ async function handleTaskCompleted(
   // Unwrap KĀDI envelope if present
   const eventData = (event as any)?.data || event;
 
-  let completedEvent: TaskCompletedEvent;
+  let validatedPayload: TaskValidatedPayload;
 
   const envelopeParse = KadiEventSchema.safeParse(eventData);
   if (envelopeParse.success) {
-    const payloadParse = TaskCompletedEventSchema.safeParse(envelopeParse.data.payload);
+    const payloadParse = TaskValidatedPayloadSchema.safeParse(envelopeParse.data.payload);
     if (!payloadParse.success) {
-      logger.warn(MODULE_AGENT, `Invalid task.completed payload: ${payloadParse.error.message}`, timer.elapsed('main'));
+      logger.warn(MODULE_AGENT, `Invalid task.validated payload: ${payloadParse.error.message}`, timer.elapsed('main'));
       return null;
     }
-    completedEvent = payloadParse.data as TaskCompletedEvent;
+    validatedPayload = payloadParse.data as TaskValidatedPayload;
   } else {
-    const payloadParse = TaskCompletedEventSchema.safeParse(eventData);
+    const payloadParse = TaskValidatedPayloadSchema.safeParse(eventData);
     if (!payloadParse.success) {
-      logger.warn(MODULE_AGENT, `Invalid task.completed event: ${payloadParse.error.message}`, timer.elapsed('main'));
+      logger.warn(MODULE_AGENT, `Invalid task.validated event: ${payloadParse.error.message}`, timer.elapsed('main'));
       return null;
     }
-    completedEvent = payloadParse.data as TaskCompletedEvent;
+    validatedPayload = payloadParse.data as TaskValidatedPayload;
   }
 
-  const questId = completedEvent.questId ?? '';
+  const { taskId, questId, score, severity, feedback } = validatedPayload;
+  const passed = severity !== 'FAIL';
+
   logger.info(
     MODULE_AGENT,
-    `Received task.completed for [${completedEvent.taskId}] from ${completedEvent.agent}`,
+    `Received task.validated for [${taskId}]: score=${score}, severity=${severity}`,
     timer.elapsed('main'),
   );
 
-  // Structural verification
-  const verification = verifyStructural(completedEvent);
-  logger.info(
-    MODULE_AGENT,
-    `Structural verification: score=${verification.score}, passed=${verification.passed}`,
-    timer.elapsed('main'),
-  );
-
-  // Record in quest
-  await recordVerification(client, verification, agentId);
-
-  let forwarded = false;
-
-  if (verification.passed) {
-    // Forward to producer for LLM-based deep review
-    await client.publish('task.review_requested', {
-      taskId: completedEvent.taskId,
-      questId,
-      branch: completedEvent.worktreePath ?? '',
-      commitHash: completedEvent.commitSha,
-      structuralScore: verification.score,
-      timestamp: new Date().toISOString(),
-      verifiedBy: agentId,
-    }, { broker: 'default', network: 'global' });
-
-    forwarded = true;
-    logger.info(
-      MODULE_AGENT,
-      `Forwarded [${completedEvent.taskId}] to producer for deep review`,
-      timer.elapsed('main'),
-    );
-  } else {
-    // Request revision from worker
-    await client.publish('task.revision_needed', {
-      taskId: completedEvent.taskId,
-      questId,
-      score: verification.score,
-      feedback: verification.reason,
-      revisionCount: 1,
-      timestamp: new Date().toISOString(),
-    }, { broker: 'default', network: 'global' });
-
+  // Role guard: only the lead whose role matches the task should record verification.
+  // Other leads still check cascade to unblock their own dependent tasks.
+  const leadRole = agentId.replace(/^agent-lead-/, '');
+  let taskRole: string | undefined;
+  try {
+    const resp = await client.invokeRemote<{
+      content: Array<{ type: string; text: string }>;
+    }>('quest_quest_query_quest', { questId, detail: 'full' });
+    const roleRawText = resp.content[0].text;
+    if (roleRawText.startsWith('Error:')) {
+      logger.warn(MODULE_AGENT, `Role guard query returned error: ${roleRawText}`, timer.elapsed('main'));
+    } else {
+      const questData = JSON.parse(roleRawText);
+      const taskInfo = (questData.tasks ?? []).find(
+        (t: any) => (t.id ?? t.taskId) === taskId,
+      );
+      taskRole = taskInfo?.role;
+    }
+  } catch (err: any) {
     logger.warn(
       MODULE_AGENT,
-      `Requested revision for [${completedEvent.taskId}]: ${verification.reason}`,
+      `Failed to query task role for [${taskId}]: ${err.message}`,
+      timer.elapsed('main'),
+    );
+  }
+
+  if (!taskRole || taskRole !== leadRole) {
+    logger.info(
+      MODULE_AGENT,
+      `Skipping verification for [${taskId}] (task role: ${taskRole ?? 'unknown'}, my role: ${leadRole}) — waiting for cascade`,
+      timer.elapsed('main'),
+    );
+    return null;  // No cascade here — verifying lead will publish quest.cascade_needed
+  }
+
+  // Record in quest with explicit passed flag (fixes threshold mismatch)
+  await recordVerification(client, taskId, questId, score, passed, feedback, agentId);
+
+  if (!passed) {
+    // Shouldn't normally happen (agent-qa sends task.revision_needed for FAIL),
+    // but handle defensively
+    logger.warn(
+      MODULE_AGENT,
+      `Task [${taskId}] validated with FAIL severity — requesting revision`,
+      timer.elapsed('main'),
+    );
+
+    const role = agentId.replace(/^agent-lead-/, '');
+    await client.publish('task.revision_needed', {
+      taskId,
+      questId,
+      score,
+      feedback,
+      revisionCount: 1,
+      timestamp: new Date().toISOString(),
+    }, { broker: 'default', network: role });
+  } else {
+    logger.info(
+      MODULE_AGENT,
+      `Task [${taskId}] verified by QA (score=${score}) — accepted`,
       timer.elapsed('main'),
     );
   }
@@ -331,9 +358,21 @@ async function handleTaskCompleted(
   // Check cascade
   if (questId) {
     await checkQuestCompletion(client, questId, agentId);
+
+    // Notify all leads to re-check cascade — by this point recordVerification
+    // has persisted, so other leads will see consistent quest state.
+    try {
+      await client.publish(TOPIC_CASCADE_NEEDED, {
+        questId,
+        verifiedTaskId: taskId,
+        timestamp: new Date().toISOString(),
+      }, { broker: 'default', network: 'quest' });
+    } catch (err: any) {
+      logger.warn(MODULE_AGENT, `Failed to publish ${TOPIC_CASCADE_NEEDED}: ${err.message}`, timer.elapsed('main'));
+    }
   }
 
-  return { taskId: completedEvent.taskId, questId, verification, forwarded };
+  return { taskId, questId, score, passed };
 }
 
 /**
@@ -377,17 +416,17 @@ async function handleTaskFailed(
     timer.elapsed('main'),
   );
 
-  // Check retry count from envelope metadata (not part of core schema)
-  const retryCount = (eventData as any).retryCount ?? 0;
+  // Read retry attempt from the parsed event (now part of TaskFailedEvent schema)
+  const retryAttempt = failedEvent.retryAttempt ?? 0;
 
-  if (retryCount < MAX_RETRIES) {
+  if (retryAttempt < MAX_RETRIES) {
     logger.info(
       MODULE_AGENT,
-      `Retrying [${failedEvent.taskId}] (attempt ${retryCount + 1}/${MAX_RETRIES})`,
+      `Retrying [${failedEvent.taskId}] (attempt ${retryAttempt + 1}/${MAX_RETRIES})`,
       timer.elapsed('main'),
     );
 
-    // Republish task.assigned with incremented retry count
+    // Republish task.assigned with incremented retry attempt
     await client.publish('task.assigned', {
       taskId: failedEvent.taskId,
       questId,
@@ -396,9 +435,9 @@ async function handleTaskFailed(
       requirements: '',
       timestamp: new Date().toISOString(),
       assignedBy: agentId,
-      retryCount: retryCount + 1,
-      previousError: failedEvent.error,
-    }, { broker: 'default', network: 'global' });
+      feedback: `Retry ${retryAttempt + 1}/${MAX_RETRIES}: ${failedEvent.error}`,
+      retryAttempt: retryAttempt + 1,
+    }, { broker: 'default', network: failedEvent.role || agentId.replace(/^agent-lead-/, '') });
   } else {
     // Exhausted retries — mark as failed
     logger.warn(
@@ -414,12 +453,209 @@ async function handleTaskFailed(
   await checkQuestCompletion(client, questId, agentId);
 }
 
+/**
+ * Use LLM to analyze QA feedback and generate targeted fix instructions.
+ * Falls back to raw QA feedback if LLM is unavailable.
+ */
+async function generateFixInstructions(
+  providerManager: ProviderManager | null | undefined,
+  taskId: string,
+  score: number,
+  qaFeedback: string,
+): Promise<string> {
+  if (!providerManager) return qaFeedback;
+
+  try {
+    const messages: Message[] = [
+      {
+        role: 'system',
+        content:
+          'You are a senior developer reviewing QA feedback for a task. ' +
+          'Analyze the feedback and produce clear, actionable fix instructions. ' +
+          'Be specific: identify the root cause, list exact changes needed, and prioritize by impact. ' +
+          'Keep it concise — under 300 words. Output plain text, no markdown headers.',
+      },
+      {
+        role: 'user',
+        content: [
+          `Task ID: ${taskId}`,
+          `QA Score: ${score}/100`,
+          '',
+          'QA Feedback:',
+          qaFeedback,
+          '',
+          'Generate targeted fix instructions for the worker.',
+        ].join('\n'),
+      },
+    ];
+
+    const result = await providerManager.chat(messages, { maxTokens: 512 });
+
+    if (result.success && result.data) {
+      logger.info(MODULE_AGENT, `LLM-generated fix instructions for [${taskId}]`, timer.elapsed('main'));
+      return result.data;
+    }
+
+    return qaFeedback;
+  } catch (err: any) {
+    logger.warn(MODULE_AGENT, `LLM fix analysis failed: ${err.message} — using raw feedback`, timer.elapsed('main'));
+    return qaFeedback;
+  }
+}
+
+/**
+ * Handle task.revision_needed — QA rejected the code, re-assign to worker with feedback.
+ *
+ * Flow: agent-qa → task.revision_needed → agent-lead → task.assigned (with QA feedback) → worker
+ */
+async function handleRevisionNeeded(
+  client: KadiClient,
+  agentId: string,
+  event: unknown,
+  providerManager?: ProviderManager | null,
+): Promise<void> {
+  const eventData = (event as any)?.data || event;
+
+  let payload: TaskRevisionNeededPayload;
+
+  const envelopeParse = KadiEventSchema.safeParse(eventData);
+  if (envelopeParse.success) {
+    const payloadParse = TaskRevisionNeededPayloadSchema.safeParse(envelopeParse.data.payload);
+    if (!payloadParse.success) {
+      logger.warn(MODULE_AGENT, `Invalid task.revision_needed payload: ${payloadParse.error.message}`, timer.elapsed('main'));
+      return;
+    }
+    payload = payloadParse.data as TaskRevisionNeededPayload;
+  } else {
+    const payloadParse = TaskRevisionNeededPayloadSchema.safeParse(eventData);
+    if (!payloadParse.success) {
+      logger.warn(MODULE_AGENT, `Invalid task.revision_needed event: ${payloadParse.error.message}`, timer.elapsed('main'));
+      return;
+    }
+    payload = payloadParse.data as TaskRevisionNeededPayload;
+  }
+
+  const { taskId, questId, score, feedback, revisionCount } = payload;
+  logger.info(
+    MODULE_AGENT,
+    `Received task.revision_needed for [${taskId}]: score=${score}, revision=${revisionCount}/${MAX_REVISIONS}`,
+    timer.elapsed('main'),
+  );
+
+  if (revisionCount < MAX_REVISIONS) {
+    logger.info(
+      MODULE_AGENT,
+      `Re-assigning [${taskId}] to worker with QA feedback (revision ${revisionCount + 1}/${MAX_REVISIONS})`,
+      timer.elapsed('main'),
+    );
+
+    // Derive role from agentId (e.g. "agent-lead-programmer" → "programmer")
+    const role = agentId.replace(/^agent-lead-/, '');
+
+    // Generate targeted fix instructions via LLM (falls back to raw QA feedback)
+    const fixInstructions = await generateFixInstructions(
+      providerManager, taskId, score, feedback,
+    );
+
+    await client.publish('task.assigned', {
+      taskId,
+      questId,
+      role,
+      description: `Revision requested by QA (score: ${score})`,
+      requirements: '',
+      timestamp: new Date().toISOString(),
+      assignedBy: agentId,
+      feedback: `QA revision ${revisionCount + 1}/${MAX_REVISIONS}: ${fixInstructions}`,
+      retryAttempt: revisionCount + 1,
+    }, { broker: 'default', network: role });
+  } else {
+    logger.warn(
+      MODULE_AGENT,
+      `Task [${taskId}] exhausted ${MAX_REVISIONS} QA revisions (score=${score}) — marking as failed`,
+      timer.elapsed('main'),
+    );
+
+    await updateTaskStatus(client, questId, taskId, 'failed', agentId);
+  }
+
+  await checkQuestCompletion(client, questId, agentId);
+}
+
+// ============================================================================
+// Cascade Needed Handler
+// ============================================================================
+
+/**
+ * Handle quest.cascade_needed — published by the verifying lead after
+ * recording verification. Each lead runs its own role-scoped cascade
+ * against now-consistent quest state.
+ */
+async function handleCascadeNeeded(
+  client: KadiClient,
+  agentId: string,
+  role: string,
+  event: unknown,
+): Promise<void> {
+  const eventData = (event as any)?.data || event;
+  const envelope = KadiEventSchema.safeParse(eventData);
+  const payload = envelope.success ? envelope.data.payload : eventData;
+  const questId = (payload as any)?.questId;
+  if (!questId) return;
+
+  logger.info(MODULE_AGENT, `Received ${TOPIC_CASCADE_NEEDED} for quest ${questId}`, timer.elapsed('main'));
+
+  // Run role-scoped cascade (verification is already persisted, state is consistent)
+  try {
+    const assignResult = await client.invokeRemote<{
+      content: Array<{ type: string; text: string }>;
+    }>('quest_quest_assign_task', { questId, role });
+
+    const rawText = assignResult.content[0].text;
+    if (rawText.startsWith('Error:')) return;
+
+    const assignData = JSON.parse(rawText);
+    const newIds: string[] = assignData.assignedTaskIds ?? [];
+
+    if (newIds.length === 0) return;
+
+    // Fetch fresh task data and dispatch
+    const freshResp = await client.invokeRemote<{
+      content: Array<{ type: string; text: string }>;
+    }>('quest_quest_query_quest', { questId, detail: 'full' });
+    const freshText = freshResp.content[0].text;
+    if (freshText.startsWith('Error:')) return;
+
+    const questData = JSON.parse(freshText);
+    const tasks = (questData.tasks ?? [])
+      .filter((t: any) => newIds.includes(t.id ?? t.taskId) && !['completed', 'failed', 'rejected'].includes(t.status))
+      .map((t: any) => ({
+        taskId: (t.id ?? t.taskId) as string,
+        name: t.name as string,
+        description: t.description as string,
+        implementationGuide: t.implementationGuide as string | undefined,
+        verificationCriteria: t.verificationCriteria as string | undefined,
+        status: t.status as string,
+        assignedTo: (t.assignedAgent ?? t.assignedTo) as string | undefined,
+        role: t.role as string | undefined,
+        dependencies: t.dependencies as string[] | undefined,
+      }));
+
+    if (tasks.length > 0) {
+      logger.info(MODULE_AGENT, `Cascade (via ${TOPIC_CASCADE_NEEDED}): ${tasks.length} task(s) to dispatch`, timer.elapsed('main'));
+      const { assignAndDispatchTasks } = await import('./task-assignment.js');
+      await assignAndDispatchTasks(client, questId, tasks, agentId, role);
+    }
+  } catch (err: any) {
+    logger.warn(MODULE_AGENT, `Cascade (${TOPIC_CASCADE_NEEDED}) failed: ${err.message}`, timer.elapsed('main'));
+  }
+}
+
 // ============================================================================
 // Public API
 // ============================================================================
 
 /**
- * Subscribe to task.completed and task.failed events on the broker.
+ * Subscribe to task.validated and task.failed events on the broker.
  *
  * @param client  - Connected KadiClient instance
  * @param role    - This agent-lead's role (artist | designer | programmer)
@@ -429,20 +665,21 @@ export async function setupTaskVerificationHandler(
   client: KadiClient,
   role: string,
   agentId: string,
+  providerManager?: ProviderManager | null,
 ): Promise<void> {
   logger.info(
     MODULE_AGENT,
-    `Subscribing to ${TOPIC_COMPLETED} and ${TOPIC_FAILED} events (role: ${role})...`,
+    `Subscribing to ${TOPIC_VALIDATED}, ${TOPIC_FAILED}, ${TOPIC_REVISION_NEEDED}, and ${TOPIC_CASCADE_NEEDED} events (role: ${role})...`,
     timer.elapsed('main'),
   );
 
-  await client.subscribe(TOPIC_COMPLETED, async (event: unknown) => {
+  await client.subscribe(TOPIC_VALIDATED, async (event: unknown) => {
     try {
-      await handleTaskCompleted(client, agentId, event);
+      await handleTaskValidated(client, agentId, event);
     } catch (err: any) {
       logger.error(
         MODULE_AGENT,
-        `Error handling ${TOPIC_COMPLETED}: ${err.message}`,
+        `Error handling ${TOPIC_VALIDATED}: ${err.message}`,
         timer.elapsed('main'),
         err,
       );
@@ -462,9 +699,30 @@ export async function setupTaskVerificationHandler(
     }
   });
 
+  await client.subscribe(TOPIC_REVISION_NEEDED, async (event: unknown) => {
+    try {
+      await handleRevisionNeeded(client, agentId, event, providerManager);
+    } catch (err: any) {
+      logger.error(
+        MODULE_AGENT,
+        `Error handling ${TOPIC_REVISION_NEEDED}: ${err.message}`,
+        timer.elapsed('main'),
+        err,
+      );
+    }
+  });
+
+  await client.subscribe(TOPIC_CASCADE_NEEDED, async (event: unknown) => {
+    try {
+      await handleCascadeNeeded(client, agentId, role, event);
+    } catch (err: any) {
+      logger.error(MODULE_AGENT, `Error handling ${TOPIC_CASCADE_NEEDED}: ${err.message}`, timer.elapsed('main'), err);
+    }
+  });
+
   logger.info(
     MODULE_AGENT,
-    `Subscribed to ${TOPIC_COMPLETED} and ${TOPIC_FAILED}`,
+    `Subscribed to ${TOPIC_VALIDATED}, ${TOPIC_FAILED}, ${TOPIC_REVISION_NEEDED}, and ${TOPIC_CASCADE_NEEDED}`,
     timer.elapsed('main'),
   );
 }

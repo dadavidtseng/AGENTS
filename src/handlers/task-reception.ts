@@ -57,6 +57,8 @@ const TOPIC = 'quest.tasks_ready';
 
 /**
  * Query mcp-server-quest for full quest details and extract tasks.
+ * Normalizes field names: mcp-server-quest uses `id` / `assignedAgent`,
+ * but agent-lead expects `taskId` / `assignedTo`.
  */
 async function fetchQuestTasks(
   client: KadiClient,
@@ -70,19 +72,32 @@ async function fetchQuestTasks(
   });
 
   const questData = JSON.parse(result.content[0].text);
-  return questData.tasks ?? [];
+  const rawTasks: Array<Record<string, unknown>> = questData.tasks ?? [];
+
+  return rawTasks.map((t) => ({
+    taskId: (t.id ?? t.taskId) as string,
+    name: t.name as string,
+    description: t.description as string,
+    implementationGuide: t.implementationGuide as string | undefined,
+    verificationCriteria: t.verificationCriteria as string | undefined,
+    status: t.status as string,
+    assignedTo: (t.assignedAgent ?? t.assignedTo) as string | undefined,
+    role: t.role as string | undefined,
+    dependencies: t.dependencies as string[] | undefined,
+    relatedFiles: t.relatedFiles as Array<{ path: string; type: string }> | undefined,
+  }));
 }
 
 /**
  * Filter tasks that match this agent-lead's role.
  *
  * A task matches if:
- * - task.role matches the agent's role exactly, OR
- * - task.role is unset (unassigned tasks are claimed by any lead)
+ * - task.role matches the agent's role exactly
+ * - Tasks without a role are SKIPPED (should not happen — quest_split_task enforces role)
  */
 function filterTasksByRole(tasks: QuestTask[], role: string): QuestTask[] {
   return tasks.filter((task) => {
-    if (!task.role) return true;
+    if (!task.role) return false;
     return task.role === role;
   });
 }
@@ -149,7 +164,7 @@ async function handleTasksReady(
   // Assign and dispatch matching tasks to worker agents
   let assignment: TaskAssignmentResult | undefined;
   if (matching.length > 0) {
-    assignment = await assignAndDispatchTasks(client, questId, matching, agentId);
+    assignment = await assignAndDispatchTasks(client, questId, matching, agentId, role);
   }
 
   return { questId, totalTasks: allTasks.length, matchingTasks: matching, skippedTasks: skipped, assignment };

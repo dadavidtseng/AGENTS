@@ -40,13 +40,32 @@ export interface TaskAssignmentResult {
 async function assignTasksInQuest(
   client: KadiClient,
   questId: string,
+  role?: string,
+  assignments?: Array<{ taskId: string; agentId: string }>,
 ): Promise<string[]> {
+  const params: Record<string, unknown> = { questId };
+  if (role) {
+    params.role = role;
+  }
+  if (assignments && assignments.length > 0) {
+    params.assignments = assignments;
+  }
+
   const result = await client.invokeRemote<{
     content: Array<{ type: string; text: string }>;
-  }>('quest_quest_assign_task', { questId });
+  }>('quest_quest_assign_task', params);
 
-  const data = JSON.parse(result.content[0].text);
-  return data.assignedTaskIds ?? [];
+  const text = result.content[0].text;
+
+  // Handle error responses that aren't valid JSON
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(text);
+  }
+
+  return (data.assignedTaskIds as string[]) ?? [];
 }
 
 /**
@@ -68,17 +87,21 @@ async function updateTaskStatus(
 
 /**
  * Build and publish a task.assigned event for a single task.
+ * Publishes to the role-specific network so the correct worker receives it.
  */
 async function publishTaskAssigned(
   client: KadiClient,
   task: QuestTask,
   questId: string,
   assignedBy: string,
+  leadRole: string,
 ): Promise<void> {
+  const taskRole = task.role ?? task.assignedTo?.replace(/^agent-worker-/, '') ?? leadRole;
+
   const payload: TaskAssignedEvent = {
     taskId: task.taskId,
     questId,
-    role: task.role ?? task.assignedTo?.replace('agent-', '') ?? 'unknown',
+    role: taskRole,
     description: task.description,
     requirements: task.implementationGuide ?? task.description,
     timestamp: new Date().toISOString(),
@@ -87,7 +110,7 @@ async function publishTaskAssigned(
 
   await client.publish('task.assigned', payload, {
     broker: 'default',
-    network: 'global',
+    network: taskRole,
   });
 }
 
@@ -106,13 +129,15 @@ async function publishTaskAssigned(
  * @param client   - Connected KadiClient
  * @param questId  - Quest these tasks belong to
  * @param tasks    - Tasks filtered by role (from task-reception)
- * @param agentId  - This agent-lead's identity (e.g. "agent-lead")
+ * @param agentId  - This agent-lead's identity (e.g. "agent-lead-programmer")
+ * @param role     - This agent-lead's role (e.g. "programmer")
  */
 export async function assignAndDispatchTasks(
   client: KadiClient,
   questId: string,
   tasks: QuestTask[],
   agentId: string,
+  role: string,
 ): Promise<TaskAssignmentResult> {
   logger.info(
     MODULE_AGENT,
@@ -120,10 +145,98 @@ export async function assignAndDispatchTasks(
     timer.elapsed('main'),
   );
 
+  // Step 0: Query available agents and select workers for each task
+  let workerAssignments: Array<{ taskId: string; agentId: string }> | undefined;
+  try {
+    const agentsResult = await client.invokeRemote<{
+      content: Array<{ type: string; text: string }>;
+    }>('quest_quest_list_agents', {});
+    const agentsData = JSON.parse(agentsResult.content[0].text);
+    const agents = agentsData.agents ?? [];
+
+    // Filter to workers only: exclude lead agents, match role, check capacity
+    const availableWorkers = agents.filter(
+      (a: any) =>
+        !a.agentId.includes('-lead-') &&
+        a.role === role &&
+        (a.currentTasks?.length ?? 0) < (a.maxConcurrentTasks ?? 1),
+    );
+
+    logger.info(
+      MODULE_AGENT,
+      `  Available workers for role "${role}": ${availableWorkers.map((a: any) => `${a.agentId} (load: ${a.currentTasks?.length ?? 0}/${a.maxConcurrentTasks ?? 1})`).join(', ') || 'none'}`,
+      timer.elapsed('main'),
+    );
+
+    if (availableWorkers.length > 0) {
+      // Sort workers by current workload (ascending) for least-loaded selection
+      availableWorkers.sort(
+        (a: any, b: any) => (a.currentTasks?.length ?? 0) - (b.currentTasks?.length ?? 0),
+      );
+
+      // Round-robin assign tasks to least-loaded workers
+      workerAssignments = [];
+      // Track tentative assignments to balance load across this batch
+      const tentativeLoad = new Map<string, number>();
+      for (const w of availableWorkers) {
+        tentativeLoad.set(w.agentId, w.currentTasks?.length ?? 0);
+      }
+
+      for (const task of tasks) {
+        // Skip tasks that are already assigned or in progress
+        if (task.status === 'assigned' || task.status === 'in_progress') {
+          continue;
+        }
+
+        // Pick worker with lowest tentative load
+        let bestWorker: any = null;
+        let bestLoad = Infinity;
+        for (const w of availableWorkers) {
+          const load = tentativeLoad.get(w.agentId) ?? 0;
+          const maxTasks = w.maxConcurrentTasks ?? 1;
+          if (load < maxTasks && load < bestLoad) {
+            bestLoad = load;
+            bestWorker = w;
+          }
+        }
+
+        if (bestWorker) {
+          workerAssignments.push({ taskId: task.taskId, agentId: bestWorker.agentId });
+          tentativeLoad.set(bestWorker.agentId, (tentativeLoad.get(bestWorker.agentId) ?? 0) + 1);
+
+          logger.info(
+            MODULE_AGENT,
+            `  Selecting worker ${bestWorker.agentId} for task ${task.taskId} (${task.name})`,
+            timer.elapsed('main'),
+          );
+        } else {
+          logger.warn(
+            MODULE_AGENT,
+            `  No worker with capacity for task ${task.taskId} (${task.name}), falling back to auto-assign`,
+            timer.elapsed('main'),
+          );
+        }
+      }
+
+      // If no assignments were built (all tasks already assigned), clear to let auto-assign handle it
+      if (workerAssignments.length === 0) {
+        workerAssignments = undefined;
+      }
+    } else {
+      logger.warn(
+        MODULE_AGENT,
+        `  No available workers for role "${role}", falling back to role-only auto-assign`,
+        timer.elapsed('main'),
+      );
+    }
+  } catch (err: any) {
+    logger.warn(MODULE_AGENT, `  Failed to list agents for worker selection: ${err.message}`, timer.elapsed('main'));
+  }
+
   // Step 1: Formally assign tasks via mcp-server-quest
   let assignedTaskIds: string[];
   try {
-    assignedTaskIds = await assignTasksInQuest(client, questId);
+    assignedTaskIds = await assignTasksInQuest(client, questId, role, workerAssignments);
     logger.info(
       MODULE_AGENT,
       `  quest_quest_assign_task returned ${assignedTaskIds.length} assigned task(s)`,
@@ -155,8 +268,8 @@ export async function assignAndDispatchTasks(
       const taskAgent = task.assignedTo ?? agentId;
       await updateTaskStatus(client, questId, task.taskId, taskAgent);
 
-      // Publish task.assigned event
-      await publishTaskAssigned(client, task, questId, agentId);
+      // Publish task.assigned event to the role-specific network
+      await publishTaskAssigned(client, task, questId, agentId, role);
 
       publishedCount++;
       publishedIds.push(task.taskId);
