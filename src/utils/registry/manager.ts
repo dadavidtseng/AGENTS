@@ -3,7 +3,7 @@
  *
  * Manages a temporary container registry for making local Docker images accessible
  * to Akash providers during deployment. Wraps the TunneledContainerRegistry from
- * @kadi.build/container-registry-ability with deployment-specific logic.
+ * Wraps the TunneledContainerRegistry with deployment-specific logic.
  *
  * **Core Responsibilities:**
  * - Start/stop temporary registry with public tunnel
@@ -34,8 +34,8 @@ import type {
 } from './types.js';
 import { getErrorMessage } from '../../errors/index.js';
 
-// @ts-ignore - Using existing TunneledContainerRegistry from JavaScript package
-import { TunneledContainerRegistry } from '@kadi.build/container-registry-ability';
+// @ts-ignore - Using existing TunneledContainerRegistry from local JavaScript module
+import { TunneledContainerRegistry } from '../../registry/TunneledContainerRegistry.js';
 
 /**
  * Debug logger for registry operations
