@@ -30,6 +30,14 @@ import { getRandomAcknowledgment } from './acknowledgments.js';
 // Types
 // ============================================================================
 
+interface ChatImageAttachment {
+  filename: string;
+  contentType: string;
+  size: number;
+  url?: string;
+  base64?: string;
+}
+
 interface SlackMention {
   id: string;
   user: string;
@@ -37,6 +45,7 @@ interface SlackMention {
   channel: string;
   thread_ts: string;
   ts: string;
+  attachments?: ChatImageAttachment[];
 }
 
 interface SlackBotConfig {
@@ -145,6 +154,7 @@ export class SlackBot extends BaseBot {
       channel: event.channel,
       thread_ts: event.thread_ts,
       ts: event.ts,
+      ...(event.attachments && { attachments: event.attachments }),
     };
 
     try {
@@ -265,6 +275,16 @@ export class SlackBot extends BaseBot {
       // Step 2: Build messages array (context + new user message)
       // Append platform context so the LLM has real channel/user IDs for tool calls
       const platformContext = `\n\n[Context: platform=slack, channelId=${mention.channel}, userId=${mention.user}, threadTs=${mention.thread_ts}]`;
+
+      // If message has image attachments, append references so LLM knows to use vision tools
+      // The LLM should pass the filename as the `image` parameter; executeToolCall resolves it
+      let imageContext = '';
+      if (mention.attachments && mention.attachments.length > 0) {
+        const imageRefs = mention.attachments.map((att, i) =>
+          `  ${i + 1}. "${att.filename}" (${att.contentType}, ${Math.round(att.size / 1024)}KB)`
+        ).join('\n');
+        imageContext = `\n\n[Attached images — use vision_analyze tool to analyze them. Pass the filename as the "image" parameter:\n${imageRefs}\n]`;
+      }
 
       const messages: Message[] = [
         ...context.map(msg => ({
@@ -773,6 +793,38 @@ export class SlackBot extends BaseBot {
    * Handles both synchronous and asynchronous tool responses.
    * If tool returns {status: 'pending', requestId: ...}, waits for async result.
    */
+  /**
+   * Resolve vision tool image params: if the LLM passed a filename that matches
+   * an attachment, replace it with the actual data URI (base64) or public URL.
+   */
+  private resolveVisionImageArgs(toolArgs: Record<string, any>, attachments?: ChatImageAttachment[]): void {
+    if (!attachments || attachments.length === 0) return;
+
+    const imageKeys = ['image', 'image_a', 'image_b'];
+    for (const key of imageKeys) {
+      const val = toolArgs[key];
+      if (typeof val !== 'string') continue;
+      // Skip if already a URL or data URI
+      if (val.startsWith('http://') || val.startsWith('https://') || val.startsWith('data:')) continue;
+
+      // Match by filename (exact or contained)
+      const att = attachments.find(a => a.filename === val || val.includes(a.filename) || a.filename.includes(val));
+      if (!att) continue;
+
+      if (att.url) {
+        toolArgs[key] = att.url;
+        logger.info(MODULE_SLACK_BOT, `Resolved image "${val}" → URL`, timer.elapsed('main'));
+      } else if (att.base64) {
+        // Validate base64: strip any whitespace/newlines that may have crept in during transport
+        const cleanBase64 = att.base64.replace(/[\s\r\n]/g, '');
+        // Log first 20 chars to verify it's actual image data (PNG=iVBOR, JPEG=/9j/, GIF=R0lG)
+        const preview = cleanBase64.substring(0, 20);
+        logger.info(MODULE_SLACK_BOT, `Resolved image "${val}" → data URI (base64 len=${cleanBase64.length}, type=${att.contentType}, preview=${preview})`, timer.elapsed('main'));
+        toolArgs[key] = `data:${att.contentType};base64,${cleanBase64}`;
+      }
+    }
+  }
+
   private async executeToolCall(toolCall: any, mention?: SlackMention): Promise<string> {
     const toolName = toolCall.function.name;
     const toolArgs = JSON.parse(toolCall.function.arguments);

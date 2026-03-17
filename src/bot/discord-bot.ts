@@ -30,6 +30,14 @@ import { getRandomAcknowledgment } from './acknowledgments.js';
 // Types
 // ============================================================================
 
+interface ChatImageAttachment {
+    filename: string;
+    contentType: string;
+    size: number;
+    url?: string;
+    base64?: string;
+}
+
 interface DiscordMention {
     id: string;
     user: string;
@@ -37,6 +45,7 @@ interface DiscordMention {
     channel: string;
     thread_ts: string;
     ts: string;
+    attachments?: ChatImageAttachment[];
 }
 
 interface DiscordBotConfig extends BaseBotConfig {
@@ -132,6 +141,7 @@ export class DiscordBot extends BaseBot {
                     channel: mention.channel,
                     thread_ts: mention.id, // Use message ID as thread identifier
                     ts: mention.ts,
+                    ...(mention.attachments && { attachments: mention.attachments }),
                 };
 
                 // Process mention using existing logic (non-blocking to prevent event queue backup)
@@ -282,6 +292,16 @@ export class DiscordBot extends BaseBot {
       // Step 2: Build messages array (context + new user message)
       // Append platform context so the LLM has real channel/user IDs for tool calls
       const platformContext = `\n\n[Context: platform=discord, channelId=${mention.channel}, userId=${mention.user}]`;
+
+      // If message has image attachments, append references so LLM knows to use vision tools
+      // The LLM should pass the filename as the `image` parameter; executeToolCall resolves it
+      let imageContext = '';
+      if (mention.attachments && mention.attachments.length > 0) {
+        const imageRefs = mention.attachments.map((att, i) =>
+          `  ${i + 1}. "${att.filename}" (${att.contentType}, ${Math.round(att.size / 1024)}KB)`
+        ).join('\n');
+        imageContext = `\n\n[Attached images — use vision_analyze tool to analyze them. Pass the filename as the "image" parameter:\n${imageRefs}\n]`;
+      }
 
       const messages: Message[] = [
         ...context.map(msg => ({
@@ -563,6 +583,34 @@ export class DiscordBot extends BaseBot {
     } catch (error) {
       logger.error(MODULE_DISCORD_BOT, 'Failed to parse tool calls', timer.elapsed('main'), error as Error);
       return null;
+    }
+  }
+
+  /**
+   * Resolve vision tool image params: if the LLM passed a filename that matches
+   * an attachment, replace it with the actual data URI (base64) or public URL.
+   */
+  private resolveVisionImageArgs(toolArgs: Record<string, any>, attachments?: ChatImageAttachment[]): void {
+    if (!attachments || attachments.length === 0) return;
+
+    const imageKeys = ['image', 'image_a', 'image_b'];
+    for (const key of imageKeys) {
+      const val = toolArgs[key];
+      if (typeof val !== 'string') continue;
+      // Skip if already a URL or data URI
+      if (val.startsWith('http://') || val.startsWith('https://') || val.startsWith('data:')) continue;
+
+      // Match by filename (exact or contained)
+      const att = attachments.find(a => a.filename === val || val.includes(a.filename) || a.filename.includes(val));
+      if (!att) continue;
+
+      if (att.url) {
+        toolArgs[key] = att.url;
+        logger.info(MODULE_DISCORD_BOT, `Resolved image "${val}" → URL`, timer.elapsed('main'));
+      } else if (att.base64) {
+        toolArgs[key] = `data:${att.contentType};base64,${att.base64}`;
+        logger.info(MODULE_DISCORD_BOT, `Resolved image "${val}" → data URI (${Math.round(att.size / 1024)}KB)`, timer.elapsed('main'));
+      }
     }
   }
 

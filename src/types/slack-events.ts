@@ -19,6 +19,15 @@ import { z } from 'zod';
  * This schema adds structured validation and timestamps to the raw SlackMention
  * interface for reliable event-driven processing.
  */
+/** Image attachment from a chat message */
+const ChatImageAttachmentSchema = z.object({
+  filename: z.string(),
+  contentType: z.string(),
+  size: z.number(),
+  url: z.string().optional(),
+  base64: z.string().optional(),
+});
+
 export const SlackMentionEventSchema = z.object({
   /** Unique mention ID (event timestamp from Slack) */
   id: z.string(),
@@ -43,6 +52,9 @@ export const SlackMentionEventSchema = z.object({
 
   /** ISO 8601 datetime string when event was captured and published */
   timestamp: z.string().datetime(),
+
+  /** Image attachments from the message */
+  attachments: z.array(ChatImageAttachmentSchema).optional(),
 });
 
 /**
