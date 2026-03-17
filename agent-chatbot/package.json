@@ -1,0 +1,40 @@
+{
+  "name": "agent-chatbot",
+  "version": "0.1.0",
+  "description": "KĀDI agent for chat platform integration - listens for mentions and sends messages across Discord and Slack",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "kadi",
+    "agent",
+    "discord",
+    "slack",
+    "chatbot",
+    "multi-platform"
+  ],
+  "author": "Yu-Wei Tseng",
+  "license": "Apache License 2.0",
+  "dependencies": {
+    "@kadi.build/core": "^0.9.0",
+    "@slack/bolt": "^4.1.0",
+    "@slack/web-api": "^7.11.0",
+    "agents-library": "^0.1.0",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.7",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
