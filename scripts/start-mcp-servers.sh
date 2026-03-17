@@ -51,9 +51,9 @@ err()  { echo -e "${RED}[MCP]${NC} $*" >&2; }
 # Format: id|port|dir|command|env_vars (paths in Windows format, auto-converted)
 SERVERS=(
   "mcp-server-quest|3100|C:/GitHub/mcp-server-quest|node dist/mcp-server.js|QUEST_DATA_DIR=C:\GitHub\mcp-server-quest\.quest-data"
-  "mcp-server-discord|3200|C:/GitHub/mcp-server-discord|node dist/index.js|DISCORD_TOKEN=MTQzODY4NTc0MTc1MTIxMDAyNQ.GCFPSO.5-LMEvIIp20_xU0brSWZkTJVCWfDG6pj4XRpHI,DISCORD_GUILD_ID=1345598548535808042"
-  "mcp-server-slack|3300|C:/GitHub/mcp-server-slack|node dist/index.js|SLACK_BOT_TOKEN=xoxb-600175236467-9896471246359-BdzFkFrQTPtjDO7dCZykuf0X"
-  "mcp-server-github|3400|C:/GitHub/mcp-server-github|bun dist/index.js|GITHUB_PERSONAL_ACCESS_TOKEN=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,MCP_HTTP_HOST=0.0.0.0"
+  "mcp-server-discord|3200|C:/GitHub/mcp-server-discord|node dist/index.js|DISCORD_TOKEN=YOUR_DISCORD_TOKEN,DISCORD_GUILD_ID=1345598548535808042"
+  "mcp-server-slack|3300|C:/GitHub/mcp-server-slack|node dist/index.js|SLACK_BOT_TOKEN=YOUR_SLACK_BOT_TOKEN"
+  "mcp-server-github|3400|C:/GitHub/mcp-server-github|bun dist/index.js|GITHUB_PERSONAL_ACCESS_TOKEN=YOUR_GITHUB_TOKEN,MCP_HTTP_HOST=0.0.0.0"
   "mcp-server-filesystem|3500|C:/GitHub-Reference/servers/src/filesystem|node dist/index.js C:/GitHub|"
   "mcp-server-git|3600|C:/GitHub/mcp-server-git|bun dist/index.js|MCP_HTTP_PORT=3600,MCP_HTTP_HOST=0.0.0.0,GIT_MCP_ROOT_DIR=C:/GitHub"
 )

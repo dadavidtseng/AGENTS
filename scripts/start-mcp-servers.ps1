@@ -25,7 +25,7 @@ $Servers = @(
         Dir  = "C:\GitHub\mcp-server-github"
         Cmd  = "bun"; Args = @("dist\index.js")
         Env  = @{
-            GITHUB_PERSONAL_ACCESS_TOKEN = "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"
+            GITHUB_PERSONAL_ACCESS_TOKEN = "YOUR_GITHUB_TOKEN"
             MCP_HTTP_HOST                = "0.0.0.0"
             MCP_HTTP_PORT                = "3400"
         }
