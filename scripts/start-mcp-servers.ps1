@@ -8,6 +8,18 @@
 
 param([switch]$Stop)
 
+# ── Load secrets from .env ────────────────────────────────────────────────
+$EnvFile = Join-Path $PSScriptRoot ".env"
+if (Test-Path $EnvFile) {
+    Get-Content $EnvFile | ForEach-Object {
+        if ($_ -match '^\s*([^#][^=]+)=(.*)$') {
+            [Environment]::SetEnvironmentVariable($Matches[1].Trim(), $Matches[2].Trim(), "Process")
+        }
+    }
+} else {
+    Write-Host "[MCP] WARNING: scripts/.env not found — tokens will be empty" -ForegroundColor Red
+}
+
 $PidDir = "$env:USERPROFILE\.kadi\mcp-pids"
 New-Item -ItemType Directory -Force -Path $PidDir | Out-Null
 
@@ -25,7 +37,7 @@ $Servers = @(
         Dir  = "C:\GitHub\mcp-server-github"
         Cmd  = "bun"; Args = @("dist\index.js")
         Env  = @{
-            GITHUB_PERSONAL_ACCESS_TOKEN = "YOUR_GITHUB_TOKEN"
+            GITHUB_PERSONAL_ACCESS_TOKEN = $env:GITHUB_PERSONAL_ACCESS_TOKEN
             MCP_HTTP_HOST                = "0.0.0.0"
             MCP_HTTP_PORT                = "3400"
         }
