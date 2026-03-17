@@ -70,7 +70,6 @@ async function sendHeartbeat(client: any, role: string): Promise<void> {
       currentTasks: [],
       timestamp: new Date().toISOString()
     });
-    logger.debug(MODULE_AGENT, '💓 Heartbeat sent', timer.elapsed('main'));
   } catch (error: any) {
     logger.warn(MODULE_AGENT, `Heartbeat failed: ${error.message}`, timer.elapsed('main'));
   }
