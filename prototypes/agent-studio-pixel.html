@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Studio — Pixel Art Edition</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500&family=Press+Start+2P&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      /* agent-quest design tokens */
+      --bg:           #000000;
+      --bg-elevated:  #0a0a0a;
+      --bg-card:      #111111;
+      --bg-input:     #0a0a0a;
+      --border:       #1a1a1a;
+      --border-hover: #333333;
+      --t1:           #ededed;
+      --t2:           #888888;
+      --t3:           #555555;
+      --accent:       #ffffff;
+      --blue:         #0070f3;
+      --blue-glow:    rgba(0, 112, 243, 0.15);
+      --green:        #22c55e;
+      --green-glow:   rgba(34, 197, 94, 0.15);
+      --yellow:       #eab308;
+      --yellow-glow:  rgba(234, 179, 8, 0.15);
+      --red:          #ef4444;
+      --red-glow:     rgba(239, 68, 68, 0.15);
+      --orange:       #f97316;
+      --purple:       #a855f7;
+      --grad-1:       #007cf0;
+      --grad-2:       #00dfd8;
+      --grad-3:       #7928ca;
+      --grad-4:       #ff0080;
+      --frosted-bg:   rgba(0, 0, 0, 0.8);
+      --frosted-border: rgba(255, 255, 255, 0.06);
+      --shadow-card:  0 4px 24px rgba(0, 0, 0, 0.4);
+      --font-sans:    'Sora', ui-sans-serif, system-ui, sans-serif;
+      --font-mono:    'JetBrains Mono', ui-monospace, monospace;
+      --font-pixel:   'Press Start 2P', monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--t1);
+      font-family: var(--font-sans);
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Header (matches agent-quest nav) ─── */
+    .header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px; height: 56px;
+      border-bottom: 1px solid var(--border);
+      background: var(--frosted-bg);
+      backdrop-filter: blur(12px) saturate(180%);
+      z-index: 100; flex-shrink: 0;
+    }
+    .header-left { display: flex; align-items: center; gap: 16px; }
+    .header h1 {
+      font-family: var(--font-sans); font-size: 0.85rem; font-weight: 600;
+      letter-spacing: -0.025em; color: var(--t1);
+    }
+    .header h1 span {
+      font-family: var(--font-pixel); font-size: 0.5rem;
+      background: linear-gradient(135deg, var(--grad-1), var(--grad-2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      margin-left: 8px; vertical-align: middle;
+    }
+    .header-badge {
+      font-family: var(--font-mono); font-size: 0.65rem; font-weight: 400;
+      padding: 3px 10px; border-radius: 6px;
+      border: 1px solid var(--border); color: var(--t2);
+      background: var(--bg-card);
+    }
+    .header-stats {
+      display: flex; gap: 20px; font-size: 0.75rem;
+      font-weight: 300; color: var(--t2);
+    }
+    .stat-dot {
+      display: inline-block; width: 8px; height: 8px;
+      border-radius: 50%; margin-right: 6px; vertical-align: middle;
+    }
+    .stat-count { color: var(--t1); font-weight: 500; }
+
+    /* ── Main Layout ─────────────────────── */
+    .main { display: flex; flex: 1; overflow: hidden; }
+
+    /* ── Studio Canvas ───────────────────── */
+    .studio {
+      flex: 1; position: relative; overflow: hidden;
+      background: var(--bg);
+    }
+    /* Room canvas background */
+    #roomCanvas {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      image-rendering: pixelated; z-index: 0;
+    }
+    /* Scanline overlay for pixel feel */
+    .scanlines {
+      position: absolute; inset: 0; pointer-events: none; z-index: 1;
+      background: repeating-linear-gradient(
+        0deg, transparent, transparent 3px,
+        rgba(255,255,255,0.008) 3px, rgba(255,255,255,0.008) 4px
+      );
+    }
+
+    /* ── Workstation (agent) ──────────────── */
+    .workstation {
+      position: absolute; cursor: pointer; z-index: 10;
+      transition: transform 0.2s ease;
+    }
+    .workstation:hover { transform: translateY(-6px); }
+    .workstation.selected { z-index: 20; }
+    .workstation.selected .sprite-wrap {
+      filter: drop-shadow(0 0 12px rgba(0,112,243,0.4));
+    }
+    .pixel-char {
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+    }
+
+    /* Sprite container */
+    .sprite-wrap {
+      position: relative; width: 64px; height: 64px;
+      image-rendering: pixelated;
+      transition: filter 0.2s ease;
+    }
+    .sprite-shadow {
+      position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%);
+      width: 40px; height: 10px;
+      background: rgba(0,0,0,0.6); border-radius: 50%; filter: blur(4px);
+    }
+    .sprite-glow {
+      position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%);
+      width: 48px; height: 14px; border-radius: 50%;
+      filter: blur(10px); opacity: 0.4;
+    }
+    .status-available .sprite-glow { background: var(--green); }
+    .status-busy .sprite-glow {
+      background: var(--yellow);
+      animation: gpulse 2s ease-in-out infinite;
+    }
+    .status-offline .sprite-glow { background: var(--t3); opacity: 0.1; }
+    @keyframes gpulse {
+      0%,100% { opacity:0.2; transform:translateX(-50%) scale(1); }
+      50% { opacity:0.5; transform:translateX(-50%) scale(1.15); }
+    }
+
+    /* Pixel sprite canvas */
+    .sprite-canvas {
+      display: block; width: 64px; height: 64px;
+      image-rendering: pixelated;
+    }
+    .status-available .sprite-canvas { animation: idle 2.5s ease-in-out infinite; }
+    @keyframes idle { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
+    .status-busy .sprite-canvas { animation: work 0.6s steps(2) infinite; }
+    @keyframes work { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-2px) scaleX(-1)} }
+    .status-offline .sprite-canvas { opacity: 0.3; filter: grayscale(0.8); }
+
+    /* Name tag — Sora font, not pixel */
+    .agent-nametag {
+      font-family: var(--font-mono); font-size: 0.65rem; font-weight: 400;
+      color: var(--t2); white-space: nowrap; text-align: center;
+      letter-spacing: -0.01em;
+    }
+    .agent-role {
+      font-family: var(--font-mono); font-size: 0.6rem; font-weight: 300;
+      padding: 2px 8px; border-radius: 4px;
+      border: 1px solid; text-transform: lowercase;
+      letter-spacing: 0.02em;
+    }
+
+    /* Status dot */
+    .px-status {
+      position: absolute; top: 2px; right: 2px;
+      width: 10px; height: 10px; border-radius: 50%;
+      border: 2px solid var(--bg);
+    }
+    .status-available .px-status { background: var(--green); }
+    .status-busy .px-status {
+      background: var(--yellow);
+      animation: pdot 2s ease-in-out infinite;
+    }
+    .status-offline .px-status { background: var(--t3); }
+    @keyframes pdot { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    /* Hover bubble */
+    .px-bubble {
+      position: absolute; top: -36px; left: 50%; transform: translateX(-50%);
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 8px; padding: 6px 10px;
+      font-family: var(--font-mono); font-size: 0.65rem; font-weight: 300;
+      color: var(--t2); white-space: nowrap; max-width: 200px;
+      overflow: hidden; text-overflow: ellipsis;
+      opacity: 0; transition: opacity 0.15s ease; pointer-events: none;
+      box-shadow: var(--shadow-card);
+    }
+    .px-bubble::after {
+      content: ''; position: absolute; bottom: -5px; left: 50%;
+      width: 8px; height: 8px; background: var(--bg-card);
+      border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+      transform: translateX(-50%) rotate(45deg);
+    }
+    .workstation:hover .px-bubble { opacity: 1; }
+
+    /* Busy dots */
+    .busy-dots {
+      position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 4px; opacity: 0;
+    }
+    .status-busy .busy-dots { opacity: 1; }
+    .busy-dots span {
+      width: 4px; height: 4px; border-radius: 50%;
+      background: var(--yellow);
+      animation: dhop 1.2s ease-in-out infinite;
+    }
+    .busy-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .busy-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes dhop { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-8px)} }
+
+    /* Pixel desk */
+    .px-desk {
+      width: 72px; height: 24px; position: relative; margin-top: 2px;
+    }
+    .px-desk-top {
+      position: absolute; inset: 0;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 4px;
+      transform: perspective(200px) rotateX(25deg);
+    }
+    .px-desk-screen {
+      position: absolute; top: 3px; left: 50%; transform: translateX(-50%);
+      width: 28px; height: 14px; border-radius: 2px;
+      border: 1px solid; opacity: 0.7;
+      animation: scrglow 3s ease-in-out infinite;
+    }
+    @keyframes scrglow { 0%,100%{opacity:0.5} 50%{opacity:0.9} }
+
+    /* ── Side Panel (frosted glass) ──────── */
+    .side-panel {
+      width: 0; overflow: hidden;
+      background: var(--frosted-bg);
+      backdrop-filter: blur(12px) saturate(180%);
+      border-left: 1px solid var(--frosted-border);
+      transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex; flex-direction: column; flex-shrink: 0;
+    }
+    .side-panel.open { width: 360px; }
+    .sp-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 20px; border-bottom: 1px solid var(--border);
+    }
+    .sp-title {
+      font-family: var(--font-sans); font-size: 0.85rem;
+      font-weight: 600; color: var(--t1); letter-spacing: -0.025em;
+    }
+    .sp-close {
+      background: none; border: 1px solid var(--border); color: var(--t2);
+      font-family: var(--font-mono); font-size: 0.75rem; padding: 4px 10px;
+      border-radius: 6px; cursor: pointer; transition: all 0.15s ease;
+    }
+    .sp-close:hover { border-color: var(--red); color: var(--red); }
+    .sp-body { flex: 1; overflow-y: auto; padding: 20px; }
+    .sp-section { margin-bottom: 20px; }
+    .sp-label {
+      font-family: var(--font-mono); font-size: 0.6rem; font-weight: 400;
+      color: var(--t3); text-transform: uppercase;
+      margin-bottom: 8px; letter-spacing: 0.08em;
+    }
+    .sp-value {
+      font-family: var(--font-sans); font-size: 0.8rem;
+      font-weight: 300; color: var(--t1); line-height: 1.6;
+    }
+    .sp-status-badge {
+      display: inline-block; font-family: var(--font-mono);
+      font-size: 0.65rem; font-weight: 400;
+      padding: 3px 10px; border-radius: 6px; border: 1px solid;
+    }
+    .sp-task-item {
+      padding: 10px 12px; border: 1px solid var(--border);
+      border-radius: 8px; margin-bottom: 8px;
+      font-family: var(--font-sans); font-size: 0.75rem; font-weight: 300;
+      color: var(--t2); background: var(--bg-card);
+      transition: border-color 0.15s ease;
+    }
+    .sp-task-item:hover { border-color: var(--border-hover); }
+    .sp-task-item .task-id {
+      font-family: var(--font-mono); font-size: 0.6rem; color: var(--t3);
+    }
+
+    /* Chat */
+    .sp-chat {
+      border-top: 1px solid var(--border); padding: 16px 20px; flex-shrink: 0;
+    }
+    .sp-chat-row { display: flex; gap: 8px; }
+    .sp-chat-input {
+      flex: 1; background: var(--bg-input); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--t1);
+      font-family: var(--font-sans); font-size: 0.8rem; font-weight: 300;
+      padding: 10px 12px; outline: none; transition: border-color 0.15s ease;
+    }
+    .sp-chat-input:focus { border-color: var(--blue); }
+    .sp-chat-input::placeholder { color: var(--t3); }
+    .sp-chat-send {
+      background: var(--blue); border: none; color: #fff;
+      font-family: var(--font-sans); font-size: 0.75rem; font-weight: 500;
+      padding: 10px 18px; border-radius: 8px;
+      cursor: pointer; transition: all 0.15s ease;
+    }
+    .sp-chat-send:hover { background: #0060d0; }
+    .sp-chat-send:disabled { opacity: 0.3; cursor: default; }
+    .sp-chat-log { max-height: 140px; overflow-y: auto; margin-bottom: 10px; }
+    .sp-chat-msg {
+      font-family: var(--font-sans); font-size: 0.75rem; font-weight: 300;
+      padding: 6px 0; border-bottom: 1px solid var(--border); color: var(--t2);
+    }
+    .sp-chat-msg .msg-who {
+      font-family: var(--font-mono); font-size: 0.6rem;
+      color: var(--blue); margin-right: 8px; font-weight: 400;
+    }
+
+    /* ── Connection lines ────────────────── */
+    .connections {
+      position: absolute; inset: 0; z-index: 5; pointer-events: none;
+    }
+    .connections line {
+      stroke: var(--border-hover); stroke-width: 1;
+      stroke-dasharray: 4 6; opacity: 0.5;
+      animation: dash 12s linear infinite;
+    }
+    @keyframes dash { to { stroke-dashoffset: -120; } }
+
+    /* ── Floating particles ──────────────── */
+    .particle {
+      position: absolute; width: 3px; height: 3px; border-radius: 50%;
+      opacity: 0; z-index: 2; pointer-events: none;
+    }
+    @keyframes pfloat {
+      0% { opacity:0; transform:translate(0,0); }
+      20% { opacity:0.4; }
+      50% { opacity:0.15; transform:translate(15px, -50px); }
+      80% { opacity:0.3; }
+      100% { opacity:0; transform:translate(-10px, -100px); }
+    }
+</style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <h1>Agent Studio <span>PIXEL</span></h1>
+      <span class="header-badge">prototype</span>
+    </div>
+    <div class="header-stats">
+      <span><span class="stat-dot" style="background:var(--green)"></span><span class="stat-count" id="statOnline">3</span> online</span>
+      <span><span class="stat-dot" style="background:var(--yellow)"></span><span class="stat-count" id="statBusy">2</span> busy</span>
+      <span><span class="stat-dot" style="background:var(--t3)"></span><span class="stat-count" id="statOff">1</span> offline</span>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+    <div class="studio" id="studio">
+      <canvas id="roomCanvas"></canvas>
+      <div class="scanlines"></div>
+      <svg class="connections" id="connections"></svg>
+    </div>
+
+    <div class="side-panel" id="sidePanel">
+      <div class="sp-header">
+        <span class="sp-title" id="spTitle">Agent</span>
+        <button class="sp-close" onclick="closePanel()">esc</button>
+      </div>
+      <div class="sp-body" id="spBody"></div>
+      <div class="sp-chat" id="spChat" style="display:none">
+        <div class="sp-chat-log" id="spChatLog"></div>
+        <div class="sp-chat-row">
+          <input class="sp-chat-input" id="spChatInput" placeholder="Send a command..." />
+          <button class="sp-chat-send" id="spChatSend" onclick="sendChat()">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const AGENTS = [
+  { id:'producer', name:'Producer', role:'producer', status:'busy',
+    color:'#a855f7', task:'Orchestrating quest pipeline',
+    x:0.5, y:0.25, tasks:[
+      {id:'Q-042',text:'Route quest events to workers'},
+      {id:'Q-041',text:'Monitor PR merge webhooks'},
+  ]},
+  { id:'lead-1', name:'Lead-1', role:'lead', status:'busy',
+    color:'#0070f3', task:'Splitting quest into tasks',
+    x:0.3, y:0.50, tasks:[
+      {id:'T-101',text:'Analyze requirements for quest Q-042'},
+      {id:'T-102',text:'Create task breakdown'},
+  ]},
+  { id:'lead-2', name:'Lead-2', role:'lead', status:'available',
+    color:'#0070f3', task:null, x:0.7, y:0.50, tasks:[] },
+  { id:'worker-1', name:'Worker-1', role:'worker', status:'busy',
+    color:'#22c55e', task:'Implementing auth module',
+    x:0.14, y:0.76, tasks:[
+      {id:'T-201',text:'Add JWT validation middleware'},
+  ]},
+  { id:'worker-2', name:'Worker-2', role:'worker', status:'available',
+    color:'#22c55e', task:null, x:0.38, y:0.76, tasks:[] },
+  { id:'qa', name:'QA-1', role:'qa', status:'available',
+    color:'#f97316', task:null, x:0.62, y:0.76, tasks:[] },
+  { id:'worker-3', name:'Worker-3', role:'worker', status:'offline',
+    color:'#22c55e', task:null, x:0.86, y:0.76, tasks:[] },
+];
+
+// ================================================================
+// Pixel Sprites — 32x32 canvas drawn programmatically (scaled to 64px)
+// Producer=headset+tie, Lead=glasses+hoodie, Worker=hardhat+wrench, QA=labcoat+magnifier
+// ================================================================
+function drawSprite(canvas, role) {
+  canvas.width = 64; canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  const s = 2;
+  const px = (x,y,c) => { ctx.fillStyle=c; ctx.fillRect(x*s,y*s,s,s); };
+  const rect = (x,y,w,h,c) => { ctx.fillStyle=c; ctx.fillRect(x*s,y*s,w*s,h*s); };
+  const hline = (x1,x2,y,c) => { for(let x=x1;x<=x2;x++) px(x,y,c); };
+
+  const O='#111',S='#f0c8a0',Sd='#d4a882',E='#1a1a2a',W='#fff',M='#e08070',D='#44403c';
+
+  if (role==='producer') {
+    const C='#a855f7',C2='#7c3aed';
+    rect(11,3,10,3,'#2a2040'); rect(10,4,12,2,'#2a2040');
+    rect(11,6,10,9,S); rect(10,7,12,7,S);
+    px(13,9,W);px(14,9,E);px(18,9,W);px(19,9,E);
+    hline(14,17,12,M);
+    rect(8,5,2,6,C);rect(22,5,2,6,C);
+    hline(9,22,4,C);hline(10,21,3,C);
+    rect(8,10,3,1,'#333');rect(21,10,3,1,'#333');
+    px(7,11,'#555');px(8,11,'#555');
+    rect(10,16,12,10,C);rect(9,17,14,8,C);
+    rect(15,16,2,6,W);rect(15,16,2,1,'#ddd');
+    rect(7,17,3,6,C);rect(22,17,3,6,C);
+    rect(7,23,3,2,S);rect(22,23,3,2,S);
+    rect(11,26,4,3,C2);rect(17,26,4,3,C2);
+    rect(10,29,5,2,D);rect(17,29,5,2,D);
+  } else if (role==='lead') {
+    const C='#0070f3',C2='#0050c0';
+    rect(11,3,10,4,'#3a2a1a');rect(10,5,12,2,'#3a2a1a');
+    rect(11,6,10,9,S);rect(10,7,12,7,S);
+    rect(12,9,4,3,O);rect(17,9,4,3,O);
+    rect(13,10,2,1,'#88bbff');rect(18,10,2,1,'#88bbff');
+    hline(16,17,10,'#666');
+    px(14,10,E);px(19,10,E);
+    hline(14,17,13,M);
+    rect(10,16,12,10,C);rect(9,17,14,8,C);
+    px(14,16,W);px(17,16,W);px(14,17,W);px(17,17,W);
+    rect(12,21,8,3,C2);
+    rect(7,17,3,6,C);rect(22,17,3,6,C);
+    rect(7,23,3,2,S);rect(22,23,3,2,S);
+    rect(23,21,5,3,'#333');rect(24,21,3,1,'#4488ff');
+    rect(11,26,4,3,'#222');rect(17,26,4,3,'#222');
+    rect(10,29,5,2,D);rect(17,29,5,2,D);
+  } else if (role==='worker') {
+    const C='#22c55e',C2='#16a34a';
+    rect(10,2,12,2,C);rect(9,4,14,2,C);rect(11,1,10,1,C);rect(8,5,16,1,C2);
+    rect(11,6,10,9,S);rect(10,7,12,7,S);
+    px(13,9,W);px(14,9,E);px(18,9,W);px(19,9,E);
+    hline(14,17,12,M);
+    rect(10,16,12,10,'#555');rect(9,17,14,8,'#555');
+    px(12,16,C);px(13,16,C);px(19,16,C);px(20,16,C);
+    px(12,17,C);px(20,17,C);
+    rect(17,19,4,2,C2);
+    rect(7,17,3,6,'#555');rect(22,17,3,6,'#555');
+    rect(7,23,3,2,S);rect(22,23,3,2,S);
+    rect(5,21,3,1,'#aaa');rect(4,20,2,3,'#aaa');px(4,20,'#888');
+    rect(11,26,4,3,'#444');rect(17,26,4,3,'#444');
+    rect(10,29,5,2,'#5a3a2a');rect(17,29,5,2,'#5a3a2a');
+  } else {
+    const C='#f97316',C2='#d97706';
+    rect(11,3,10,4,'#4a2a1a');rect(10,5,12,2,'#4a2a1a');
+    rect(11,6,10,9,S);rect(10,7,12,7,S);
+    px(13,9,W);px(14,9,E);px(18,9,W);px(19,9,E);
+    hline(14,17,12,M);
+    rect(10,16,12,10,'#e8e8e8');rect(9,17,14,8,'#e8e8e8');
+    rect(10,16,3,4,C);rect(19,16,3,4,C);
+    rect(11,20,3,2,C2);px(12,20,W);
+    rect(7,17,3,6,'#e8e8e8');rect(22,17,3,6,'#e8e8e8');
+    rect(7,23,3,2,S);rect(22,23,3,2,S);
+    rect(24,19,3,3,O);rect(25,20,1,1,'#88ddff');
+    px(23,22,O);px(22,23,O);
+    rect(11,26,4,3,'#333');rect(17,26,4,3,'#333');
+    rect(10,29,5,2,D);rect(17,29,5,2,D);
+  }
+}
+
+// ================================================================
+// Render Agents
+// ================================================================
+const studio = document.getElementById('studio');
+let selectedAgent = null;
+
+function renderAgents() {
+  AGENTS.forEach(a => {
+    const ws = document.createElement('div');
+    ws.className = `workstation status-${a.status}`;
+    ws.id = `ws-${a.id}`;
+    ws.style.left = `calc(${a.x*100}% - 50px)`;
+    ws.style.top = `calc(${a.y*100}% - 60px)`;
+    ws.onclick = () => selectAgent(a.id);
+
+    ws.innerHTML = `
+      <div class="px-bubble">${a.task||'Idle'}</div>
+      <div class="busy-dots"><span></span><span></span><span></span></div>
+      <div class="pixel-char">
+        <div class="sprite-wrap">
+          <div class="sprite-shadow"></div>
+          <div class="sprite-glow"></div>
+          <canvas class="sprite-canvas"></canvas>
+          <div class="px-status"></div>
+        </div>
+        <div class="agent-nametag">${a.name}</div>
+        <span class="agent-role" style="color:${a.color};border-color:${a.color}30;background:${a.color}10">${a.role}</span>
+        <div class="px-desk">
+          <div class="px-desk-top"></div>
+          <div class="px-desk-screen" style="border-color:${a.color};background:${a.color}15"></div>
+        </div>
+      </div>`;
+    studio.appendChild(ws);
+    drawSprite(ws.querySelector('.sprite-canvas'), a.role);
+  });
+}
+
+// ================================================================
+// Connection Lines
+// ================================================================
+function drawConnections() {
+  const svg = document.getElementById('connections');
+  const r = studio.getBoundingClientRect();
+  svg.setAttribute('width', r.width);
+  svg.setAttribute('height', r.height);
+  svg.innerHTML = '';
+  const gc = id => {
+    const el = document.getElementById(`ws-${id}`);
+    if (!el) return null;
+    const b = el.getBoundingClientRect();
+    return { x: b.left-r.left+b.width/2, y: b.top-r.top+b.height/2 };
+  };
+  [['producer','lead-1'],['producer','lead-2'],
+   ['lead-1','worker-1'],['lead-1','worker-2'],
+   ['lead-2','qa'],['lead-2','worker-3']].forEach(([f,t]) => {
+    const a=gc(f), b=gc(t);
+    if (!a||!b) return;
+    const l = document.createElementNS('http://www.w3.org/2000/svg','line');
+    l.setAttribute('x1',a.x); l.setAttribute('y1',a.y);
+    l.setAttribute('x2',b.x); l.setAttribute('y2',b.y);
+    svg.appendChild(l);
+  });
+}
+
+// ================================================================
+// Side Panel
+// ================================================================
+function selectAgent(id) {
+  const a = AGENTS.find(x => x.id === id);
+  if (!a) return;
+  selectedAgent = id;
+  document.querySelectorAll('.workstation').forEach(w => w.classList.remove('selected'));
+  document.getElementById(`ws-${id}`).classList.add('selected');
+
+  const panel = document.getElementById('sidePanel');
+  document.getElementById('spTitle').textContent = a.name;
+
+  const sc = {available:'var(--green)',busy:'var(--yellow)',offline:'var(--t3)'}[a.status];
+  let tasks = a.tasks.length
+    ? a.tasks.map(t => `<div class="sp-task-item"><span class="task-id">${t.id}</span> ${t.text}</div>`).join('')
+    : '<div style="color:var(--t3);font-size:0.7rem;font-weight:300">No active tasks</div>';
+
+  document.getElementById('spBody').innerHTML = `
+    <div class="sp-section">
+      <div class="sp-label">status</div>
+      <span class="sp-status-badge" style="color:${sc};border-color:${sc}">${a.status}</span>
+    </div>
+    <div class="sp-section">
+      <div class="sp-label">role</div>
+      <span class="sp-status-badge" style="color:${a.color};border-color:${a.color}">${a.role}</span>
+    </div>
+    <div class="sp-section">
+      <div class="sp-label">current task</div>
+      <div class="sp-value">${a.task||'—'}</div>
+    </div>
+    <div class="sp-section">
+      <div class="sp-label">queue</div>
+      ${tasks}
+    </div>`;
+
+  const chat = document.getElementById('spChat');
+  chat.style.display = a.status !== 'offline' ? '' : 'none';
+  document.getElementById('spChatSend').disabled = a.status === 'offline';
+  renderChatLog();
+
+  panel.classList.add('open');
+  setTimeout(drawConnections, 300);
+}
+
+function closePanel() {
+  selectedAgent = null;
+  document.getElementById('sidePanel').classList.remove('open');
+  document.querySelectorAll('.workstation').forEach(w => w.classList.remove('selected'));
+  setTimeout(drawConnections, 300);
+}
+
+// ================================================================
+// Chat
+// ================================================================
+const chatHist = {};
+function sendChat() {
+  const inp = document.getElementById('spChatInput');
+  const msg = inp.value.trim();
+  if (!msg || !selectedAgent) return;
+  inp.value = '';
+  if (!chatHist[selectedAgent]) chatHist[selectedAgent] = [];
+  chatHist[selectedAgent].push({ who:'you', text:msg });
+  renderChatLog();
+  setTimeout(() => {
+    const a = AGENTS.find(x => x.id === selectedAgent);
+    if (!a) return;
+    const resps = ['Roger that. Processing...','Acknowledged.','Got it, queued.','On it.'];
+    chatHist[selectedAgent].push({ who:a.name, text:resps[Math.floor(Math.random()*resps.length)] });
+    renderChatLog();
+  }, 500 + Math.random()*400);
+}
+function renderChatLog() {
+  if (!selectedAgent) return;
+  const log = document.getElementById('spChatLog');
+  const msgs = chatHist[selectedAgent] || [];
+  log.innerHTML = msgs.map(m =>
+    `<div class="sp-chat-msg"><span class="msg-who">${m.who}</span>${m.text}</div>`
+  ).join('');
+  log.scrollTop = log.scrollHeight;
+}
+document.getElementById('spChatInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendChat();
+});
+
+// ================================================================
+// Particles
+// ================================================================
+function spawnParticles() {
+  const colors = ['var(--blue)','var(--purple)','var(--green)','var(--yellow)'];
+  for (let i = 0; i < 15; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    p.style.left = Math.random()*100+'%';
+    p.style.top = Math.random()*100+'%';
+    p.style.background = colors[Math.floor(Math.random()*colors.length)];
+    p.style.animation = `pfloat ${8+Math.random()*10}s ease-in-out infinite`;
+    p.style.animationDelay = Math.random()*6+'s';
+    studio.appendChild(p);
+  }
+}
+
+// ================================================================
+// Room Environment — pixel art office drawn on canvas
+// ================================================================
+function drawRoom() {
+  const c = document.getElementById('roomCanvas');
+  const W = studio.clientWidth, H = studio.clientHeight;
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+
+  // Floor — dark wood planks
+  const floorY = Math.floor(H * 0.18);
+  // Wall
+  ctx.fillStyle = '#0d1117';
+  ctx.fillRect(0, 0, W, floorY);
+  // Wall texture — subtle brick pattern
+  ctx.fillStyle = '#151b23';
+  for (let y = 0; y < floorY; y += 16) {
+    const off = (Math.floor(y/16) % 2) * 16;
+    for (let x = off; x < W; x += 32) {
+      ctx.fillRect(x+1, y+1, 30, 14);
+    }
+  }
+  // Wall baseboard
+  ctx.fillStyle = '#1a1a2a';
+  ctx.fillRect(0, floorY - 6, W, 6);
+  ctx.fillStyle = '#222233';
+  ctx.fillRect(0, floorY - 6, W, 2);
+
+  // Floor — dark wood
+  ctx.fillStyle = '#12100e';
+  ctx.fillRect(0, floorY, W, H - floorY);
+  // Wood plank lines
+  for (let y = floorY; y < H; y += 24) {
+    ctx.fillStyle = '#1a1714';
+    ctx.fillRect(0, y, W, 24);
+    ctx.fillStyle = '#0e0c0a';
+    ctx.fillRect(0, y + 23, W, 1);
+    // Plank joints
+    const off = (Math.floor((y-floorY)/24) % 2) * 60;
+    ctx.fillStyle = '#0e0c0a';
+    for (let x = off; x < W; x += 120) {
+      ctx.fillRect(x, y, 1, 24);
+    }
+  }
+
+  // Rug under center area
+  const rugX = W*0.25, rugW = W*0.5, rugY = H*0.35, rugH = H*0.45;
+  ctx.fillStyle = '#1a1028';
+  ctx.fillRect(rugX, rugY, rugW, rugH);
+  ctx.fillStyle = '#221838';
+  ctx.fillRect(rugX+4, rugY+4, rugW-8, rugH-8);
+  ctx.fillStyle = '#1a1028';
+  ctx.fillRect(rugX+10, rugY+10, rugW-20, rugH-20);
+  // Rug border pattern
+  ctx.fillStyle = '#2a1848';
+  for (let x = rugX+6; x < rugX+rugW-6; x += 8) {
+    ctx.fillRect(x, rugY+6, 4, 2);
+    ctx.fillRect(x, rugY+rugH-8, 4, 2);
+  }
+
+  // ── Furniture ──
+
+  // Whiteboard on wall (center)
+  const wbX = W*0.42, wbY = floorY - 80;
+  ctx.fillStyle = '#222';
+  ctx.fillRect(wbX-2, wbY-2, 104, 54);
+  ctx.fillStyle = '#1a2a1a';
+  ctx.fillRect(wbX, wbY, 100, 50);
+  // Whiteboard content — lines
+  ctx.fillStyle = '#2a4a2a';
+  for (let i = 0; i < 4; i++) {
+    ctx.fillRect(wbX+8, wbY+10+i*10, 60+Math.random()*20, 2);
+  }
+  // Whiteboard marker tray
+  ctx.fillStyle = '#333';
+  ctx.fillRect(wbX+10, wbY+48, 80, 4);
+  ctx.fillStyle = '#ef4444'; ctx.fillRect(wbX+14, wbY+46, 8, 4);
+  ctx.fillStyle = '#0070f3'; ctx.fillRect(wbX+26, wbY+46, 8, 4);
+  ctx.fillStyle = '#22c55e'; ctx.fillRect(wbX+38, wbY+46, 8, 4);
+
+  // Poster left wall
+  const pX = W*0.08, pY = floorY - 70;
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(pX, pY, 48, 56);
+  ctx.fillStyle = '#0070f3';
+  ctx.fillRect(pX+4, pY+4, 40, 30);
+  ctx.fillStyle = '#222';
+  ctx.fillRect(pX+4, pY+38, 30, 3);
+  ctx.fillRect(pX+4, pY+44, 20, 3);
+
+  // Clock right wall
+  const clkX = W*0.82, clkY = floorY - 50;
+  ctx.fillStyle = '#222';
+  ctx.beginPath(); ctx.arc(clkX, clkY, 18, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(clkX, clkY, 15, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#ededed';
+  ctx.fillRect(clkX-1, clkY-10, 2, 10); // hour
+  ctx.fillRect(clkX, clkY-1, 8, 2); // minute
+
+  // Bookshelf right wall
+  const bsX = W*0.88, bsY = floorY - 80;
+  ctx.fillStyle = '#2a1a0a';
+  ctx.fillRect(bsX, bsY, 50, 80);
+  // Shelves
+  for (let i = 0; i < 4; i++) {
+    const sy = bsY + 4 + i*20;
+    ctx.fillStyle = '#3a2a1a';
+    ctx.fillRect(bsX+2, sy+16, 46, 3);
+    // Books
+    const bookColors = ['#ef4444','#0070f3','#22c55e','#a855f7','#eab308','#f97316'];
+    let bx = bsX + 4;
+    for (let j = 0; j < 5; j++) {
+      const bw = 4 + Math.floor(Math.random()*4);
+      ctx.fillStyle = bookColors[(i*5+j) % bookColors.length];
+      ctx.fillRect(bx, sy+2, bw, 14);
+      bx += bw + 1;
+    }
+  }
+
+  // Plant left
+  const plX = W*0.04, plY = floorY + 10;
+  // Pot
+  ctx.fillStyle = '#5a3a2a';
+  ctx.fillRect(plX, plY+20, 24, 16);
+  ctx.fillRect(plX-2, plY+18, 28, 4);
+  ctx.fillStyle = '#2a1a0a';
+  ctx.fillRect(plX+2, plY+18, 20, 2);
+  // Leaves
+  ctx.fillStyle = '#1a6a3a';
+  ctx.fillRect(plX+6, plY, 12, 20);
+  ctx.fillStyle = '#22c55e';
+  ctx.fillRect(plX+2, plY+4, 8, 8);
+  ctx.fillRect(plX+14, plY+2, 8, 10);
+  ctx.fillRect(plX+8, plY-4, 8, 8);
+
+  // Plant right
+  const prX = W*0.94, prY = floorY + 10;
+  ctx.fillStyle = '#5a3a2a';
+  ctx.fillRect(prX, prY+20, 24, 16);
+  ctx.fillRect(prX-2, prY+18, 28, 4);
+  ctx.fillStyle = '#2a1a0a';
+  ctx.fillRect(prX+2, prY+18, 20, 2);
+  ctx.fillStyle = '#1a6a3a';
+  ctx.fillRect(prX+6, prY, 12, 20);
+  ctx.fillStyle = '#22c55e';
+  ctx.fillRect(prX+2, prY+6, 8, 8);
+  ctx.fillRect(prX+14, prY+4, 8, 10);
+
+  // Coffee machine bottom-left
+  const cmX = W*0.04, cmY = H*0.65;
+  // Table
+  ctx.fillStyle = '#2a2a2a';
+  ctx.fillRect(cmX, cmY, 40, 20);
+  ctx.fillStyle = '#222';
+  ctx.fillRect(cmX+4, cmY+20, 4, 16);
+  ctx.fillRect(cmX+32, cmY+20, 4, 16);
+  // Machine
+  ctx.fillStyle = '#333';
+  ctx.fillRect(cmX+8, cmY-20, 24, 20);
+  ctx.fillStyle = '#444';
+  ctx.fillRect(cmX+10, cmY-18, 20, 12);
+  ctx.fillStyle = '#ef4444';
+  ctx.fillRect(cmX+28, cmY-8, 3, 3);
+  // Cup
+  ctx.fillStyle = '#ddd';
+  ctx.fillRect(cmX+16, cmY+2, 8, 10);
+  ctx.fillStyle = '#6a4a2a';
+  ctx.fillRect(cmX+17, cmY+3, 6, 6);
+
+  // Server rack bottom-right
+  const srX = W*0.92, srY = H*0.60;
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(srX, srY, 36, 60);
+  ctx.fillStyle = '#222';
+  ctx.fillRect(srX+2, srY+2, 32, 56);
+  for (let i = 0; i < 5; i++) {
+    const ry = srY + 4 + i*11;
+    ctx.fillStyle = '#2a2a2a';
+    ctx.fillRect(srX+4, ry, 28, 9);
+    // LEDs
+    ctx.fillStyle = i < 3 ? '#22c55e' : '#333';
+    ctx.fillRect(srX+6, ry+3, 3, 3);
+    ctx.fillStyle = i < 4 ? '#0070f3' : '#333';
+    ctx.fillRect(srX+11, ry+3, 3, 3);
+  }
+
+  // Ceiling lights
+  ctx.fillStyle = '#1a1a2a';
+  for (let x = W*0.2; x < W*0.85; x += W*0.3) {
+    ctx.fillRect(x, 0, 2, 12);
+    ctx.fillStyle = '#333';
+    ctx.fillRect(x-10, 12, 22, 6);
+    // Light glow
+    ctx.fillStyle = 'rgba(255,255,200,0.03)';
+    ctx.fillRect(x-40, 18, 82, H*0.15);
+    ctx.fillStyle = '#1a1a2a';
+  }
+}
+
+// ================================================================
+// Init
+// ================================================================
+drawRoom();
+renderAgents();
+requestAnimationFrame(() => { drawConnections(); spawnParticles(); });
+window.addEventListener('resize', () => { drawRoom(); drawConnections(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
+
+// Stats
+const online = AGENTS.filter(a=>a.status==='available').length;
+const busy = AGENTS.filter(a=>a.status==='busy').length;
+const off = AGENTS.filter(a=>a.status==='offline').length;
+document.getElementById('statOnline').textContent = online;
+document.getElementById('statBusy').textContent = busy;
+document.getElementById('statOff').textContent = off;
+</script>
+
+</body>
+</html>

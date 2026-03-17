@@ -1,0 +1,1201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Studio — KADI Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    /* ── Reset & Tokens ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #000000;
+      --bg-elevated: #0a0a0a;
+      --bg-card:     #111111;
+      --border:      #1a1a1a;
+      --border-hover:#333333;
+      --text-primary:#ededed;
+      --text-secondary:#888888;
+      --text-tertiary:#555555;
+      --blue:        #0070f3;
+      --blue-glow:   rgba(0,112,243,0.15);
+      --green:       #22c55e;
+      --green-glow:  rgba(34,197,94,0.15);
+      --yellow:      #eab308;
+      --yellow-glow: rgba(234,179,8,0.15);
+      --red:         #ef4444;
+      --red-glow:    rgba(239,68,68,0.15);
+      --purple:      #a855f7;
+      --purple-glow: rgba(168,85,247,0.15);
+      --orange:      #f97316;
+      --font-sans:   'Sora', ui-sans-serif, system-ui, sans-serif;
+      --font-mono:   'JetBrains Mono', ui-monospace, monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(0,0,0,0.8);
+      backdrop-filter: blur(20px) saturate(180%);
+      z-index: 100;
+      flex-shrink: 0;
+    }
+    .header-left { display: flex; align-items: center; gap: 16px; }
+    .header h1 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .header-badge {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      letter-spacing: 0.05em;
+    }
+    .header-stats {
+      display: flex;
+      gap: 20px;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+    }
+    .stat-dot {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    /* ── Main Layout ────────────────────────────────────────── */
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Studio Canvas ──────────────────────────────────────── */
+    .studio {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background:
+        radial-gradient(ellipse 80% 60% at 50% 40%, rgba(0,112,243,0.03), transparent),
+        var(--bg);
+    }
+
+    /* Room canvas background */
+    #roomCanvas {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      z-index: 0;
+    }
+
+    /* ── Agent Workstations (isometric positioned) ──────────── */
+    .workstation {
+      position: absolute;
+      cursor: pointer;
+      transition: transform 0.3s cubic-bezier(0.16,1,0.3,1);
+      z-index: 10;
+    }
+    .workstation:hover { transform: translateY(-4px); }
+    .workstation.selected { z-index: 20; }
+
+    /* Desk (isometric diamond) */
+    .desk {
+      width: 120px; height: 70px;
+      position: relative;
+    }
+    .desk-surface {
+      width: 100%; height: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      transform: rotateX(55deg) rotateZ(45deg);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      transition: border-color 0.3s, box-shadow 0.3s;
+    }
+    .workstation:hover .desk-surface,
+    .workstation.selected .desk-surface {
+      border-color: var(--border-hover);
+    }
+
+    /* Screen glow on desk */
+    .desk-screen {
+      position: absolute;
+      top: 12px; left: 50%;
+      transform: translateX(-50%) rotateX(55deg) rotateZ(45deg);
+      width: 40px; height: 24px;
+      border-radius: 3px;
+      opacity: 0.8;
+      animation: screen-flicker 4s ease-in-out infinite;
+    }
+    @keyframes screen-flicker {
+      0%, 100% { opacity: 0.6; }
+      50% { opacity: 1; }
+    }
+
+    /* ── Agent Avatar ───────────────────────────────────────── */
+    .agent-avatar {
+      position: absolute;
+      top: -55px; left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .avatar-body {
+      width: 36px; height: 36px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      overflow: hidden;
+    }
+    .avatar-body svg {
+      width: 28px; height: 28px;
+    }
+
+    /* Status ring */
+    .avatar-body::after {
+      content: '';
+      position: absolute;
+      inset: -3px;
+      border-radius: 13px;
+      border: 2px solid transparent;
+      transition: border-color 0.3s;
+    }
+    .status-available .avatar-body::after { border-color: var(--green); }
+    .status-busy .avatar-body::after { border-color: var(--yellow); }
+    .status-offline .avatar-body::after { border-color: var(--text-tertiary); }
+
+    /* Status pulse */
+    .status-indicator {
+      position: absolute;
+      top: -2px; right: -2px;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      border: 2px solid var(--bg);
+    }
+    .status-available .status-indicator {
+      background: var(--green);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    .status-busy .status-indicator {
+      background: var(--yellow);
+      animation: pulse-dot 1.5s ease-in-out infinite;
+    }
+    .status-offline .status-indicator {
+      background: var(--text-tertiary);
+    }
+    @keyframes pulse-dot {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.3); opacity: 0.7; }
+    }
+
+    /* Agent name label */
+    .agent-label {
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      letter-spacing: 0.04em;
+      text-align: center;
+      background: rgba(0,0,0,0.7);
+      padding: 2px 8px;
+      border-radius: 4px;
+      backdrop-filter: blur(8px);
+    }
+
+    /* ── Typing animation for busy agents ───────────────────── */
+    .typing-dots {
+      position: absolute;
+      top: -20px; left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 3px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .status-busy .typing-dots { opacity: 1; }
+    .typing-dots span {
+      width: 4px; height: 4px;
+      border-radius: 50%;
+      background: var(--text-secondary);
+      animation: typing 1.4s ease-in-out infinite;
+    }
+    .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes typing {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+      30% { transform: translateY(-6px); opacity: 1; }
+    }
+
+    /* ── Task bubble ────────────────────────────────────────── */
+    .task-bubble {
+      position: absolute;
+      top: -85px; left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-family: var(--font-mono);
+      font-size: 0.55rem;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      backdrop-filter: blur(12px);
+    }
+    .task-bubble::after {
+      content: '';
+      position: absolute;
+      bottom: -5px; left: 50%;
+      transform: translateX(-50%) rotate(45deg);
+      width: 8px; height: 8px;
+      background: var(--bg-card);
+      border-right: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .workstation:hover .task-bubble { opacity: 1; }
+
+    /* ── Side Panel ─────────────────────────────────────────── */
+    .side-panel {
+      width: 0;
+      overflow: hidden;
+      border-left: 1px solid var(--border);
+      background: var(--bg-elevated);
+      transition: width 0.35s cubic-bezier(0.16,1,0.3,1);
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .side-panel.open { width: 380px; }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .panel-header h2 {
+      font-size: 0.9rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .panel-close {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      width: 28px; height: 28px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    .panel-close:hover {
+      background: rgba(255,255,255,0.05);
+      border-color: var(--border-hover);
+      color: var(--text-primary);
+    }
+
+    .panel-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    /* Agent info card */
+    .agent-info {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    .agent-info-avatar {
+      width: 48px; height: 48px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .agent-info-avatar svg {
+      width: 36px; height: 36px;
+    }
+    .agent-info-text h3 {
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+    .agent-info-text p {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--text-tertiary);
+    }
+
+    /* Status badge */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid;
+    }
+    .status-badge.available {
+      color: var(--green);
+      border-color: rgba(34,197,94,0.3);
+      background: var(--green-glow);
+    }
+    .status-badge.busy {
+      color: var(--yellow);
+      border-color: rgba(234,179,8,0.3);
+      background: var(--yellow-glow);
+    }
+    .status-badge.offline {
+      color: var(--text-tertiary);
+      border-color: var(--border);
+      background: rgba(85,85,85,0.1);
+    }
+
+    /* Section labels */
+    .section-label {
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      color: var(--text-tertiary);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      margin-top: 20px;
+    }
+
+    /* Capability tags */
+    .cap-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .cap-tag {
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+    }
+
+    /* Task list */
+    .task-list { display: flex; flex-direction: column; gap: 8px; }
+    .task-item {
+      padding: 10px 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      transition: border-color 0.2s;
+    }
+    .task-item:hover { border-color: var(--border-hover); }
+    .task-item-name {
+      font-size: 0.75rem;
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+    .task-item-meta {
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      color: var(--text-tertiary);
+    }
+    .task-status-dot {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+
+    /* Chat area */
+    .chat-area {
+      border-top: 1px solid var(--border);
+      padding: 16px 20px;
+      flex-shrink: 0;
+    }
+    .chat-input-wrap {
+      display: flex;
+      gap: 8px;
+    }
+    .chat-input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-family: var(--font-sans);
+      font-size: 0.75rem;
+      color: var(--text-primary);
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .chat-input::placeholder { color: var(--text-tertiary); }
+    .chat-input:focus { border-color: var(--blue); }
+    .chat-send {
+      background: var(--blue);
+      border: none;
+      color: #fff;
+      width: 36px; height: 36px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+    .chat-send:hover { background: #0060d0; }
+    .chat-send:disabled {
+      background: var(--border);
+      cursor: not-allowed;
+    }
+
+    /* Metrics row */
+    .metrics-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .metric-card {
+      padding: 10px 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .metric-value {
+      font-size: 1.1rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .metric-label {
+      font-family: var(--font-mono);
+      font-size: 0.55rem;
+      color: var(--text-tertiary);
+      letter-spacing: 0.04em;
+      margin-top: 2px;
+    }
+
+    /* ── Ambient particles ──────────────────────────────────── */
+    .particle {
+      position: absolute;
+      width: 2px; height: 2px;
+      background: rgba(0,112,243,0.3);
+      border-radius: 50%;
+      pointer-events: none;
+      animation: float-particle linear infinite;
+    }
+    @keyframes float-particle {
+      0% { transform: translateY(0) translateX(0); opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { transform: translateY(-200px) translateX(40px); opacity: 0; }
+    }
+
+    /* ── Connection lines between agents ────────────────────── */
+    .connections-svg {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 5;
+    }
+    .connection-line {
+      stroke: rgba(255,255,255,0.04);
+      stroke-width: 1;
+      stroke-dasharray: 4 4;
+      animation: dash-flow 20s linear infinite;
+    }
+    .connection-line.active {
+      stroke: rgba(0,112,243,0.15);
+      stroke-width: 1.5;
+      animation: dash-flow 8s linear infinite;
+    }
+    @keyframes dash-flow {
+      to { stroke-dashoffset: -100; }
+    }
+
+    /* ── Fade-in animation ──────────────────────────────────── */
+    .fade-up {
+      opacity: 0;
+      transform: translateY(12px);
+      animation: fadeUp 0.6s ease forwards;
+    }
+    @keyframes fadeUp {
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <h1>Agent Studio</h1>
+      <span class="header-badge">PROTOTYPE</span>
+    </div>
+    <div class="header-stats">
+      <span><span class="stat-dot" style="background:var(--green)"></span>4 Online</span>
+      <span><span class="stat-dot" style="background:var(--yellow)"></span>2 Busy</span>
+      <span><span class="stat-dot" style="background:var(--text-tertiary)"></span>1 Offline</span>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="studio" id="studio">
+      <canvas id="roomCanvas"></canvas>
+      <svg class="connections-svg" id="connectionsSvg"></svg>
+      <!-- Workstations injected by JS -->
+    </div>
+    <div class="side-panel" id="sidePanel">
+      <div class="panel-header">
+        <h2 id="panelTitle">Agent Details</h2>
+        <button class="panel-close" id="panelClose">&times;</button>
+      </div>
+      <div class="panel-body" id="panelBody"></div>
+      <div class="chat-area">
+        <div class="chat-input-wrap">
+          <input class="chat-input" id="chatInput" placeholder="Send a message to this agent..." />
+          <button class="chat-send" id="chatSend">&#9654;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ── SVG Avatars ──────────────────────────────────────────
+function agentAvatar(role, color) {
+  const skin = '#f0c8a0';
+  const hair = {
+    producer: '#2a2a3a',
+    programmer: '#3a2a1a',
+    designer: '#8a4a2a',
+    artist: '#1a3a2a',
+  }[role] || '#2a2a3a';
+
+  if (role === 'producer') {
+    // Headset + tie look
+    return `<svg viewBox="0 0 32 32" fill="none">
+      <circle cx="16" cy="13" r="8" fill="${skin}"/>
+      <path d="M10 10c0-4 3-7 6-7s6 3 6 7" fill="${hair}"/>
+      <circle cx="13" cy="13" r="1.2" fill="#1a1a2a"/>
+      <circle cx="19" cy="13" r="1.2" fill="#1a1a2a"/>
+      <path d="M14 16.5q2 1.5 4 0" stroke="#c87060" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+      <rect x="10" y="22" width="12" height="8" rx="2" fill="${color}"/>
+      <rect x="14.5" y="22" width="3" height="5" rx="0.5" fill="#fff" opacity="0.3"/>
+      <path d="M8 11h-1a1 1 0 00-1 1v3a1 1 0 001 1h1" stroke="${color}" stroke-width="1.5" fill="none"/>
+      <path d="M24 11h1a1 1 0 011 1v3a1 1 0 01-1 1h-1" stroke="${color}" stroke-width="1.5" fill="none"/>
+      <path d="M7 12c0-5 4-9 9-9s9 4 9 9" stroke="${color}" stroke-width="1.2" fill="none"/>
+    </svg>`;
+  }
+  if (role === 'programmer') {
+    // Glasses + hoodie
+    return `<svg viewBox="0 0 32 32" fill="none">
+      <circle cx="16" cy="13" r="8" fill="${skin}"/>
+      <path d="M9 10c0-5 3-8 7-8s7 3 7 8" fill="${hair}"/>
+      <rect x="10.5" y="11" width="4.5" height="3.5" rx="1" stroke="#888" stroke-width="0.8" fill="none"/>
+      <rect x="17" y="11" width="4.5" height="3.5" rx="1" stroke="#888" stroke-width="0.8" fill="none"/>
+      <line x1="15" y1="12.5" x2="17" y2="12.5" stroke="#888" stroke-width="0.8"/>
+      <circle cx="12.8" cy="12.8" r="1" fill="#1a1a2a"/>
+      <circle cx="19.2" cy="12.8" r="1" fill="#1a1a2a"/>
+      <path d="M14 16.5q2 1 4 0" stroke="#c87060" stroke-width="0.7" fill="none" stroke-linecap="round"/>
+      <path d="M10 22c0-1 1-2 2-2h8c1 0 2 1 2 2v8H10z" fill="${color}"/>
+      <path d="M13 20v-1a3 3 0 016 0v1" fill="${color}"/>
+      <path d="M14.5 22v4M17.5 22v4" stroke="#fff" stroke-width="0.5" opacity="0.2"/>
+    </svg>`;
+  }
+  if (role === 'designer') {
+    // Beret + scarf
+    return `<svg viewBox="0 0 32 32" fill="none">
+      <circle cx="16" cy="14" r="8" fill="${skin}"/>
+      <ellipse cx="16" cy="8" rx="9" ry="4" fill="${color}"/>
+      <circle cx="16" cy="5" r="1.5" fill="${color}" stroke="#fff" stroke-width="0.5" opacity="0.6"/>
+      <path d="M10 10c1-3 3-4 6-4s5 1 6 4" fill="${hair}"/>
+      <circle cx="13" cy="14" r="1.2" fill="#1a1a2a"/>
+      <circle cx="19" cy="14" r="1.2" fill="#1a1a2a"/>
+      <path d="M14 17q2 1.5 4 0" stroke="#c87060" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+      <rect x="10" y="23" width="12" height="7" rx="2" fill="#333"/>
+      <path d="M12 22c1 2 3 3 4 3s3-1 4-3" fill="${color}" opacity="0.8"/>
+    </svg>`;
+  }
+  // artist — bandana + paint splatter
+  return `<svg viewBox="0 0 32 32" fill="none">
+    <circle cx="16" cy="14" r="8" fill="${skin}"/>
+    <path d="M8 11c0-4 4-8 8-8s8 4 8 8v1H8z" fill="${hair}"/>
+    <rect x="8" y="9" width="16" height="3" rx="1" fill="${color}"/>
+    <path d="M22 10l3-2" stroke="${color}" stroke-width="1.5" stroke-linecap="round"/>
+    <circle cx="13" cy="14" r="1.2" fill="#1a1a2a"/>
+    <circle cx="19" cy="14" r="1.2" fill="#1a1a2a"/>
+    <path d="M14 17q2 1.5 4 0" stroke="#c87060" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+    <rect x="10" y="23" width="12" height="7" rx="2" fill="#444"/>
+    <circle cx="12" cy="25" r="1" fill="${color}" opacity="0.6"/>
+    <circle cx="18" cy="24" r="0.8" fill="#eab308" opacity="0.5"/>
+    <circle cx="15" cy="26" r="0.7" fill="#ef4444" opacity="0.5"/>
+  </svg>`;
+}
+
+// ── Mock Data ──────────────────────────────────────────────
+const AGENTS = [
+  {
+    agentId: 'agent-producer-1',
+    name: 'Producer',
+    role: 'producer',
+    capabilities: ['Quest Planning', 'Task Splitting', 'PR Workflow', 'Verification'],
+    status: 'busy',
+    currentTasks: [
+      { id: 'T-001', name: 'Plan quest architecture', status: 'in_progress' },
+      { id: 'T-002', name: 'Review PR #35', status: 'in_progress' },
+    ],
+    maxConcurrentTasks: 5,
+    lastSeen: '2 min ago',
+    color: '#0070f3',
+    icon: 'P',
+    pos: { x: 0.25, y: 0.32 },
+  },
+  {
+    agentId: 'agent-lead-programmer',
+    name: 'Lead Programmer',
+    role: 'programmer',
+    capabilities: ['TypeScript', 'React', 'Node.js', 'Task Assignment', 'Code Review'],
+    status: 'busy',
+    currentTasks: [
+      { id: 'T-010', name: 'Assign frontend tasks', status: 'in_progress' },
+    ],
+    maxConcurrentTasks: 3,
+    lastSeen: '1 min ago',
+    color: '#a855f7',
+    icon: 'LP',
+    pos: { x: 0.50, y: 0.25 },
+  },
+  {
+    agentId: 'agent-worker-programmer-1',
+    name: 'Worker Prog #1',
+    role: 'programmer',
+    capabilities: ['TypeScript', 'React', 'CSS', 'Testing'],
+    status: 'available',
+    currentTasks: [],
+    maxConcurrentTasks: 3,
+    lastSeen: 'just now',
+    color: '#a855f7',
+    icon: 'W1',
+    pos: { x: 0.68, y: 0.35 },
+  },
+  {
+    agentId: 'agent-lead-designer',
+    name: 'Lead Designer',
+    role: 'designer',
+    capabilities: ['UI/UX', 'Figma', 'Design Systems', 'Prototyping'],
+    status: 'available',
+    currentTasks: [],
+    maxConcurrentTasks: 2,
+    lastSeen: 'just now',
+    color: '#f97316',
+    icon: 'LD',
+    pos: { x: 0.30, y: 0.58 },
+  },
+  {
+    agentId: 'agent-lead-artist',
+    name: 'Lead Artist',
+    role: 'artist',
+    capabilities: ['2D Art', 'Illustration', 'Animation', 'Pixel Art'],
+    status: 'available',
+    currentTasks: [],
+    maxConcurrentTasks: 2,
+    lastSeen: '5 min ago',
+    color: '#22c55e',
+    icon: 'LA',
+    pos: { x: 0.55, y: 0.62 },
+  },
+  {
+    agentId: 'agent-worker-artist-1',
+    name: 'Worker Artist #1',
+    role: 'artist',
+    capabilities: ['Sprite Art', 'Tilemap', 'Character Design'],
+    status: 'available',
+    currentTasks: [],
+    maxConcurrentTasks: 2,
+    lastSeen: '3 min ago',
+    color: '#22c55e',
+    icon: 'A1',
+    pos: { x: 0.75, y: 0.55 },
+  },
+  {
+    agentId: 'agent-qa-1',
+    name: 'QA Agent',
+    role: 'programmer',
+    capabilities: ['Testing', 'Verification', 'Bug Reports'],
+    status: 'offline',
+    currentTasks: [],
+    maxConcurrentTasks: 3,
+    lastSeen: '45 min ago',
+    color: '#ef4444',
+    icon: 'QA',
+    pos: { x: 0.18, y: 0.72 },
+  },
+];
+
+// ── Rendering ────────────────────────────────────────────
+const studio = document.getElementById('studio');
+const sidePanel = document.getElementById('sidePanel');
+const panelBody = document.getElementById('panelBody');
+const panelTitle = document.getElementById('panelTitle');
+const panelClose = document.getElementById('panelClose');
+const chatInput = document.getElementById('chatInput');
+const chatSend = document.getElementById('chatSend');
+let selectedAgent = null;
+
+function createWorkstation(agent, delay) {
+  const el = document.createElement('div');
+  el.className = `workstation status-${agent.status} fade-up`;
+  el.style.animationDelay = `${delay}ms`;
+  el.style.left = `${agent.pos.x * 100}%`;
+  el.style.top = `${agent.pos.y * 100}%`;
+  el.dataset.agentId = agent.agentId;
+
+  const taskText = agent.currentTasks.length > 0
+    ? agent.currentTasks[0].name
+    : 'Idle — waiting for tasks';
+
+  el.innerHTML = `
+    <div class="agent-avatar">
+      <div class="typing-dots"><span></span><span></span><span></span></div>
+      <div class="avatar-body" style="background:${agent.color}">
+        <span class="status-indicator"></span>
+        ${agentAvatar(agent.role, agent.color)}
+      </div>
+      <div class="agent-label">${agent.name}</div>
+    </div>
+    <div class="task-bubble">${taskText}</div>
+    <div class="desk">
+      <div class="desk-surface" style="box-shadow: 0 8px 32px rgba(0,0,0,0.6), inset 0 0 20px ${agent.status === 'busy' ? agent.color + '15' : 'transparent'}"></div>
+      <div class="desk-screen" style="background:${agent.status === 'offline' ? 'var(--text-tertiary)' : agent.color}; box-shadow: 0 0 12px ${agent.status === 'offline' ? 'transparent' : agent.color + '40'}"></div>
+    </div>
+  `;
+
+  el.addEventListener('click', () => selectAgent(agent, el));
+  studio.appendChild(el);
+  return el;
+}
+
+// Create all workstations
+const workstationEls = AGENTS.map((a, i) => createWorkstation(a, i * 100));
+
+// ── Room Environment ─────────────────────────────────────
+function drawRoom() {
+  const c = document.getElementById('roomCanvas');
+  const W = studio.clientWidth, H = studio.clientHeight;
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d');
+
+  // Wall
+  const floorY = Math.floor(H * 0.20);
+  const wallGrad = ctx.createLinearGradient(0, 0, 0, floorY);
+  wallGrad.addColorStop(0, '#080810');
+  wallGrad.addColorStop(1, '#0c0c18');
+  ctx.fillStyle = wallGrad;
+  ctx.fillRect(0, 0, W, floorY);
+
+  // Subtle wall panels
+  ctx.fillStyle = 'rgba(255,255,255,0.008)';
+  for (let x = 0; x < W; x += W/5) {
+    ctx.fillRect(x+2, 8, W/5-4, floorY-16);
+  }
+
+  // Baseboard
+  ctx.fillStyle = '#111118';
+  ctx.fillRect(0, floorY-4, W, 4);
+  ctx.fillStyle = 'rgba(255,255,255,0.03)';
+  ctx.fillRect(0, floorY-4, W, 1);
+
+  // Floor — dark wood
+  const floorGrad = ctx.createLinearGradient(0, floorY, 0, H);
+  floorGrad.addColorStop(0, '#0e0c0a');
+  floorGrad.addColorStop(1, '#080604');
+  ctx.fillStyle = floorGrad;
+  ctx.fillRect(0, floorY, W, H-floorY);
+
+  // Wood plank lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.015)';
+  ctx.lineWidth = 1;
+  for (let y = floorY; y < H; y += 28) {
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+    const off = (Math.floor((y-floorY)/28) % 2) * 80;
+    ctx.strokeStyle = 'rgba(255,255,255,0.01)';
+    for (let x = off; x < W; x += 160) {
+      ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x,y+28); ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,0.015)';
+  }
+
+  // Rug
+  const rugX=W*0.22, rugW=W*0.56, rugY=H*0.38, rugH=H*0.42;
+  ctx.fillStyle = 'rgba(0,112,243,0.03)';
+  roundRect(ctx, rugX, rugY, rugW, rugH, 12);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,112,243,0.06)';
+  ctx.lineWidth = 1;
+  roundRect(ctx, rugX+6, rugY+6, rugW-12, rugH-12, 8);
+  ctx.stroke();
+
+  // ── Wall decorations ──
+
+  // Whiteboard center
+  const wbX=W*0.40, wbY=floorY-90, wbW=120, wbH=60;
+  ctx.fillStyle = '#111118';
+  roundRect(ctx, wbX-3, wbY-3, wbW+6, wbH+6, 4); ctx.fill();
+  ctx.fillStyle = '#0d1a0d';
+  roundRect(ctx, wbX, wbY, wbW, wbH, 2); ctx.fill();
+  ctx.fillStyle = 'rgba(34,197,94,0.15)';
+  for (let i=0; i<4; i++) {
+    ctx.fillRect(wbX+12, wbY+12+i*11, 50+Math.random()*30, 2);
+  }
+  // Markers
+  ctx.fillStyle = '#ef4444'; roundRect(ctx,wbX+12,wbY+wbH-10,10,5,2); ctx.fill();
+  ctx.fillStyle = '#0070f3'; roundRect(ctx,wbX+26,wbY+wbH-10,10,5,2); ctx.fill();
+  ctx.fillStyle = '#22c55e'; roundRect(ctx,wbX+40,wbY+wbH-10,10,5,2); ctx.fill();
+
+  // Poster left
+  ctx.fillStyle = '#0a0a14';
+  roundRect(ctx, W*0.08, floorY-80, 56, 64, 3); ctx.fill();
+  ctx.fillStyle = 'rgba(0,112,243,0.12)';
+  ctx.fillRect(W*0.08+6, floorY-74, 44, 36);
+  ctx.fillStyle = 'rgba(255,255,255,0.04)';
+  ctx.fillRect(W*0.08+6, floorY-32, 30, 3);
+  ctx.fillRect(W*0.08+6, floorY-26, 20, 3);
+
+  // Clock right
+  const clkX=W*0.84, clkY=floorY-50;
+  ctx.fillStyle = '#111118';
+  ctx.beginPath(); ctx.arc(clkX,clkY,20,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#0a0a10';
+  ctx.beginPath(); ctx.arc(clkX,clkY,16,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(clkX,clkY); ctx.lineTo(clkX,clkY-10); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(clkX,clkY); ctx.lineTo(clkX+7,clkY); ctx.stroke();
+
+  // Bookshelf right
+  const bsX=W*0.89, bsY=floorY-85;
+  ctx.fillStyle = '#0e0a06';
+  roundRect(ctx, bsX, bsY, 56, 85, 3); ctx.fill();
+  const bookColors = ['#ef4444','#0070f3','#22c55e','#a855f7','#eab308','#f97316'];
+  for (let i=0; i<4; i++) {
+    const sy = bsY+6+i*20;
+    ctx.fillStyle = 'rgba(255,255,255,0.03)';
+    ctx.fillRect(bsX+3, sy+16, 50, 2);
+    let bx = bsX+5;
+    for (let j=0; j<5; j++) {
+      const bw = 5+Math.floor(Math.random()*4);
+      ctx.fillStyle = bookColors[(i*5+j)%bookColors.length];
+      ctx.globalAlpha = 0.25;
+      roundRect(ctx, bx, sy+2, bw, 13, 1); ctx.fill();
+      ctx.globalAlpha = 1;
+      bx += bw+2;
+    }
+  }
+
+  // Plants
+  drawPlant(ctx, W*0.03, floorY+8);
+  drawPlant(ctx, W*0.95, floorY+8);
+
+  // Coffee station
+  const cmX=W*0.03, cmY=H*0.62;
+  ctx.fillStyle = '#111';
+  roundRect(ctx, cmX, cmY, 44, 18, 4); ctx.fill();
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(cmX+6, cmY+18, 4, 14);
+  ctx.fillRect(cmX+34, cmY+18, 4, 14);
+  ctx.fillStyle = '#1a1a1a';
+  roundRect(ctx, cmX+8, cmY-22, 28, 22, 3); ctx.fill();
+  ctx.fillStyle = '#ef4444'; ctx.globalAlpha=0.5;
+  ctx.beginPath(); ctx.arc(cmX+32,cmY-8,2,0,Math.PI*2); ctx.fill();
+  ctx.globalAlpha=1;
+  ctx.fillStyle = '#ddd'; ctx.globalAlpha=0.15;
+  roundRect(ctx, cmX+16, cmY+2, 10, 12, 2); ctx.fill();
+  ctx.globalAlpha=1;
+
+  // Server rack
+  const srX=W*0.93, srY=H*0.55;
+  ctx.fillStyle = '#0a0a0a';
+  roundRect(ctx, srX, srY, 40, 65, 4); ctx.fill();
+  for (let i=0; i<5; i++) {
+    const ry=srY+5+i*12;
+    ctx.fillStyle = '#111';
+    roundRect(ctx, srX+3, ry, 34, 10, 2); ctx.fill();
+    ctx.fillStyle = i<3?'rgba(34,197,94,0.5)':'rgba(255,255,255,0.05)';
+    ctx.beginPath(); ctx.arc(srX+9,ry+5,2,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = i<4?'rgba(0,112,243,0.4)':'rgba(255,255,255,0.05)';
+    ctx.beginPath(); ctx.arc(srX+16,ry+5,2,0,Math.PI*2); ctx.fill();
+  }
+
+  // Ceiling lights — soft glow
+  for (let x=W*0.2; x<W*0.85; x+=W*0.3) {
+    ctx.fillStyle = '#111';
+    ctx.fillRect(x-1, 0, 2, 14);
+    ctx.fillStyle = '#1a1a1a';
+    roundRect(ctx, x-12, 14, 24, 6, 3); ctx.fill();
+    const glow = ctx.createRadialGradient(x, 20, 0, x, 20, H*0.18);
+    glow.addColorStop(0, 'rgba(255,255,220,0.02)');
+    glow.addColorStop(1, 'transparent');
+    ctx.fillStyle = glow;
+    ctx.fillRect(x-80, 14, 160, H*0.2);
+  }
+}
+
+function drawPlant(ctx, x, y) {
+  ctx.fillStyle = '#1a1008';
+  roundRect(ctx, x, y+22, 26, 18, 4); ctx.fill();
+  ctx.fillStyle = '#221810';
+  roundRect(ctx, x-2, y+20, 30, 5, 2); ctx.fill();
+  ctx.fillStyle = 'rgba(34,197,94,0.3)';
+  ctx.beginPath(); ctx.arc(x+13,y+8,14,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = 'rgba(34,197,94,0.4)';
+  ctx.beginPath(); ctx.arc(x+8,y+12,8,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x+18,y+10,9,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x+13,y+2,7,0,Math.PI*2); ctx.fill();
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();
+}
+
+drawRoom();
+
+// ── Connection lines ─────────────────────────────────────
+function drawConnections() {
+  const svg = document.getElementById('connectionsSvg');
+  const rect = studio.getBoundingClientRect();
+  svg.setAttribute('viewBox', `0 0 ${rect.width} ${rect.height}`);
+
+  // Connect leads to their workers
+  const connections = [
+    ['agent-lead-programmer', 'agent-worker-programmer-1'],
+    ['agent-lead-artist', 'agent-worker-artist-1'],
+    ['agent-producer-1', 'agent-lead-programmer'],
+    ['agent-producer-1', 'agent-lead-designer'],
+    ['agent-producer-1', 'agent-lead-artist'],
+  ];
+
+  let html = '';
+  for (const [fromId, toId] of connections) {
+    const from = AGENTS.find(a => a.agentId === fromId);
+    const to = AGENTS.find(a => a.agentId === toId);
+    if (!from || !to) continue;
+
+    const x1 = from.pos.x * rect.width;
+    const y1 = from.pos.y * rect.height;
+    const x2 = to.pos.x * rect.width;
+    const y2 = to.pos.y * rect.height;
+    const active = from.status === 'busy' || to.status === 'busy';
+
+    html += `<line class="connection-line${active ? ' active' : ''}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" />`;
+  }
+  svg.innerHTML = html;
+}
+
+setTimeout(drawConnections, 200);
+window.addEventListener('resize', () => { drawRoom(); drawConnections(); });
+
+// ── Side Panel ───────────────────────────────────────────
+function selectAgent(agent, el) {
+  // Deselect previous
+  document.querySelectorAll('.workstation.selected').forEach(w => w.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedAgent = agent;
+
+  panelTitle.textContent = agent.name;
+  chatInput.disabled = agent.status === 'offline';
+  chatSend.disabled = agent.status === 'offline';
+  chatInput.placeholder = agent.status === 'offline'
+    ? 'Agent is offline'
+    : `Send a message to ${agent.name}...`;
+
+  const taskHtml = agent.currentTasks.length > 0
+    ? agent.currentTasks.map(t => `
+        <div class="task-item">
+          <div class="task-item-name">
+            <span class="task-status-dot" style="background:${t.status === 'in_progress' ? 'var(--yellow)' : 'var(--green)'}"></span>
+            ${t.name}
+          </div>
+          <div class="task-item-meta">${t.id} &middot; ${t.status.replace('_', ' ')}</div>
+        </div>
+      `).join('')
+    : '<div style="font-family:var(--font-mono);font-size:0.65rem;color:var(--text-tertiary);padding:8px 0;">No active tasks</div>';
+
+  const roleColors = {
+    producer: 'var(--blue)',
+    programmer: 'var(--purple)',
+    designer: 'var(--orange)',
+    artist: 'var(--green)',
+  };
+
+  panelBody.innerHTML = `
+    <div class="agent-info">
+      <div class="agent-info-avatar" style="background:${agent.color}">${agentAvatar(agent.role, agent.color)}</div>
+      <div class="agent-info-text">
+        <h3>${agent.name}</h3>
+        <p>${agent.agentId}</p>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+      <span class="status-badge ${agent.status}">
+        <span class="stat-dot" style="background:${agent.status === 'available' ? 'var(--green)' : agent.status === 'busy' ? 'var(--yellow)' : 'var(--text-tertiary)'}"></span>
+        ${agent.status}
+      </span>
+      <span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-tertiary)">
+        Last seen: ${agent.lastSeen}
+      </span>
+    </div>
+
+    <div class="metrics-row">
+      <div class="metric-card">
+        <div class="metric-value" style="color:${roleColors[agent.role] || 'var(--text-primary)'}">${agent.role}</div>
+        <div class="metric-label">Role</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value">${agent.currentTasks.length}/${agent.maxConcurrentTasks}</div>
+        <div class="metric-label">Task Load</div>
+      </div>
+    </div>
+
+    <div class="section-label">Capabilities</div>
+    <div class="cap-tags">
+      ${agent.capabilities.map(c => `<span class="cap-tag">${c}</span>`).join('')}
+    </div>
+
+    <div class="section-label">Current Tasks</div>
+    <div class="task-list">${taskHtml}</div>
+  `;
+
+  sidePanel.classList.add('open');
+}
+
+panelClose.addEventListener('click', () => {
+  sidePanel.classList.remove('open');
+  document.querySelectorAll('.workstation.selected').forEach(w => w.classList.remove('selected'));
+  selectedAgent = null;
+});
+
+// Chat send (mock)
+function handleChatSend() {
+  const msg = chatInput.value.trim();
+  if (!msg || !selectedAgent) return;
+
+  // Append message to panel
+  const msgEl = document.createElement('div');
+  msgEl.style.cssText = `
+    margin-top:12px;padding:10px 12px;background:var(--blue-glow);
+    border:1px solid rgba(0,112,243,0.2);border-radius:8px;
+    font-size:0.75rem;color:var(--text-primary);
+  `;
+  msgEl.innerHTML = `
+    <div style="font-family:var(--font-mono);font-size:0.55rem;color:var(--text-tertiary);margin-bottom:4px;">You → ${selectedAgent.name}</div>
+    ${msg}
+  `;
+  panelBody.appendChild(msgEl);
+  panelBody.scrollTop = panelBody.scrollHeight;
+  chatInput.value = '';
+
+  // Mock response after delay
+  setTimeout(() => {
+    const respEl = document.createElement('div');
+    respEl.style.cssText = `
+      margin-top:8px;padding:10px 12px;background:var(--bg-card);
+      border:1px solid var(--border);border-radius:8px;
+      font-size:0.75rem;color:var(--text-secondary);
+    `;
+    const responses = [
+      'Acknowledged. Processing your request...',
+      'I\'ll handle that right away.',
+      'Task received. Starting execution.',
+      'Got it. Let me check the current quest status first.',
+      'On it. I\'ll update you when done.',
+    ];
+    const resp = responses[Math.floor(Math.random() * responses.length)];
+    respEl.innerHTML = `
+      <div style="font-family:var(--font-mono);font-size:0.55rem;color:var(--text-tertiary);margin-bottom:4px;">${selectedAgent.name} → You</div>
+      ${resp}
+    `;
+    panelBody.appendChild(respEl);
+    panelBody.scrollTop = panelBody.scrollHeight;
+  }, 800 + Math.random() * 1200);
+}
+
+chatSend.addEventListener('click', handleChatSend);
+chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') handleChatSend();
+});
+
+// ── Ambient particles ────────────────────────────────────
+function spawnParticle() {
+  const p = document.createElement('div');
+  p.className = 'particle';
+  p.style.left = `${20 + Math.random() * 60}%`;
+  p.style.top = `${40 + Math.random() * 40}%`;
+  p.style.animationDuration = `${6 + Math.random() * 8}s`;
+  p.style.width = p.style.height = `${1 + Math.random() * 2}px`;
+  studio.appendChild(p);
+  setTimeout(() => p.remove(), 14000);
+}
+setInterval(spawnParticle, 2000);
+
+// ── Update header stats ──────────────────────────────────
+function updateStats() {
+  const online = AGENTS.filter(a => a.status !== 'offline').length;
+  const busy = AGENTS.filter(a => a.status === 'busy').length;
+  const offline = AGENTS.filter(a => a.status === 'offline').length;
+  document.querySelector('.header-stats').innerHTML = `
+    <span><span class="stat-dot" style="background:var(--green)"></span>${online} Online</span>
+    <span><span class="stat-dot" style="background:var(--yellow)"></span>${busy} Busy</span>
+    <span><span class="stat-dot" style="background:var(--text-tertiary)"></span>${offline} Offline</span>
+  `;
+}
+updateStats();
+</script>
+</body>
+</html>
