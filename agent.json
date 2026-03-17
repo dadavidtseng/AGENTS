@@ -1,13 +1,14 @@
 {
-  "name": "deploy-ability",
-  "version": "1.0.0",
-  "license": "MIT",
+  "name": "ability-deploy",
+  "version": "0.2.0",
+  "entrypoint": "index.js",
   "kind": "ability",
-  "description": "Programmatic deployment library for KADI - deploy applications to Akash Network, local Docker, or other platforms without CLI dependencies",
-  "repo": "https://gitlab.com/humin-game-lab/kadi/deploy-ability.git",
-  "abilities": {},
+  "description": "Unified deployment ability — Akash Network, local Docker/Podman, and container registry management",
   "scripts": {
+    "start": "node index.js",
+    "serve": "node index.js",
+    "serve:broker": "KADI_MODE=broker node index.js",
+    "build": "npm run build",
     "setup": "npm install && npm run build"
   }
 }
-

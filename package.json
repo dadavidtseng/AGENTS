@@ -1,7 +1,7 @@
 {
-  "name": "@kadi.build/deploy-ability",
-  "version": "0.0.7",
-  "description": "Programmatic deployment library for KADI - deploy to Akash Network, local Docker, and other platforms without CLI dependencies",
+  "name": "ability-deploy",
+  "version": "0.2.0",
+  "description": "Unified deployment ability — Akash Network, local Docker/Podman, and container registry management",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -33,7 +33,7 @@
   },
   "scripts": {
     "start": "node index.js",
-    "build": "tsc",
+    "build": "tsc && cp -r src/registry dist/registry",
     "build:watch": "tsc --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -54,8 +54,8 @@
     "orchestration",
     "infrastructure"
   ],
-  "author": "Kassi Bertrand",
-  "license": "MIT",
+  "author": "Yu-Wei Tseng",
+  "license": "Apache License 2.0",
   "files": [
     "dist/",
     "docs/",
@@ -63,18 +63,16 @@
     "LICENSE"
   ],
   "dependencies": {
-<<<<<<< Updated upstream
-=======
-    "@kadi.build/core": "file:../kadi-core",
-    "axios": "^1.7.7",
->>>>>>> Stashed changes
+    "@kadi.build/core": "^0.9.0",
+    "ability-file-remote": "file:../ability-file-remote",
     "@akashnetwork/akash-api": "^1.4.0",
     "@akashnetwork/chain-sdk": "1.0.0-alpha.18",
     "@cosmjs/amino": "^0.36.1",
     "@cosmjs/encoding": "^0.36.1",
     "@cosmjs/proto-signing": "^0.36.1",
     "@cosmjs/stargate": "^0.36.1",
-    "@kadi.build/container-registry-ability": "^0.0.3",
+    "chalk": "^5.3.0",
+    "fs-extra": "^11.2.0",
     "@keplr-wallet/wc-client": "^0.12.243",
     "@keplr-wallet/wc-qrcode-modal": "^0.12.247",
     "@types/ws": "^8.18.1",
