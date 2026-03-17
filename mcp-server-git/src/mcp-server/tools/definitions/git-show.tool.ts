@@ -118,12 +118,13 @@ function filterGitShowOutput(
     };
   }
 
-  // standard: Above + metadata
+  // standard: Above + metadata + content (content is the diff for commits)
   if (level === 'standard') {
     return {
       success: result.success,
       object: result.object,
       type: result.type,
+      content: result.content,
       metadata: result.metadata,
     };
   }

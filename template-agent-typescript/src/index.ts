@@ -128,10 +128,9 @@ const client = new KadiClient({
   name: process.env.AGENT_NAME || 'template-agent-typescript',
   version: process.env.AGENT_VERSION || '0.0.1',
   brokers: {
-    default: config.brokerUrl
+    default: { url: config.brokerUrl, networks: config.networks }
   },
   defaultBroker: 'default',
-  networks: config.networks
 });
 
 // ============================================================================
