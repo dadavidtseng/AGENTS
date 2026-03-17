@@ -1,0 +1,14 @@
+{
+  "name": "ability-voice",
+  "version": "1.0.0",
+  "description": "Voice operations - TTS (Piper), STT (Whisper), wake word detection",
+  "entrypoint": "src/ability_voice/__main__.py",
+  "scripts": {
+    "preflight": "python --version",
+    "setup": "uv sync",
+    "start": "uv run python -m ability_voice",
+    "serve": "KADI_MODE=stdio uv run python -m ability_voice",
+    "serve:broker": "KADI_MODE=broker uv run python -m ability_voice",
+    "clean": "rm -rf .venv __pycache__ src/ability_voice/__pycache__"
+  }
+}
