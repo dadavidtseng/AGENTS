@@ -1,0 +1,12 @@
+{
+  "id": "approval_1769736302897_38iz9p8g5",
+  "title": "Fixed markdown parsing errors in tasks.md",
+  "filePath": ".spec-workflow/specs/quest-workflow-enhancement/tasks.md",
+  "type": "document",
+  "status": "approved",
+  "createdAt": "2026-01-30T01:25:02.897Z",
+  "category": "spec",
+  "categoryName": "quest-workflow-enhancement",
+  "response": "Approved via dashboard",
+  "respondedAt": "2026-01-30T03:00:57.931Z"
+}

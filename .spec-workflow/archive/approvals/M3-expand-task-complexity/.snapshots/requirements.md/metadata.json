@@ -1,0 +1,14 @@
+{
+  "filePath": ".spec-workflow/specs/M3-expand-task-complexity/requirements.md",
+  "currentVersion": 1,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2026-02-06T02:30:04.748Z",
+      "trigger": "approved",
+      "approvalId": "approval_1738742400000_m3req001",
+      "approvalTitle": "M3 Requirements Document - Expand Task Type and Complexity + Dashboard Migration"
+    }
+  ]
+}

@@ -70,7 +70,7 @@
   - _Requirements: Requirement 8 (Agent Registration and Heartbeat)_
   - _Prompt: Role: Systems Engineer with agent lifecycle management expertise | Task: Verify agent registration system (questRegisterAgent, questAgentHeartbeat, questUnregisterAgent) works correctly, checking registration, heartbeat updates, graceful shutdown, and offline detection | Restrictions: Do not modify tools, only verify functionality | Success: Agents register correctly, heartbeats update reliably, offline detection works within 90 seconds, graceful shutdown functional_
 
-- [ ] 1.7. Verify dashboard functionality
+- [x] 1.7. Verify dashboard functionality
   - File: C:\GitHub\mcp-server-quest\src\dashboard\*
   - Test dashboard features: quest list page, quest detail page, agent monitor page, approval interface, WebSocket updates
   - Verify quest list page displays all quests
@@ -83,7 +83,7 @@
   - _Requirements: Requirement 2 (Quest Approval Workflow), Dashboard requirements_
   - _Prompt: Role: Frontend QA Engineer with dashboard testing expertise | Task: Verify dashboard functionality including quest list, quest details, agent monitor, approval interface, and WebSocket real-time updates | Restrictions: Do not modify dashboard code, only verify functionality | Success: Dashboard displays data correctly, real-time updates work, approval workflow functional, all pages render properly_
 
-- [ ] 1.8. Verify conflicting tools don't interfere
+- [x] 1.8. Verify conflicting tools don't interfere
   - File: C:\GitHub\mcp-server-quest\src\tools\*
   - Review additional tools not in requirements: questRevise, questList, questCreateFromTemplate, questWorkflowGuide, questResearchMode, questLogImplementation, questQueryTasks, questClearCompleted, questDeleteQuest, questDeleteTask
   - Verify no conflicts with implementation
@@ -95,7 +95,7 @@
 
 ## Phase 2: agent-producer Enhancement (Orchestrator)
 
-- [ ] 2.1. Create handlers directory structure
+- [x] 2.1. Create handlers directory structure
   - File: C:\GitHub\agent-producer\src\handlers\ (new directory)
   - Create handlers/ folder for event and message handlers
   - Separate handlers (orchestration logic) from tools (LLM function calling)
@@ -104,7 +104,7 @@
   - _Requirements: Code organization best practices_
   - _Prompt: Role: Software Architect with code organization expertise | Task: Create handlers/ directory in agent-producer to separate orchestration logic from LLM function calling tools, establishing clear separation of concerns | Restrictions: Do not modify existing code, only create directory structure | Success: Directory created, pattern established, separation of concerns clear_
 
-- [ ] 2.2. Implement quest creation handler
+- [x] 2.2. Implement quest creation handler
   - File: C:\GitHub\agent-producer\src\handlers\quest-creation.ts
   - Parse Discord messages for quest creation requests
   - Detect quest creation intent from natural language
@@ -116,7 +116,7 @@
   - _Requirements: Requirement 1 (Quest Creation via Discord)_
   - _Prompt: Role: Discord Bot Developer with LLM integration expertise | Task: Implement quest creation handler that parses Discord messages, uses LLM to generate requirements/design documents, calls quest_create via KĀDI broker, and sends confirmation | Restrictions: Must use existing ProviderManager and ProducerToolUtils, follow Discord bot patterns | Success: Quest creation works from Discord, documents well-generated, user receives confirmation, integration with KĀDI broker functional_
 
-- [ ] 2.3. Implement quest approval handler
+- [x] 2.3. Implement quest approval handler
   - File: C:\GitHub\agent-producer\src\handlers\quest-approval.ts
   - Handle "I approved quest {name}" - verify via quest_get_status
   - Handle "I approve quest {name}" - directly approve via quest_submit_approval
@@ -126,7 +126,7 @@
   - _Requirements: Requirement 2 (Quest Approval Workflow)_
   - _Prompt: Role: Discord Bot Developer with workflow automation expertise | Task: Implement quest approval handler that processes approval messages, verifies quest status, directly approves quests, and sends Discord responses | Restrictions: Must use ProducerToolUtils for remote calls, handle both verification and direct approval | Success: Approval verification works, direct approval succeeds, user receives feedback, workflow complete_
 
-- [ ] 2.4. Implement four-step workflow executor
+- [x] 2.4. Implement four-step workflow executor
   - File: C:\GitHub\agent-producer\src\handlers\task-generation.ts
   - Execute plan → analyze → reflect → split workflow
   - Handle "Create tasks for quest {name}" messages
@@ -139,7 +139,7 @@
   - _Requirements: Requirement 3 (Task Generation and Planning)_
   - _Prompt: Role: Workflow Automation Engineer with LLM orchestration expertise | Task: Implement four-step workflow executor (plan → analyze → reflect → split) that coordinates LLM calls with quest tools and sends task summary to Discord | Restrictions: Must execute all four steps in order, use existing providers and tools | Success: Workflow executes all steps, tasks well-analyzed, user receives summary, dependencies validated_
 
-- [ ] 2.5. Implement task assignment handler
+- [x] 2.5. Implement task assignment handler
   - File: C:\GitHub\agent-producer\src\handlers\task-assignment.ts
   - Handle "Assign tasks to {agentId}" messages
   - Call quest_assign_tasks tool via KĀDI broker
@@ -149,7 +149,7 @@
   - _Requirements: Requirement 4 (Task Assignment to Worker Agents)_
   - _Prompt: Role: Task Management Developer with agent coordination expertise | Task: Implement task assignment handler that processes assignment requests, calls quest_assign_tasks via KĀDI broker, and reports assigned/blocked task counts | Restrictions: Must use ProducerToolUtils, respect task dependencies | Success: Tasks assigned correctly, user receives counts, blocked tasks reported, dependencies respected_
 
-- [ ] 2.6. Implement task execution trigger
+- [x] 2.6. Implement task execution trigger
   - File: C:\GitHub\agent-producer\src\handlers\task-execution.ts
   - Handle "Start implementing tasks" messages
   - Publish task.assigned events to 'utility' network for all assigned tasks
@@ -159,18 +159,33 @@
   - _Requirements: Requirement 5 (Task Execution by Worker Agents)_
   - _Prompt: Role: Event-Driven Architecture Developer with KĀDI expertise | Task: Implement task execution trigger that publishes task.assigned events to utility network with complete payload for worker agents | Restrictions: Must use KadiClient.publish(), include all required payload fields, follow event schema | Success: Events published correctly, all assigned tasks receive events, payload matches schema, worker agents triggered_
 
-- [ ] 2.7. Implement task completion event handler
+- [ ] 2.7. Implement task completion event handler with LLM verification
   - File: C:\GitHub\agent-producer\src\handlers\task-completion.ts
-  - Subscribe to task.completed events from 'utility' network
-  - Call quest_verify_task tool with task result
-  - Call quest_submit_task_result tool to record completion
-  - Send Discord notification for each completed task
-  - Purpose: Handle task completion from worker agents
-  - _Leverage: KĀDI event subscription (client.subscribe()), ProducerToolUtils_
-  - _Requirements: Requirement 5 (Task Execution by Worker Agents)_
-  - _Prompt: Role: Event Handler Developer with task verification expertise | Task: Implement task completion event handler that subscribes to task.completed events, verifies results, records completion, and notifies Discord | Restrictions: Must use KĀDI subscription, verify before recording, send notifications | Success: Completed tasks verified, recorded correctly, user receives notifications, event handling reliable_
+  - Subscribe to task.completed events from 'global' network
+  - Use LLM to analyze task completion against verificationCriteria
+  - Generate verification score (0-100) and summary based on filesCreated, filesModified, commitSha
+  - Call quest_verify_task tool with calculated score and summary
+  - If score >= 80: Publish task.ready_for_approval event and send Discord message asking for human approval
+  - If score < 80: Publish task.failed event with feedback and republish task.assigned to retry
+  - Purpose: Handle task completion with automated LLM verification and score-based decision making
+  - _Leverage: KĀDI event subscription (client.subscribe()), ProviderManager for LLM, ProducerToolUtils_
+  - _Requirements: Requirement 5 (Task Execution by Worker Agents), mcp-shrimp-task-manager verification pattern_
+  - _Prompt: Role: Event Handler Developer with LLM verification expertise | Task: Implement task completion event handler that subscribes to task.completed events, uses LLM to calculate verification score (0-100) against verificationCriteria, calls quest_verify_task with score, and either requests human approval (score >= 80) or triggers automatic retry (score < 80) | Restrictions: Must use KĀDI subscription on global network, LLM must analyze verificationCriteria, score threshold is 80, follow mcp-shrimp-task-manager pattern | Success: Events received, LLM verification works, scores calculated correctly, high-score tasks await approval, low-score tasks retry automatically_
 
-- [ ] 2.8. Implement task failure event handler
+- [ ] 2.7.1. Implement task approval handler
+  - File: C:\GitHub\agent-producer\src\handlers\task-approval.ts
+  - Handle Discord mentions for task approval: "approve task {taskId}", "reject task {taskId}", "request changes for task {taskId}"
+  - If approved: Call quest_submit_task_result to finalize completion
+  - If rejected: Publish task.failed event and republish task.assigned to retry
+  - If changes requested: Provide feedback and republish task.assigned with guidance
+  - Check if all quest tasks completed after approval
+  - If all tasks done: Trigger git merge and push workflow automatically
+  - Purpose: Enable human-in-the-loop approval for verified tasks
+  - _Leverage: Discord bot message handlers, ProducerToolUtils, git-operations handler_
+  - _Requirements: Requirement 5 (Task Execution), human-in-the-loop control from design.md_
+  - _Prompt: Role: Discord Bot Developer with approval workflow expertise | Task: Implement task approval handler that processes Discord approval/rejection/change-request commands, calls quest_submit_task_result on approval, triggers retry on rejection, checks quest completion status, and initiates git workflow when all quest tasks complete | Restrictions: Must handle all three commands, verify task state before approval, check quest completion status, trigger git workflow automatically | Success: Approval commands work, task finalized on approval, retry on rejection, quest completion detected, git workflow triggered automatically_
+
+- [x] 2.8. Implement task failure event handler
   - File: C:\GitHub\agent-producer\src\handlers\task-failure.ts
   - Subscribe to task.failed events from 'utility' network
   - Send Discord notification with error details
@@ -183,17 +198,20 @@
 
 - [ ] 2.9. Implement git merge and push workflow
   - File: C:\GitHub\agent-producer\src\handlers\git-operations.ts
-  - Handle "push to GitHub" messages
+  - Triggered automatically when all quest tasks are approved OR manually via "push to GitHub" message
   - Ask user for confirmation with commit counts
-  - Call git_merge tool via KĀDI broker for each worker branch
-  - Call git_push tool to push merged changes
+  - Call git_merge tool via KĀDI broker for each worker branch (agent-playground-{role} → agent-playground main)
+  - Call git_push tool to push merged changes to remote
   - Send Discord notification with push results
-  - Purpose: Coordinate git operations across multiple agents
+  - Purpose: Coordinate git operations across multiple agents with automatic triggering on quest completion
+  - _Leverage: ProducerToolUtils for remote git tool calls, quest status checking_
+  - _Requirements: Requirement 7 (Git Operations and Push Workflow)_
+  - _Prompt: Role: Git Workflow Developer with multi-agent coordination expertise | Task: Implement git merge and push workflow that automatically triggers when all quest tasks approved, coordinates merging worker branches to main, pushes to remote, and reports results with user confirmation | Restrictions: Must ask for confirmation, handle merge conflicts, report results clearly, check quest completion status, support both automatic and manual triggering | Success: Branches merge correctly, push succeeds, user receives results, conflicts reported, automatic triggering works, confirmation required_
   - _Leverage: ProducerToolUtils for remote git tool calls_
   - _Requirements: Requirement 7 (Git Operations and Push Workflow)_
   - _Prompt: Role: Git Workflow Developer with multi-agent coordination expertise | Task: Implement git merge and push workflow that coordinates merging worker branches, pushes to remote, and reports results with user confirmation | Restrictions: Must ask for confirmation, handle merge conflicts, report results clearly | Success: Branches merge correctly, push succeeds, user receives results, conflicts reported, confirmation required_
 
-- [ ] 2.10. Integrate all handlers into agent-producer
+- [x] 2.10. Integrate all handlers into agent-producer
   - File: C:\GitHub\agent-producer\src\index.ts
   - Import all handler modules
   - Register Discord message handlers
@@ -207,7 +225,7 @@
 
 ## Phase 3: Worker Agent Implementation
 
-- [ ] 3.1. Enhance agent-artist with task execution
+- [x] 3.1. Enhance agent-artist with task execution
   - File: C:\GitHub\agent-artist\src\index.ts
   - Verify and enhance task execution capabilities
   - Add quest_get_task_details remote tool call for full task info
@@ -218,7 +236,7 @@
   - _Requirements: Requirement 5 (Task Execution by Worker Agents)_
   - _Prompt: Role: Worker Agent Developer with task execution expertise | Task: Enhance agent-artist task execution by adding quest_get_task_details call, using implementationGuide and verificationCriteria, and verifying event payload schema | Restrictions: Must use WorkerAgentFactory, follow existing patterns, maintain event schema | Success: Agent executes tasks correctly, files created/modified, commits well-formed, events published, implementation guide followed_
 
-- [ ] 3.2. Implement agent registration and heartbeat in agent-artist
+- [x] 3.2. Implement agent registration and heartbeat in agent-artist
   - File: C:\GitHub\agent-artist\src\index.ts
   - Call quest_register_agent on startup with capabilities
   - Send quest_agent_heartbeat every 30 seconds
@@ -228,7 +246,7 @@
   - _Requirements: Requirement 8 (Agent Registration and Heartbeat)_
   - _Prompt: Role: Agent Lifecycle Developer with registration system expertise | Task: Implement agent registration lifecycle in agent-artist including startup registration, 30-second heartbeat interval, and graceful shutdown unregistration | Restrictions: Must use ProducerToolUtils, maintain 30s heartbeat interval, handle shutdown gracefully | Success: Agent registers on startup, heartbeats sent reliably every 30 seconds, unregistration on shutdown, lifecycle complete_
 
-- [ ] 3.3. Verify shadow-agent-artist functionality
+- [x] 3.3. Verify shadow-agent-artist functionality
   - File: C:\GitHub\shadow-agent-artist\src\index.ts
   - Verify shadow agent watches C:\GitHub\agent-playground-artist for file changes
   - Verify syncs changes to C:\GitHub\shadow-agent-playground-artist
@@ -242,7 +260,7 @@
 
 ## Phase 4: Git Integration Verification
 
-- [ ] 4.1. Verify git-merge tool implementation
+- [x] 4.1. Verify git-merge tool implementation
   - File: C:\GitHub\mcp-server-git\src\mcp-server\tools\definitions\git-merge.tool.ts
   - Verify tool supports required parameters: path, branch, message, noFastForward, strategy, abort
   - Verify output includes: success, conflicts, conflictedFiles, mergedFiles, message
@@ -251,7 +269,7 @@
   - _Requirements: Requirement 7 (Git Operations and Push Workflow)_
   - _Prompt: Role: Git Tool QA Engineer with merge workflow expertise | Task: Verify git-merge tool supports all required parameters and returns complete output including conflict detection and merged files | Restrictions: Do not modify tool, only verify functionality | Success: Tool supports all needed parameters, conflict detection works, output complete, merge operations functional_
 
-- [ ] 4.2. Verify git-push tool implementation
+- [x] 4.2. Verify git-push tool implementation
   - File: C:\GitHub\mcp-server-git\src\mcp-server\tools\definitions\git-push.tool.ts
   - Verify tool supports required parameters: path, branch, remote, force, forceWithLease, setUpstream
   - Verify output includes: success, remote, branch, pushedRefs, rejectedRefs
@@ -283,6 +301,23 @@
   - Verify git merge and push operations
   - Document Discord conversation logs, screenshots, issues found
   - Purpose: Validate end-to-end quest workflow
+  - _Leverage: Manual Testing via Discord Bot section from design.md_
+  - _Requirements: All requirements (integration test)_
+  - _Prompt: Role: QA Test Engineer with end-to-end testing expertise | Task: Execute complete quest workflow from creation to push, documenting all steps, verifying all requirements, and capturing issues | Restrictions: Test in controlled environment, document everything, do not skip steps | Success: Complete workflow executes successfully, all requirements met, comprehensive documentation, issues logged_
+
+- [ ] 5.1.1. Manual test: Complete workflow with LLM verification and human approval
+  - Test Scenario: Create quest → approve → generate tasks → assign → execute → LLM verification → human approval → git push
+  - Verify LLM calculates verification score correctly based on verificationCriteria
+  - Verify score >= 80 triggers approval request in Discord with task details
+  - Verify score < 80 triggers automatic retry with feedback
+  - Verify human approval commands work: "approve task {taskId}", "reject task {taskId}", "request changes for task {taskId}"
+  - Verify task finalized on approval (quest_submit_task_result called)
+  - Verify all tasks completed triggers automatic git merge and push workflow
+  - Document Discord conversation logs, verification scores, approval interactions, git operations
+  - Purpose: Validate end-to-end workflow with LLM verification and human approval
+  - _Leverage: Manual Testing via Discord Bot section from design.md, mcp-shrimp-task-manager verification pattern_
+  - _Requirements: All requirements (integration test with human approval), Requirement 5 (Task Execution)_
+  - _Prompt: Role: QA Test Engineer with approval workflow testing expertise | Task: Execute complete quest workflow including LLM verification and human approval, documenting verification scores, approval interactions, automatic retry behavior, and git operations triggering | Restrictions: Test in controlled environment, document everything, verify score thresholds (80), test all approval commands | Success: Complete workflow executes successfully, LLM verification accurate, approval workflow smooth, automatic retry works, git operations triggered automatically, all approval commands functional_
   - _Leverage: Manual Testing via Discord Bot section from design.md_
   - _Requirements: All requirements (integration test)_
   - _Prompt: Role: QA Test Engineer with end-to-end testing expertise | Task: Execute complete quest workflow from creation to push, documenting all steps, verifying all requirements, and capturing issues | Restrictions: Test in controlled environment, document everything, do not skip steps | Success: Complete workflow executes successfully, all requirements met, comprehensive documentation, issues logged_
