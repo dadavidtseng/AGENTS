@@ -8,6 +8,25 @@
 /**
  * Discord @mention event published to topic: discord.mention.{BOT_USER_ID}
  */
+
+/**
+ * Image attachment extracted from a chat message.
+ * Discord: public CDN URL provided directly.
+ * Slack: base64-encoded since file URLs require bot token auth.
+ */
+export interface ChatImageAttachment {
+  /** Original filename */
+  filename: string;
+  /** MIME type (e.g. image/png, image/jpeg, image/gif) */
+  contentType: string;
+  /** File size in bytes */
+  size: number;
+  /** Publicly accessible URL (Discord CDN) */
+  url?: string;
+  /** Base64-encoded image data (Slack files downloaded with bot token) */
+  base64?: string;
+}
+
 export interface DiscordMentionEvent {
   /** Unique Discord message ID */
   id: string;
@@ -29,6 +48,8 @@ export interface DiscordMentionEvent {
   bot_id: string;
   /** ISO 8601 datetime when event was captured */
   timestamp: string;
+  /** Image attachments from the message (Discord CDN URLs) */
+  attachments?: ChatImageAttachment[];
 }
 
 /**
@@ -51,4 +72,6 @@ export interface SlackMentionEvent {
   bot_id: string;
   /** ISO 8601 datetime when event was captured */
   timestamp: string;
+  /** Image attachments from the message (base64-encoded from Slack) */
+  attachments?: ChatImageAttachment[];
 }
