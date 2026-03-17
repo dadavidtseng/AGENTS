@@ -44,6 +44,8 @@ Desktop.ini
 # KADI specific
 *.key
 *.pem
+abilities/
+agent-lock.json
 
 # Spec workflow (if you want to keep it private)
 .spec-workflow/
