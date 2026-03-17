@@ -12,6 +12,7 @@
  */
 
 import { logger, MODULE_AGENT, timer } from 'agents-library';
+import type { ProviderManager, Message } from 'agents-library';
 import type { KadiClient } from '@kadi.build/core';
 
 // ============================================================================
@@ -64,16 +65,22 @@ const AUTO_OURS_PATTERNS = [
 // Git Tool Wrappers
 // ============================================================================
 
-/** Parse mcp-server-git response content */
+/** Parse mcp-server-git response content — handles both JSON and plain text */
 function parseGitResponse(result: { content: Array<{ type: string; text: string }> }): any {
-  return JSON.parse(result.content[0].text);
+  const text = result.content[0].text;
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Response is plain text (e.g. error message) — wrap it
+    return { success: false, message: text };
+  }
 }
 
 /**
  * Set the working directory for subsequent git operations.
  */
 async function setWorkingDir(client: KadiClient, path: string): Promise<void> {
-  await client.invokeRemote('git_set_working_dir', { path });
+  await client.invokeRemote('git_git_set_working_dir', { path });
 }
 
 /**
@@ -88,7 +95,7 @@ async function getStatus(client: KadiClient, path: string): Promise<{
 }> {
   const result = await client.invokeRemote<{
     content: Array<{ type: string; text: string }>;
-  }>('git_status', { path });
+  }>('git_git_status', { path });
   return parseGitResponse(result);
 }
 
@@ -99,7 +106,7 @@ async function mergeBranch(client: KadiClient, path: string, branch: string, mes
   try {
     const result = await client.invokeRemote<{
       content: Array<{ type: string; text: string }>;
-    }>('git_merge', {
+    }>('git_git_merge', {
       path,
       branch,
       noFastForward: true,
@@ -107,6 +114,40 @@ async function mergeBranch(client: KadiClient, path: string, branch: string, mes
     });
 
     const data = parseGitResponse(result);
+
+    // MCP server may return conflict info as non-JSON text in the response
+    // body instead of throwing. Detect conflicts from the message text so
+    // the caller can proceed to conflict resolution.
+    if (data.success === false && data.message) {
+      const msg: string = data.message;
+      if (msg.includes('CONFLICT') || msg.includes('conflict')) {
+        const conflictedFiles: string[] = [];
+        const conflictPattern = /CONFLICT.*?:\s*Merge conflict in\s+(.+?)$/gm;
+        let match: RegExpExecArray | null;
+        while ((match = conflictPattern.exec(msg)) !== null) {
+          // Extract just the filename, strip any leading git metadata (SHAs, etc)
+          const raw = match[1].trim();
+          // Git may prefix with SHAs like "abc123 def456 path/to/file.txt"
+          // Take the last token (the actual file path)
+          const tokens = raw.split(/\s+/);
+          const filename = tokens[tokens.length - 1];
+          if (filename) conflictedFiles.push(filename);
+        }
+        logger.info(
+          MODULE_AGENT,
+          `Detected ${conflictedFiles.length} conflicted file(s) from response: ${conflictedFiles.join(', ')}`,
+          timer.elapsed('main'),
+        );
+        return {
+          success: false,
+          conflicts: true,
+          conflictedFiles,
+          mergedFiles: [],
+          message: msg,
+        };
+      }
+    }
+
     return {
       success: data.success ?? true,
       conflicts: data.conflicts ?? false,
@@ -116,15 +157,47 @@ async function mergeBranch(client: KadiClient, path: string, branch: string, mes
     };
   } catch (err: any) {
     // Merge failure with conflicts still returns useful data
-    if (err.message?.includes('CONFLICT') || err.message?.includes('conflict')) {
+    // Debug: log the full error structure
+    logger.info(MODULE_AGENT, `Merge error structure: ${JSON.stringify(err, null, 2).slice(0, 1000)}`, timer.elapsed('main'));
+    
+    // Extract text from all possible error locations
+    const errorText = err.message || '';
+    const stdoutText = err.stdout || '';
+    const stderrText = err.stderr || '';
+    
+    // Check if error has content array (MCP response format)
+    let contentText = '';
+    if (err.content && Array.isArray(err.content)) {
+      contentText = err.content.map((c: any) => c.text || '').join('\n');
+    }
+    
+    // Combine all text sources - errorText already contains the full formatted output
+    const combinedText = [errorText, stdoutText, stderrText, contentText].join('\n');
+    
+    logger.info(MODULE_AGENT, `Combined text length: ${combinedText.length}, contains CONFLICT: ${combinedText.includes('CONFLICT')}`, timer.elapsed('main'));
+    
+    if (combinedText.includes('CONFLICT') || combinedText.includes('conflict')) {
+      // Extract conflicted filenames from error message (e.g. "CONFLICT (add/add): Merge conflict in demo/index.html")
+      const conflictedFiles: string[] = [];
+      const conflictPattern = /CONFLICT.*?:\s*Merge conflict in (.+)/g;
+      let match: RegExpExecArray | null;
+      while ((match = conflictPattern.exec(combinedText)) !== null) {
+        conflictedFiles.push(match[1].trim());
+      }
+
+      logger.info(MODULE_AGENT, `Detected ${conflictedFiles.length} conflicted file(s): ${conflictedFiles.join(', ')}`, timer.elapsed('main'));
+
       return {
         success: false,
         conflicts: true,
-        conflictedFiles: [],
+        conflictedFiles,
         mergedFiles: [],
-        message: err.message,
+        message: errorText || 'Merge conflict detected',
       };
     }
+    
+    // Not a conflict error - re-throw
+    logger.error(MODULE_AGENT, `Merge failed (non-conflict): ${errorText}`, timer.elapsed('main'));
     throw err;
   }
 }
@@ -138,7 +211,7 @@ async function checkoutFile(
   file: string,
   strategy: 'ours' | 'theirs',
 ): Promise<void> {
-  await client.invokeRemote('git_checkout', {
+  await client.invokeRemote('git_git_checkout', {
     path,
     files: [file],
     [strategy]: true,
@@ -149,7 +222,7 @@ async function checkoutFile(
  * Stage resolved files.
  */
 async function stageFiles(client: KadiClient, path: string, files: string[]): Promise<void> {
-  await client.invokeRemote('git_add', { path, files });
+  await client.invokeRemote('git_git_add', { path, files });
 }
 
 /**
@@ -158,7 +231,7 @@ async function stageFiles(client: KadiClient, path: string, files: string[]): Pr
 async function commit(client: KadiClient, path: string, message: string): Promise<string> {
   const result = await client.invokeRemote<{
     content: Array<{ type: string; text: string }>;
-  }>('git_commit', { path, message });
+  }>('git_git_commit', { path, message });
   const data = parseGitResponse(result);
   return data.commitHash ?? '';
 }
@@ -167,7 +240,7 @@ async function commit(client: KadiClient, path: string, message: string): Promis
  * Abort an in-progress merge.
  */
 async function abortMerge(client: KadiClient, path: string): Promise<void> {
-  await client.invokeRemote('git_merge', { path, abort: true });
+  await client.invokeRemote('git_git_merge', { path, abort: true });
 }
 
 // ============================================================================
@@ -189,6 +262,115 @@ function classifyConflict(filePath: string): 'ours' | 'theirs' | null {
 }
 
 /**
+ * Read a file's content from the working tree (with conflict markers if mid-merge).
+ */
+async function readFileContent(client: KadiClient, repoPath: string, filePath: string): Promise<string | null> {
+  try {
+    logger.info(MODULE_AGENT, `  Attempting to read ${filePath} with encoding=text`, timer.elapsed('main'));
+    // Force text encoding to read conflict markers (even for binary-detected files like .svg)
+    const result = await client.invokeRemote<{
+      content: Array<{ type: string; text: string }>;
+    }>('read_file', { filePath: `${repoPath}/${filePath}`, encoding: 'text' });
+
+    logger.info(MODULE_AGENT, `  read_file returned, checking response structure`, timer.elapsed('main'));
+    const text = result?.content?.[0]?.text;
+    if (!text) {
+      logger.warn(MODULE_AGENT, `  No text in MCP wrapper, trying direct response`, timer.elapsed('main'));
+      // Response might be direct JSON instead of MCP-wrapped
+      const direct = result as any;
+      if (direct.success && direct.content) {
+        logger.info(MODULE_AGENT, `  Found content in direct response, length: ${direct.content.length}`, timer.elapsed('main'));
+        return direct.content;
+      }
+      logger.warn(MODULE_AGENT, `  No content found: ${JSON.stringify(result).slice(0, 200)}`, timer.elapsed('main'));
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(text);
+      logger.info(MODULE_AGENT, `  Parsed response, keys: ${Object.keys(parsed).join(', ')}`, timer.elapsed('main'));
+      return parsed.content ?? parsed.text ?? text;
+    } catch {
+      logger.info(MODULE_AGENT, `  Response is plain text, length: ${text.length}`, timer.elapsed('main'));
+      return text;
+    }
+  } catch (err: any) {
+    logger.warn(MODULE_AGENT, `  readFileContent failed for ${filePath}: ${err.message}`, timer.elapsed('main'));
+    return null;
+  }
+}
+
+/**
+ * Write resolved content to a file in the working tree.
+ */
+async function writeFileContent(
+  client: KadiClient, repoPath: string, filePath: string, content: string,
+): Promise<void> {
+  await client.invokeRemote('create_file', {
+    filePath: `${repoPath}/${filePath}`,
+    content,
+  });
+}
+
+/**
+ * Attempt LLM-based merge conflict resolution.
+ * Reads the file with conflict markers, sends to LLM for intelligent merge,
+ * writes the resolved content back, and stages it.
+ * Returns true if successful, false if LLM can't resolve.
+ */
+async function llmMergeConflict(
+  client: KadiClient,
+  repoPath: string,
+  filePath: string,
+  providerManager: ProviderManager,
+): Promise<boolean> {
+  const conflictContent = await readFileContent(client, repoPath, filePath);
+  if (!conflictContent) {
+    logger.warn(MODULE_AGENT, `  LLM merge skipped for ${filePath}: could not read file content`, timer.elapsed('main'));
+    return false;
+  }
+  if (!conflictContent.includes('<<<<<<<')) {
+    logger.warn(MODULE_AGENT, `  LLM merge skipped for ${filePath}: no conflict markers found`, timer.elapsed('main'));
+    return false;
+  }
+
+  const messages: Message[] = [
+    {
+      role: 'system',
+      content:
+        'You are a senior developer resolving a git merge conflict. ' +
+        'The file contains standard git conflict markers (<<<<<<< ======= >>>>>>>). ' +
+        'Produce the correctly merged file content that preserves the intent of BOTH sides. ' +
+        'Output ONLY the resolved file content — no explanations, no markdown fences. ' +
+        'If you cannot confidently merge, respond with exactly: CANNOT_RESOLVE',
+    },
+    {
+      role: 'user',
+      content: `File: ${filePath}\n\n${conflictContent}`,
+    },
+  ];
+
+  try {
+    const result = await providerManager.chat(messages, { maxTokens: 4096 });
+    if (!result.success || !result.data) return false;
+
+    const resolved = result.data.trim();
+    if (resolved === 'CANNOT_RESOLVE' || resolved.includes('<<<<<<<')) {
+      return false;
+    }
+
+    await writeFileContent(client, repoPath, filePath, resolved);
+    await stageFiles(client, repoPath, [filePath]);
+
+    logger.info(MODULE_AGENT, `  LLM-resolved ${filePath}`, timer.elapsed('main'));
+    return true;
+  } catch (err: any) {
+    logger.warn(MODULE_AGENT, `  LLM merge failed for ${filePath}: ${err.message}`, timer.elapsed('main'));
+    return false;
+  }
+}
+
+/**
  * Attempt to auto-resolve conflicts for files matching known patterns.
  * Returns which files were resolved and which need escalation.
  */
@@ -196,6 +378,7 @@ async function resolveConflicts(
   client: KadiClient,
   repoPath: string,
   conflictedFiles: string[],
+  providerManager?: ProviderManager | null,
 ): Promise<ConflictResolutionResult> {
   const autoResolved: string[] = [];
   const escalated: string[] = [];
@@ -219,6 +402,14 @@ async function resolveConflicts(
           `  Failed to auto-resolve ${file}: ${err.message}`,
           timer.elapsed('main'),
         );
+        escalated.push(file);
+      }
+    } else if (providerManager) {
+      // Try LLM-based merge before escalating
+      const resolved = await llmMergeConflict(client, repoPath, file, providerManager);
+      if (resolved) {
+        autoResolved.push(file);
+      } else {
         escalated.push(file);
       }
     } else {
@@ -258,7 +449,7 @@ async function escalateToHuman(
     message: `Merge conflict in ${escalatedFiles.length} file(s) requires manual resolution`,
     timestamp: new Date().toISOString(),
     escalatedBy: agentId,
-  }, { broker: 'default', network: 'global' });
+  }, { broker: 'default', network: 'producer' });
 
   logger.warn(
     MODULE_AGENT,
@@ -295,6 +486,7 @@ export async function mergeTaskBranch(
   questId: string,
   agentId: string,
   targetBranch?: string,
+  providerManager?: ProviderManager | null,
 ): Promise<MergeOperationResult> {
   logger.info(
     MODULE_AGENT,
@@ -313,8 +505,14 @@ export async function mergeTaskBranch(
     `Merge ${taskBranch} (quest: ${questId})`,
   );
 
-  if (!merge.conflicts) {
+  if (merge.success && !merge.conflicts) {
     logger.info(MODULE_AGENT, `Merge clean — no conflicts`, timer.elapsed('main'));
+    return { merge };
+  }
+
+  if (!merge.success && !merge.conflicts) {
+    // Merge failed for a non-conflict reason (e.g. git error)
+    logger.error(MODULE_AGENT, `Merge failed: ${merge.message}`, timer.elapsed('main'));
     return { merge };
   }
 
@@ -331,8 +529,8 @@ export async function mergeTaskBranch(
     timer.elapsed('main'),
   );
 
-  // Attempt auto-resolution
-  const resolution = await resolveConflicts(client, repoPath, conflictedFiles);
+  // Attempt auto-resolution (pattern-based + LLM fallback)
+  const resolution = await resolveConflicts(client, repoPath, conflictedFiles, providerManager);
 
   if (resolution.resolved) {
     // All conflicts resolved — commit
