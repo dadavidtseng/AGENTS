@@ -760,9 +760,23 @@ export class SlackBot extends BaseBot {
       function: {
         name: tool.name,
         description: tool.description || '',
-        parameters: tool.input_schema,
+        parameters: this.sanitizeSchema(tool.input_schema),
       },
     }));
+  }
+
+  /** Strip internal _kadi metadata from tool schemas to avoid circular refs */
+  private sanitizeSchema(schema: any): any {
+    if (!schema || typeof schema !== 'object') return schema;
+    const { _kadi, $schema, ...rest } = schema;
+    if (rest.properties) {
+      const { _kadi: _, ...cleanProps } = rest.properties;
+      rest.properties = cleanProps;
+    }
+    if (Array.isArray(rest.required)) {
+      rest.required = rest.required.filter((r: string) => r !== '_kadi');
+    }
+    return rest;
   }
 
   /**
