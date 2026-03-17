@@ -125,10 +125,9 @@ export class KadiEventPublisher {
       name: this.config.clientName,
       version: this.config.version,
       brokers: {
-        default: this.config.brokerUrl
+        default: { url: this.config.brokerUrl, networks: this.config.networks }
       },
       defaultBroker: 'default',
-      networks: this.config.networks
     });
 
     // Register a dummy tool to make agent visible in system snapshots

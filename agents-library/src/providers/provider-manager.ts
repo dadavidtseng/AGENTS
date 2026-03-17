@@ -136,9 +136,12 @@ export class ProviderManager {
         `[ProviderManager:Chat] Primary provider ${selectedProvider} failed, trying fallback ${this.config.fallbackProvider}`
       );
 
+      // Remove model from options when falling back - let fallback provider use its default
+      const fallbackOptions = options ? { ...options, model: undefined } : undefined;
+
       const fallbackResult = await this.attemptWithRetry(
         this.config.fallbackProvider,
-        async (provider) => provider.chat(messages, options)
+        async (provider) => provider.chat(messages, fallbackOptions)
       );
 
       if (fallbackResult.success) {
@@ -196,9 +199,12 @@ export class ProviderManager {
         `[ProviderManager:Stream] Primary provider ${selectedProvider} failed, trying fallback ${this.config.fallbackProvider}`
       );
 
+      // Remove model from options when falling back - let fallback provider use its default
+      const fallbackOptions = options ? { ...options, model: undefined } : undefined;
+
       const fallbackResult = await this.attemptWithRetry(
         this.config.fallbackProvider,
-        async (provider) => provider.streamChat(messages, options)
+        async (provider) => provider.streamChat(messages, fallbackOptions)
       );
 
       if (fallbackResult.success) {

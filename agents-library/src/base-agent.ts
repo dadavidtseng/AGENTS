@@ -104,11 +104,25 @@ export interface BaseAgentConfig {
   /** Agent version string @default '1.0.0' */
   version?: string;
 
-  /** KĀDI broker WebSocket URL */
+  /** KĀDI broker WebSocket URL (used as the 'default' broker) */
   brokerUrl: string;
 
-  /** KĀDI networks this agent belongs to */
+  /** KĀDI networks this agent belongs to (for the default broker) */
   networks: string[];
+
+  /**
+   * Additional named brokers to connect to simultaneously.
+   * Each key is a broker name, value is { url, networks }.
+   * The primary broker (brokerUrl + networks) is always named 'default'.
+   *
+   * @example
+   * ```typescript
+   * additionalBrokers: {
+   *   remote: { url: 'ws://remote:8080/kadi', networks: ['global'] },
+   * }
+   * ```
+   */
+  additionalBrokers?: Record<string, { url: string; networks: string[] }>;
 
   /** Optional LLM provider configuration */
   provider?: BaseAgentProviderConfig;
@@ -157,15 +171,23 @@ export class BaseAgent {
 
     logger.info(MODULE_AGENT, `Initializing BaseAgent: ${config.agentId} (role: ${config.agentRole})`, timer.elapsed(this.timerKey));
 
+    // Build brokers map: 'default' + any additional brokers
+    const brokers: Record<string, { url: string; networks?: string[] }> = {
+      default: { url: config.brokerUrl, networks: config.networks },
+    };
+    if (config.additionalBrokers) {
+      for (const [name, entry] of Object.entries(config.additionalBrokers)) {
+        brokers[name] = { url: entry.url, networks: entry.networks };
+        logger.info(MODULE_AGENT, `   Broker '${name}': ${entry.url} [${entry.networks.join(', ')}]`, timer.elapsed(this.timerKey));
+      }
+    }
+
     // Create KadiClient
     this.client = new KadiClient({
       name: config.agentId,
       version: config.version || '1.0.0',
-      brokers: {
-        default: config.brokerUrl,
-      },
+      brokers,
       defaultBroker: 'default',
-      networks: config.networks,
     });
 
     // Create ProviderManager if configured
@@ -195,13 +217,14 @@ export class BaseAgent {
    * After connection, initializes MemoryService if configured.
    */
   async connect(): Promise<void> {
-    logger.info(MODULE_AGENT, `Connecting ${this.config.agentId} to broker at ${this.config.brokerUrl}...`, timer.elapsed(this.timerKey));
+    const brokerCount = 1 + Object.keys(this.config.additionalBrokers || {}).length;
+    logger.info(MODULE_AGENT, `Connecting ${this.config.agentId} to ${brokerCount} broker(s)...`, timer.elapsed(this.timerKey));
+    logger.info(MODULE_AGENT, `   Broker 'default': ${this.config.brokerUrl} [${this.config.networks.join(', ')}]`, timer.elapsed(this.timerKey));
 
     try {
       await this.client.connect();
       this.connected = true;
-      logger.info(MODULE_AGENT, `   ✅ Connected to broker`, timer.elapsed(this.timerKey));
-      logger.info(MODULE_AGENT, `   Networks: ${this.config.networks.join(', ')}`, timer.elapsed(this.timerKey));
+      logger.info(MODULE_AGENT, `   ✅ Connected to ${brokerCount} broker(s)`, timer.elapsed(this.timerKey));
     } catch (error: any) {
       logger.error(MODULE_AGENT, `Failed to connect to broker: ${error.message || String(error)}`, timer.elapsed(this.timerKey), error);
       throw error;

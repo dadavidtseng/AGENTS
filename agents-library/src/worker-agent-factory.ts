@@ -33,9 +33,9 @@ import type { Message, ToolDefinition, ChatOptions } from './providers/types.js'
 import {
   TaskAssignedEvent,
   TaskAssignedEventSchema,
-  TaskCompletedEvent,
   TaskFailedEvent,
-  TaskRejectedEvent
+  TaskRejectedEvent,
+  type TaskReviewRequestedPayload,
 } from './types/event-schemas.js';
 import { logger, MODULE_AGENT } from './utils/logger.js';
 import { timer } from './utils/timer.js';
@@ -68,6 +68,7 @@ import { timer } from './utils/timer.js';
  * ```
  */
 const WorkerAgentConfigSchema = z.object({
+  agentId: z.string().optional(),
   role: z.enum(['artist', 'designer', 'programmer']),
   worktreePath: z.string().min(1, 'Worktree path is required'),
   brokerUrl: z.string()
@@ -305,13 +306,12 @@ export class BaseWorkerAgent {
 
     // Initialize KĀDI client
     this.client = new KadiClient({
-      name: `agent-${config.role}`,
+      name: config.agentId || `agent-${config.role}`,
       version: '1.0.0',
       brokers: {
-        default: config.brokerUrl
+        default: { url: config.brokerUrl, networks: config.networks }
       },
       defaultBroker: 'default',
-      networks: config.networks
     });
 
     // COMPOSITION: Create BaseBot instance for circuit breaker and retry logic
@@ -320,7 +320,7 @@ export class BaseWorkerAgent {
       const baseBotConfig: BaseBotConfig = {
         client: this.client,
         anthropicApiKey: config.anthropicApiKey,
-        botUserId: `agent-${config.role}`
+        botUserId: config.agentId || `agent-${config.role}`
       };
       this.baseBot = new (class extends BaseBot {
         protected async handleMention(_event: any): Promise<void> { /* No-op */ }
@@ -519,8 +519,9 @@ export class BaseWorkerAgent {
       // Mark task as in-flight before execution
       this.processedTaskIds.add(validatedEvent.taskId);
 
-      // Capability validation: check if task matches this agent's capabilities
-      if (this.capabilities.length > 0) {
+      // Capability validation: skip if task role matches this agent's role (role-based routing
+      // already ensures correct assignment). Only validate when roles don't match or are missing.
+      if (this.capabilities.length > 0 && validatedEvent.role !== this.role) {
         const rejectionReason = this.validateTaskCapability(validatedEvent);
         if (rejectionReason) {
           logger.warn(MODULE_AGENT, `   ⚠️  Task capability mismatch`, timer.elapsed('factory'));
@@ -531,6 +532,8 @@ export class BaseWorkerAgent {
           return;
         }
         logger.info(MODULE_AGENT, `   ✅ Capability check passed`, timer.elapsed('factory'));
+      } else if (validatedEvent.role === this.role) {
+        logger.info(MODULE_AGENT, `   ✅ Role match (${this.role}) — skipping capability check`, timer.elapsed('factory'));
       }
 
       // Worktree scope validation: soft warning only (worker always operates within its worktree directory)
@@ -668,6 +671,7 @@ export class BaseWorkerAgent {
       const filesModified: string[] = [];
       let commitSha = 'unknown';
       let finalResponse = '';
+      let consecutiveFailures = 0;
 
       for (let iteration = 0; iteration < BaseWorkerAgent.MAX_TOOL_LOOP_ITERATIONS; iteration++) {
         logger.info(MODULE_AGENT, `🔄 Agent loop iteration ${iteration + 1}/${BaseWorkerAgent.MAX_TOOL_LOOP_ITERATIONS}`, timer.elapsed('factory'));
@@ -728,8 +732,10 @@ export class BaseWorkerAgent {
                 tool_call_id: toolCall.id
               });
 
+              consecutiveFailures = 0;
               logger.info(MODULE_AGENT, `   ✅ Tool ${toolName} succeeded`, timer.elapsed('factory'));
             } catch (error: any) {
+              consecutiveFailures++;
               const errorMsg = `Tool ${toolName} failed: ${error.message || String(error)}`;
               logger.error(MODULE_AGENT, `   ❌ ${errorMsg}`, timer.elapsed('factory'));
 
@@ -740,6 +746,14 @@ export class BaseWorkerAgent {
               });
             }
           }
+          // Circuit breaker: if 3+ consecutive tool failures, tell LLM to stop retrying
+          if (consecutiveFailures >= 3) {
+            logger.warn(MODULE_AGENT, `⚠️  Circuit breaker: ${consecutiveFailures} consecutive tool failures — instructing LLM to wrap up`, timer.elapsed('factory'));
+            messages.push({
+              role: 'user',
+              content: 'SYSTEM: Multiple consecutive tool failures detected. Stop retrying failed tools and provide your final response summarizing what you accomplished so far.'
+            });
+          }
           // Continue loop — LLM will process tool results
         } else {
           // Plain text response — agent is done
@@ -749,19 +763,52 @@ export class BaseWorkerAgent {
         }
       }
 
-      // Step 7: Publish completion event
-      const contentSummary = finalResponse.length > 500
-        ? finalResponse.substring(0, 500) + `... (${finalResponse.length} chars total)`
-        : finalResponse;
+      // Step 7: Safety net — auto-commit if LLM forgot to commit
+      if (commitSha === 'unknown' && (filesCreated.length > 0 || filesModified.length > 0)) {
+        logger.warn(MODULE_AGENT, `⚠️  LLM did not commit — auto-committing staged changes`, timer.elapsed('factory'));
+        try {
+          const commitMsg = this.commitFormat
+            ? this.commitFormat.replace('{taskId}', task.taskId)
+            : `feat(${this.role}): task ${task.taskId}`;
+          const commitResult = await this.executeRemoteTool('git_git_commit', { path: this.worktreePath, message: commitMsg });
+          const sha = this.extractCommitSha(commitResult);
+          if (sha) {
+            commitSha = sha;
+            logger.info(MODULE_AGENT, `   ✅ Auto-commit succeeded: ${sha.substring(0, 7)}`, timer.elapsed('factory'));
+          } else {
+            logger.warn(MODULE_AGENT, `   ⚠️  Auto-commit returned no SHA`, timer.elapsed('factory'));
+          }
+        } catch (err: any) {
+          logger.warn(MODULE_AGENT, `   ⚠️  Auto-commit failed: ${err.message}`, timer.elapsed('factory'));
+        }
+      }
 
-      await this.publishCompletion(
-        task.taskId,
-        task.questId,
-        filesCreated,
-        filesModified,
-        commitSha,
-        contentSummary
-      );
+      // Step 8: Publish completion or failure event
+      if (!commitSha || commitSha === 'unknown') {
+        logger.warn(MODULE_AGENT, `⚠️  No valid commit SHA — publishing task.failed instead of review request`, timer.elapsed('factory'));
+        // Clear dedup so agent-lead retries are accepted
+        this.processedTaskIds.delete(task.taskId);
+        await this.publishFailure(
+          task.taskId,
+          new Error('Git commit failed — no valid commit SHA available. Files may have been written but were not committed.'),
+          task.questId,
+          task.retryAttempt,
+        );
+      } else {
+        const contentSummary = finalResponse.length > 500
+          ? finalResponse.substring(0, 500) + `... (${finalResponse.length} chars total)`
+          : finalResponse;
+
+        await this.publishCompletion(
+          task.taskId,
+          task.questId,
+          filesCreated,
+          filesModified,
+          commitSha,
+          contentSummary,
+          task.retryAttempt,
+        );
+      }
 
       logger.info(MODULE_AGENT, `✅ Task ${task.taskId} execution completed`, timer.elapsed('factory'));
 
@@ -770,7 +817,10 @@ export class BaseWorkerAgent {
       logger.error(MODULE_AGENT, `   Error: ${error.message || String(error)}`, timer.elapsed('factory'));
       logger.error(MODULE_AGENT, `   Stack: ${error.stack || 'No stack trace'}`, timer.elapsed('factory'));
 
-      await this.publishFailure(task.taskId, error, task.questId);
+      // Clear dedup so agent-lead retries are accepted
+      this.processedTaskIds.delete(task.taskId);
+
+      await this.publishFailure(task.taskId, error, task.questId, task.retryAttempt);
       throw error;
     }
   }
@@ -806,15 +856,17 @@ ${retryContext}
 Instructions:
 1. Analyze the task requirements carefully
 2. Create the necessary files in the worktree using available tools
-3. Stage and commit your changes using git tools
-4. When done, provide a brief summary of what you created
+3. Stage ALL changed files with git_git_add (pass path: "${this.worktreePath}")
+4. CRITICAL: You MUST call git_git_commit with path: "${this.worktreePath}" to commit your staged changes. Do NOT return a summary until you have committed.
+5. When done, provide a brief summary of what you created
 
 Important:
 - All file operations must be within the worktree: ${this.worktreePath}
-- Use git_git_add to stage files and git_git_commit to commit
+- For ALL git tools (git_git_add, git_git_commit, etc.), you MUST pass path: "${this.worktreePath}" as a parameter.
+- You MUST complete the full cycle: write files → git_git_add → git_git_commit. Skipping the commit is a failure.
 - If the task description specifies an exact commit message, you MUST use that exact message
 - Default commit message format (use ONLY when no commit message is specified in the task): "${this.commitFormat ? this.commitFormat.replace('{taskId}', task.taskId) : `feat(${this.role}): <description> [${task.taskId}]`}"
-- Focus on ${this.role === 'artist' ? 'creative and artistic elements' : this.role === 'designer' ? 'design principles and aesthetics' : 'code quality and best practices'}`;
+- Focus on ${this.role === 'artist' ? 'creative and artistic elements. IMPORTANT: You cannot generate binary image files (PNG, GIF, JPG). Instead, generate all pixel art and graphics as SVG files using <rect> elements on a grid. Use a limited palette (<=16 colors). Never create placeholder or fake image files — always produce real, renderable SVG that displays the intended artwork when opened in a browser.' : this.role === 'designer' ? 'design principles and aesthetics' : 'code quality and best practices'}`;
   }
 
   /**
@@ -1046,6 +1098,12 @@ Important:
     // Route to MCP tool via KĀDI broker
     const result = await this.client.invokeRemote<any>(toolName, toolArgs);
 
+    // Check for error responses from the broker/tool
+    if (result?.isError) {
+      const errorText = result?.content?.[0]?.text ?? JSON.stringify(result);
+      throw new Error(`Remote tool ${toolName} returned error: ${errorText}`);
+    }
+
     // invokeRemote returns { content: [{ type, text }] } — extract text
     if (result?.content?.[0]?.text) {
       try {
@@ -1145,8 +1203,8 @@ Important:
   /**
    * Publish task completion event
    *
-   * Publishes TaskCompletedEvent to KĀDI broker with topic pattern: {role}.task.completed
-   * Event payload matches TaskCompletedEvent schema exactly for backward compatibility.
+   * Publishes TaskReviewRequestedPayload to KĀDI broker on the qa network.
+   * Per QUEST_WORKFLOW_V2: worker → task.review_requested → agent-qa for validation.
    *
    * Publishing failures are handled gracefully - errors are logged but do not throw.
    * This ensures task execution completes even if event publishing fails.
@@ -1164,39 +1222,32 @@ Important:
    *   [],
    *   'a1b2c3d4e5f6g7h8i9j0'
    * );
-   * // Publishes to: task.completed
+   * // Publishes to: task.review_requested (→ agent-qa)
    * ```
    */
   protected async publishCompletion(
     taskId: string,
     questId: string | undefined,
-    filesCreated: string[],
-    filesModified: string[],
+    _filesCreated: string[],
+    _filesModified: string[],
     commitSha: string,
-    contentSummary?: string
+    _contentSummary?: string,
+    retryAttempt?: number,
   ): Promise<void> {
-    // Include worktree path for independent verification by agent-producer
-    const worktreePath = this.worktreePath;
-    // Generic topic — agent identity is in the payload (agent, role fields)
-    const topic = `task.completed`;
+    // Per QUEST_WORKFLOW_V2: worker publishes task.review_requested → agent-qa for validation
+    const topic = `task.review_requested`;
 
-    // Create payload matching TaskCompletedEvent schema
-    const payload: TaskCompletedEvent = {
+    // Create payload matching TaskReviewRequestedPayload schema
+    const payload: TaskReviewRequestedPayload = {
       taskId,
-      questId,
-      role: this.role,
-      status: 'completed',
-      filesCreated,
-      filesModified,
-      commitSha,
-      timestamp: new Date().toISOString(),
-      agent: `agent-${this.role}`,
-      ...(contentSummary ? { contentSummary } : {}),
-      ...(worktreePath ? { worktreePath } : {})
+      questId: questId || '',
+      branch: this.worktreePath,
+      commitHash: commitSha,
+      ...(retryAttempt && { revisionCount: retryAttempt }),
     };
 
     try {
-      logger.info(MODULE_AGENT, `📢 Publishing completion event`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `📢 Publishing review request event`, timer.elapsed('factory'));
       logger.info(MODULE_AGENT, `   Topic: ${topic}`, timer.elapsed('factory'));
       logger.info(MODULE_AGENT, `   Task ID: ${taskId}`, timer.elapsed('factory'));
       if (questId) {
@@ -1204,13 +1255,13 @@ Important:
       }
       logger.info(MODULE_AGENT, `   Commit SHA: ${commitSha.substring(0, 7)}`, timer.elapsed('factory'));
 
-      await this.client.publish(topic, payload, { broker: 'default', network: 'global' });
+      await this.client.publish(topic, payload, { broker: 'default', network: 'qa' });
 
-      logger.info(MODULE_AGENT, `   ✅ Completion event published`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   ✅ Review request published to qa network`, timer.elapsed('factory'));
 
     } catch (error: any) {
       // Handle publishing failures gracefully - don't throw
-      logger.error(MODULE_AGENT, `Failed to publish completion event (non-fatal)`, timer.elapsed('factory'), error);
+      logger.error(MODULE_AGENT, `Failed to publish review request event (non-fatal)`, timer.elapsed('factory'), error);
       logger.error(MODULE_AGENT, `   Error: ${error.message || String(error)}`, timer.elapsed('factory'));
       logger.error(MODULE_AGENT, `   Task execution succeeded despite event publishing failure`, timer.elapsed('factory'));
       // Don't throw - event publishing failure should not fail the task
@@ -1239,7 +1290,7 @@ Important:
    * }
    * ```
    */
-  protected async publishFailure(taskId: string, error: Error, questId?: string): Promise<void> {
+  protected async publishFailure(taskId: string, error: Error, questId?: string, retryAttempt?: number): Promise<void> {
     // Generic topic — agent identity is in the payload (agent, role fields)
     const topic = `task.failed`;
 
@@ -1250,7 +1301,8 @@ Important:
       role: this.role,
       error: error.message || String(error),
       timestamp: new Date().toISOString(),
-      agent: `agent-${this.role}`
+      agent: `agent-${this.role}`,
+      retryAttempt: retryAttempt ?? 0
     };
 
     try {
@@ -1259,7 +1311,7 @@ Important:
       logger.info(MODULE_AGENT, `   Task ID: ${taskId}`, timer.elapsed('factory'));
       logger.info(MODULE_AGENT, `   Error: ${error.message.substring(0, 100)}${error.message.length > 100 ? '...' : ''}`, timer.elapsed('factory'));
 
-      await this.client.publish(topic, payload, { broker: 'default', network: 'global' });
+      await this.client.publish(topic, payload, { broker: 'default', network: this.role });
 
       logger.info(MODULE_AGENT, `   ✅ Failure event published`, timer.elapsed('factory'));
 
@@ -1371,7 +1423,7 @@ Important:
       logger.info(MODULE_AGENT, `   Task ID: ${taskId}`, timer.elapsed('factory'));
       logger.info(MODULE_AGENT, `   Reason: ${reason.substring(0, 100)}${reason.length > 100 ? '...' : ''}`, timer.elapsed('factory'));
 
-      await this.client.publish(topic, payload, { broker: 'default', network: 'global' });
+      await this.client.publish(topic, payload, { broker: 'default', network: this.role });
 
       logger.info(MODULE_AGENT, `   ✅ Rejection event published`, timer.elapsed('factory'));
 

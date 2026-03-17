@@ -1,13 +1,13 @@
 {
   "name": "agents-library",
-  "version": "1.1.0",
+  "version": "0.1.0",
   "description": "Shared utilities and factories for KĀDI multi-agent orchestration system",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "keywords": [
     "kadi",
@@ -18,10 +18,13 @@
     "producer"
   ],
   "author": "Yu-Wei Tseng",
-  "license": "MIT",
+  "license": "Apache License 2.0",
+  "files": [
+    "dist"
+  ],
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
-    "@kadi.build/core": "file:../kadi/kadi-core",
+    "@kadi.build/core": "^0.9.0",
     "chokidar": "^3.6.0",
     "dotenv": "^16.3.1",
     "zod": "^3.22.4"

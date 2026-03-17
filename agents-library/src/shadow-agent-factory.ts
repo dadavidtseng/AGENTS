@@ -28,7 +28,6 @@
 import { KadiClient, z } from '@kadi.build/core';
 import type { ShadowAgentConfig } from './types/agent-config.js';
 import { BaseAgent } from './base-agent.js';
-import chokidar, { type FSWatcher } from 'chokidar';
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
@@ -200,30 +199,10 @@ export class BaseShadowAgent {
   private readonly usesBaseAgent: boolean;
 
   /**
-   * Filesystem watcher instance for monitoring worker worktree
-   *
-   * Monitors file operations (create, modify, delete) in worker worktree.
-   * Null until start() is called.
+   * Handler reference for broker file.changed events.
+   * Stored so we can unsubscribe on stop().
    */
-  private fsWatcher: FSWatcher | null = null;
-
-  /**
-   * Git ref watcher instance for monitoring worker branch commits
-   *
-   * Watches .git/refs/heads/{workerBranch} file for commit SHA changes.
-   * Uses fs.watch (not chokidar) for lightweight ref monitoring.
-   * Null until start() is called.
-   */
-  private refWatcher: fs.FSWatcher | null = null;
-
-  /**
-   * Previous commit SHA from worker branch
-   *
-   * Stores last known commit SHA to detect actual commit changes.
-   * Used to differentiate real commits from other ref updates.
-   * Null until first commit is detected.
-   */
-  private previousCommitSha: string | null = null;
+  private fileEventHandler: ((event: unknown) => void) | null = null;
 
   /**
    * Set of changed file paths awaiting backup processing
@@ -235,14 +214,6 @@ export class BaseShadowAgent {
    * Value: Debounce timeout handle
    */
   private debounceMap: Map<string, NodeJS.Timeout> = new Map();
-
-  /**
-   * Debounce timeout for git ref watcher
-   *
-   * Stores timeout handle for debouncing ref change events.
-   * Prevents processing rapid ref updates.
-   */
-  private refDebounceTimeout: NodeJS.Timeout | null = null;
 
   /**
    * Create a new BaseShadowAgent instance
@@ -290,10 +261,9 @@ export class BaseShadowAgent {
         name: `shadow-agent-${config.role}`,
         version: '1.0.0',
         brokers: {
-          default: config.brokerUrl
+          default: { url: config.brokerUrl, networks: config.networks }
         },
         defaultBroker: 'default',
-        networks: config.networks
       });
       this.usesBaseAgent = false;
     }
@@ -345,15 +315,11 @@ export class BaseShadowAgent {
       }
     }
 
-    // Setup filesystem watcher for worker worktree
-    await this.setupFilesystemWatcher();
-    logger.info(MODULE_AGENT, '✅ Filesystem watcher initialized', timer.elapsed('shadow-factory'));
+    // Subscribe to file.changed broker events (emitted by ability-file-local)
+    await this.setupBrokerFileEventSubscription();
+    logger.info(MODULE_AGENT, '✅ Broker file event subscription active', timer.elapsed('shadow-factory'));
 
-    // Setup git ref watcher for worker branch
-    await this.setupGitRefWatcher();
-    logger.info(MODULE_AGENT, '✅ Git ref watcher initialized', timer.elapsed('shadow-factory'));
-
-    logger.info(MODULE_AGENT, '✅ Shadow agent started and monitoring', timer.elapsed('shadow-factory'));
+    logger.info(MODULE_AGENT, '✅ Shadow agent started and monitoring via broker events', timer.elapsed('shadow-factory'));
   }
 
   /**
@@ -378,28 +344,16 @@ export class BaseShadowAgent {
   async stop(): Promise<void> {
     logger.info(MODULE_AGENT, `🛑 Stopping shadow agent for role: ${this.role}`, timer.elapsed('shadow-factory'));
 
-    // Stop filesystem watcher
-    if (this.fsWatcher) {
-      logger.info(MODULE_AGENT, '🛑 Stopping filesystem watcher...', timer.elapsed('shadow-factory'));
-      await this.fsWatcher.close();
-      this.fsWatcher = null;
-      logger.info(MODULE_AGENT, '✅ Filesystem watcher stopped', timer.elapsed('shadow-factory'));
-    }
-
-    // Stop git ref watcher
-    if (this.refWatcher) {
-      logger.info(MODULE_AGENT, '🛑 Stopping git ref watcher...', timer.elapsed('shadow-factory'));
-      this.refWatcher.close();
-      this.refWatcher = null;
-      logger.info(MODULE_AGENT, '✅ Git ref watcher stopped', timer.elapsed('shadow-factory'));
-    }
-
-    // Clear ref debounce timeout
-    if (this.refDebounceTimeout) {
-      logger.info(MODULE_AGENT, '🛑 Clearing ref debounce timeout...', timer.elapsed('shadow-factory'));
-      clearTimeout(this.refDebounceTimeout);
-      this.refDebounceTimeout = null;
-      logger.info(MODULE_AGENT, '✅ Ref debounce timeout cleared', timer.elapsed('shadow-factory'));
+    // Unsubscribe from broker file events
+    if (this.fileEventHandler) {
+      logger.info(MODULE_AGENT, '🛑 Unsubscribing from file.changed events...', timer.elapsed('shadow-factory'));
+      try {
+        await (this.client as any).unsubscribe('file.changed', this.fileEventHandler);
+      } catch {
+        // Best-effort unsubscribe — may not be supported in all KadiClient versions
+      }
+      this.fileEventHandler = null;
+      logger.info(MODULE_AGENT, '✅ File event subscription removed', timer.elapsed('shadow-factory'));
     }
 
     // Clear all pending debounce timers
@@ -425,272 +379,85 @@ export class BaseShadowAgent {
   }
 
   /**
-   * Setup filesystem watcher for worker worktree
+   * Subscribe to file.changed broker events from ability-file-local
    *
-   * Monitors worker worktree for file operations (create, modify, delete) using chokidar.
-   * File changes are debounced and stored for batch backup processing.
+   * Instead of using chokidar directly (unreliable on /mnt/c/ in WSL containers),
+   * the shadow agent subscribes to `file.changed` events published by ability-file-local
+   * which runs on the host where filesystem events work natively.
    *
-   * Configuration:
-   * - Watches: config.workerWorktreePath
-   * - Excludes: .git directory, node_modules, .env files
-   * - Debounce: config.debounceMs (default: 1000ms)
-   * - Stability threshold: Waits for file writes to complete
+   * Event payload from ability-file-local:
+   *   { watchId: string, event: 'add'|'change'|'unlink', path: string }
    *
-   * Event Handling:
-   * - 'add': File created in worktree
-   * - 'change': Existing file modified
-   * - 'unlink': File deleted from worktree
-   * - 'error': Watcher errors (logged but non-fatal)
-   * - 'ready': Watcher initialization complete
-   *
-   * Debouncing Strategy:
-   * - Stores timeout handle in debounceMap for each file
-   * - Clears previous timeout if file changes again before debounce completes
-   * - Only processes file after debounceMs of inactivity
-   * - Prevents rapid-fire commits for the same file
-   *
-   * @throws {Error} If watcher initialization fails
-   *
-   * @example
-   * ```typescript
-   * await this.setupFilesystemWatcher();
-   * // Watcher is now monitoring worker worktree for file changes
-   * ```
+   * The shadow agent filters events to only process those matching its workerWorktreePath,
+   * then debounces and creates shadow backup commits.
    */
-  protected async setupFilesystemWatcher(): Promise<void> {
-    logger.info(MODULE_AGENT, `👁️  Setting up filesystem watcher: ${this.workerWorktreePath}`, timer.elapsed('shadow-factory'));
+  protected async setupBrokerFileEventSubscription(): Promise<void> {
+    logger.info(MODULE_AGENT, `👁️  Subscribing to file.changed broker events for: ${this.workerWorktreePath}`, timer.elapsed('shadow-factory'));
 
-    // Create chokidar watcher with configuration
-    this.fsWatcher = chokidar.watch(this.workerWorktreePath, {
-      persistent: true,
-      ignoreInitial: true, // Don't trigger for existing files on startup
-      ignored: [
-        '**/node_modules/**',
-        '**/.git/**',
-        '**/.git',  // Also ignore .git file (for worktrees)
-        '**/.env',
-        '**/.env.*'
-      ],
-      awaitWriteFinish: {
-        stabilityThreshold: this.debounceMs,
-        pollInterval: 100
-      }
-    });
+    const handler = async (event: unknown) => {
+      try {
+        const data = ((event as any)?.data || event) as {
+          watchId?: string;
+          event?: string;
+          path?: string;
+        };
 
-    // Event: File created
-    this.fsWatcher.on('add', (filePath: string) => {
-      logger.info(MODULE_AGENT, `➕ File created: ${filePath}`, timer.elapsed('shadow-factory'));
+        if (!data.path || !data.event) return;
 
-      // Debounce to avoid rapid-fire commits
-      if (this.debounceMap.has(filePath)) {
-        clearTimeout(this.debounceMap.get(filePath)!);
-      }
+        const filePath = data.path;
 
-      const timeout = setTimeout(async () => {
-        logger.info(MODULE_AGENT, `📝 Processing created file: ${filePath}`, timer.elapsed('shadow-factory'));
+        // Filter: only process events for our worker worktree
+        // Normalize both paths for comparison (handle Windows/Unix path differences)
+        const normalizedFile = filePath.replace(/\\/g, '/').toLowerCase();
+        const normalizedWorktree = this.workerWorktreePath.replace(/\\/g, '/').toLowerCase();
+        if (!normalizedFile.startsWith(normalizedWorktree)) return;
+
+        // Skip .git, node_modules, .env files
         const relativePath = path.relative(this.workerWorktreePath, filePath);
-        await this.createShadowBackup('Created', relativePath);
-        this.debounceMap.delete(filePath);
-      }, this.debounceMs);
+        if (
+          relativePath.startsWith('.git') ||
+          relativePath.includes('node_modules') ||
+          relativePath.startsWith('.env')
+        ) return;
 
-      this.debounceMap.set(filePath, timeout);
-    });
+        const eventType = data.event; // 'add' | 'change' | 'unlink'
+        const operation = eventType === 'add' ? 'Created'
+          : eventType === 'unlink' ? 'Deleted'
+          : 'Modified';
 
-    // Event: File modified
-    this.fsWatcher.on('change', (filePath: string) => {
-      logger.info(MODULE_AGENT, `✏️  File modified: ${filePath}`, timer.elapsed('shadow-factory'));
+        logger.info(MODULE_AGENT, `📁 Broker file event: ${operation} ${relativePath}`, timer.elapsed('shadow-factory'));
 
-      // Debounce to avoid rapid-fire commits
-      if (this.debounceMap.has(filePath)) {
-        clearTimeout(this.debounceMap.get(filePath)!);
-      }
-
-      const timeout = setTimeout(async () => {
-        logger.info(MODULE_AGENT, `📝 Processing modified file: ${filePath}`, timer.elapsed('shadow-factory'));
-        const relativePath = path.relative(this.workerWorktreePath, filePath);
-        await this.createShadowBackup('Modified', relativePath);
-        this.debounceMap.delete(filePath);
-      }, this.debounceMs);
-
-      this.debounceMap.set(filePath, timeout);
-    });
-
-    // Event: File deleted
-    this.fsWatcher.on('unlink', (filePath: string) => {
-      logger.info(MODULE_AGENT, `🗑️  File deleted: ${filePath}`, timer.elapsed('shadow-factory'));
-
-      // Debounce to avoid rapid-fire commits
-      if (this.debounceMap.has(filePath)) {
-        clearTimeout(this.debounceMap.get(filePath)!);
-      }
-
-      const timeout = setTimeout(async () => {
-        logger.info(MODULE_AGENT, `📝 Processing deleted file: ${filePath}`, timer.elapsed('shadow-factory'));
-        const relativePath = path.relative(this.workerWorktreePath, filePath);
-        await this.createShadowBackup('Deleted', relativePath);
-        this.debounceMap.delete(filePath);
-      }, this.debounceMs);
-
-      this.debounceMap.set(filePath, timeout);
-    });
-
-    // Event: Watcher error
-    this.fsWatcher.on('error', (error: unknown) => {
-      logger.error(MODULE_AGENT, '❌ Filesystem watcher error', timer.elapsed('shadow-factory'), error as Error);
-      // Non-fatal - watcher continues operating
-    });
-
-    // Event: Watcher ready
-    this.fsWatcher.on('ready', () => {
-      logger.info(MODULE_AGENT, '✅ Filesystem watcher ready', timer.elapsed('shadow-factory'));
-    });
-  }
-
-  /**
-   * Setup git ref watcher for worker branch commits
-   *
-   * Monitors worker branch ref file (.git/refs/heads/{workerBranch}) for commit SHA changes
-   * using fs.watch. Detects new commits and triggers createShadowBackup after debounce period.
-   *
-   * Architecture:
-   * - Uses fs.watch (not chokidar) for lightweight ref monitoring
-   * - Reads commit SHA from ref file on each change
-   * - Compares with previousCommitSha to detect actual commits
-   * - Debounces to handle rapid ref updates (e.g., during rebase)
-   * - Triggers backup only for real commit changes
-   *
-   * Ref File Location:
-   * - {workerWorktreePath}/.git/refs/heads/{workerBranch}
-   * - Contains commit SHA as plain text (40 hex characters)
-   * - Updated by git on each commit to branch
-   *
-   * Change Detection Strategy:
-   * 1. fs.watch fires on any ref file modification
-   * 2. Read current SHA from ref file
-   * 3. Compare with previousCommitSha
-   * 4. If different, debounce and trigger backup
-   * 5. Update previousCommitSha for next comparison
-   *
-   * Debouncing:
-   * - Uses config.debounceMs delay (default: 1000ms)
-   * - Clears previous timeout if ref changes again
-   * - Prevents multiple backups during rapid commits
-   *
-   * @throws {Error} If ref file doesn't exist or can't be watched
-   *
-   * @example
-   * ```typescript
-   * await this.setupGitRefWatcher();
-   * // Watcher is now monitoring worker branch for commits
-   * ```
-   */
-  protected async setupGitRefWatcher(): Promise<void> {
-    // Construct path to worker branch ref file
-    // Handle both regular repos and git worktrees
-    let gitDir = path.join(this.workerWorktreePath, '.git');
-    
-    // Check if .git is a file (worktree) or directory (regular repo)
-    if (fs.existsSync(gitDir)) {
-      const gitStat = fs.statSync(gitDir);
-      if (gitStat.isFile()) {
-        // This is a worktree - read the .git file to get actual git directory
-        const gitFileContent = fs.readFileSync(gitDir, 'utf-8').trim();
-        const match = gitFileContent.match(/^gitdir:\s*(.+)$/);
-        if (match) {
-          gitDir = match[1].trim();
-          logger.info(MODULE_AGENT, `📁 Detected git worktree, actual git dir: ${gitDir}`, timer.elapsed('shadow-factory'));
-          
-          // For worktrees, refs are stored in the common (main) git directory
-          // Read the commondir file to get the path to the main git directory
-          const commondirPath = path.join(gitDir, 'commondir');
-          if (fs.existsSync(commondirPath)) {
-            const commondirContent = fs.readFileSync(commondirPath, 'utf-8').trim();
-            // commondir contains a relative path to the main git directory
-            const mainGitDir = path.resolve(gitDir, commondirContent);
-            logger.info(MODULE_AGENT, `📁 Worktree refs stored in common dir: ${mainGitDir}`, timer.elapsed('shadow-factory'));
-            gitDir = mainGitDir;
-          }
-        }
-      }
-    }
-
-    const refFilePath = path.join(gitDir, 'refs/heads', this.workerBranch);
-
-    logger.info(MODULE_AGENT, `👁️  Setting up git ref watcher: ${refFilePath}`, timer.elapsed('shadow-factory'));
-
-    // Verify ref file exists before watching
-    if (!fs.existsSync(refFilePath)) {
-      logger.warn(MODULE_AGENT, `⚠️  Ref file not found: ${refFilePath}`, timer.elapsed('shadow-factory'));
-      logger.warn(MODULE_AGENT, `   Worker branch may not exist yet. Skipping ref watcher setup.`, timer.elapsed('shadow-factory'));
-      return;
-    }
-
-    // Read initial commit SHA
-    try {
-      this.previousCommitSha = fs.readFileSync(refFilePath, 'utf-8').trim();
-      logger.info(MODULE_AGENT, `📋 Initial commit SHA: ${this.previousCommitSha.substring(0, 7)}`, timer.elapsed('shadow-factory'));
-    } catch (error: any) {
-      logger.error(MODULE_AGENT, `❌ Failed to read initial commit SHA: ${error.message}`, timer.elapsed('shadow-factory'), error);
-      this.previousCommitSha = null;
-    }
-
-    // Setup fs.watch for ref file
-    try {
-      this.refWatcher = fs.watch(refFilePath, (eventType, _filename) => {
-        // Handle 'change' and 'rename' events (rename can occur during git operations)
-        if (eventType !== 'change' && eventType !== 'rename') {
-          return;
+        // Debounce to avoid rapid-fire commits
+        if (this.debounceMap.has(filePath)) {
+          clearTimeout(this.debounceMap.get(filePath)!);
         }
 
-        logger.info(MODULE_AGENT, `🔄 Git ref change detected: ${eventType}`, timer.elapsed('shadow-factory'));
-
-        // Clear previous debounce timeout
-        if (this.refDebounceTimeout) {
-          clearTimeout(this.refDebounceTimeout);
-        }
-
-        // Debounce to handle rapid ref updates
-        this.refDebounceTimeout = setTimeout(async () => {
-          try {
-            // Read current commit SHA from ref file
-            const currentSha = fs.readFileSync(refFilePath, 'utf-8').trim();
-
-            // Check if SHA actually changed (ignore non-commit ref updates)
-            if (currentSha === this.previousCommitSha) {
-              logger.info(MODULE_AGENT, `ℹ️  Ref updated but SHA unchanged - skipping`, timer.elapsed('shadow-factory'));
-              return;
-            }
-
-            logger.info(MODULE_AGENT, `🔄 Worker commit detected on ${this.workerBranch}`, timer.elapsed('shadow-factory'));
-            logger.info(MODULE_AGENT, `   Previous SHA: ${this.previousCommitSha?.substring(0, 7) || 'none'}`, timer.elapsed('shadow-factory'));
-            logger.info(MODULE_AGENT, `   Current SHA:  ${currentSha.substring(0, 7)}`, timer.elapsed('shadow-factory'));
-
-            // Update tracked SHA
-            this.previousCommitSha = currentSha;
-
-            // Trigger shadow backup for commit
-            await this.createShadowBackup('COMMIT', `Commit ${currentSha.substring(0, 7)}`);
-
-          } catch (error: any) {
-            logger.error(MODULE_AGENT, `❌ Failed to process ref change: ${error.message}`, timer.elapsed('shadow-factory'), error);
-            // Non-fatal - watcher continues operating
-          }
+        const timeout = setTimeout(async () => {
+          logger.info(MODULE_AGENT, `📝 Processing ${operation.toLowerCase()} file: ${relativePath}`, timer.elapsed('shadow-factory'));
+          await this.createShadowBackup(operation, relativePath);
+          this.debounceMap.delete(filePath);
         }, this.debounceMs);
+
+        this.debounceMap.set(filePath, timeout);
+      } catch (err: any) {
+        logger.error(MODULE_AGENT, `❌ Error processing file.changed event: ${err.message}`, timer.elapsed('shadow-factory'), err);
+      }
+    };
+
+    this.fileEventHandler = handler;
+    await this.client.subscribe('file.changed', handler);
+    logger.info(MODULE_AGENT, '✅ Subscribed to file.changed broker events', timer.elapsed('shadow-factory'));
+
+    // Invoke ability-file-local's watch_folder to start emitting file.changed events
+    try {
+      await this.client.invokeRemote('watch_folder', {
+        folderPath: this.workerWorktreePath,
+        watchId: `shadow-${this.role}`,
       });
-
-      logger.info(MODULE_AGENT, '✅ Git ref watcher ready', timer.elapsed('shadow-factory'));
-
-    } catch (error: any) {
-      logger.error(MODULE_AGENT, `❌ Failed to setup git ref watcher: ${error.message}`, timer.elapsed('shadow-factory'), error);
-      this.refWatcher = null;
-      // Non-fatal - agent continues with filesystem watching only
+      logger.info(MODULE_AGENT, `📂 Started file watcher via ability-file-local for: ${this.workerWorktreePath}`, timer.elapsed('shadow-factory'));
+    } catch (err: any) {
+      logger.warn(MODULE_AGENT, `⚠️ Could not start file watcher (ability-file-local may not be available): ${err.message}`, timer.elapsed('shadow-factory'));
     }
-
-    // Handle watcher errors
-    this.refWatcher?.on('error', (error: unknown) => {
-      logger.error(MODULE_AGENT, '❌ Git ref watcher error', timer.elapsed('shadow-factory'), error as Error);
-      // Non-fatal - watcher may auto-recover
-    });
   }
 
   /**

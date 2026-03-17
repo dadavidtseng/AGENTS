@@ -23,6 +23,40 @@
 import { z } from '@kadi.build/core';
 
 // ============================================================================
+// Generic Event Wrapper
+// ============================================================================
+
+/**
+ * Generic KĀDI event envelope wrapping all inter-agent events.
+ * Every event published to the broker is wrapped in this structure.
+ *
+ * @template T - Event-specific payload type
+ */
+export interface KadiEvent<T = unknown> {
+  /** Event type identifier (e.g., 'quest.approved', 'task.assigned') */
+  type: string;
+  /** Quest ID this event relates to */
+  questId: string;
+  /** Task ID (present for task-level events) */
+  taskId?: string;
+  /** Event-specific payload */
+  payload: T;
+  /** ISO 8601 timestamp */
+  timestamp: string;
+  /** Publishing agent ID */
+  source: string;
+}
+
+export const KadiEventSchema = z.object({
+  type: z.string().min(1),
+  questId: z.string().min(1),
+  taskId: z.string().optional(),
+  payload: z.unknown(),
+  timestamp: z.string().datetime(),
+  source: z.string().min(1),
+});
+
+// ============================================================================
 // Task Assignment Event
 // ============================================================================
 
@@ -212,6 +246,9 @@ export interface TaskFailedEvent {
 
   /** Agent identifier (e.g., 'agent-artist', 'agent-designer') */
   agent: string;
+
+  /** Retry attempt number carried from the original task.assigned (0 = first attempt) */
+  retryAttempt?: number;
 }
 
 /**
@@ -223,7 +260,8 @@ export const TaskFailedEventSchema = z.object({
   role: z.string().min(1, 'Role is required'),
   error: z.string().min(1, 'Error message is required'),
   timestamp: z.string().datetime('Invalid ISO 8601 timestamp'),
-  agent: z.string().min(1, 'Agent identifier is required')
+  agent: z.string().min(1, 'Agent identifier is required'),
+  retryAttempt: z.number().optional()
 });
 
 // ============================================================================
@@ -341,6 +379,169 @@ export const BackupEventSchema = z.object({
   filesBackedUp: z.array(z.string()),
   error: z.string().optional(),
   timestamp: z.string().datetime('Invalid ISO 8601 timestamp')
+});
+
+// ============================================================================
+// Quest Lifecycle Events (M4)
+// ============================================================================
+
+/** Payload for quest.approved event — HUMAN approves quest via agent-quest */
+export interface QuestApprovedPayload {
+  questId: string;
+}
+export const QuestApprovedPayloadSchema = z.object({
+  questId: z.string().min(1),
+});
+
+/** Payload for quest.revision_requested — HUMAN requests changes */
+export interface QuestRevisionRequestedPayload {
+  questId: string;
+  comments: string;
+}
+export const QuestRevisionRequestedPayloadSchema = z.object({
+  questId: z.string().min(1),
+  comments: z.string().min(1),
+});
+
+/** Payload for quest.rejected — HUMAN rejects quest */
+export interface QuestRejectedPayload {
+  questId: string;
+}
+export const QuestRejectedPayloadSchema = z.object({
+  questId: z.string().min(1),
+});
+
+/** Payload for quest.tasks_ready — agent-producer finished planning */
+export interface QuestTasksReadyPayload {
+  questId: string;
+}
+export const QuestTasksReadyPayloadSchema = z.object({
+  questId: z.string().min(1),
+});
+
+/** Payload for quest.pr_created — agent-lead created PR */
+export interface QuestPrCreatedPayload {
+  questId: string;
+  prUrl: string;
+}
+export const QuestPrCreatedPayloadSchema = z.object({
+  questId: z.string().min(1),
+  prUrl: z.string().min(1),
+});
+
+/** Payload for quest.merged — HUMAN merged PR on GitHub */
+export interface QuestMergedPayload {
+  questId: string;
+  prId: string;
+}
+export const QuestMergedPayloadSchema = z.object({
+  questId: z.string().min(1),
+  prId: z.string().min(1),
+});
+
+/** Payload for quest.pr_rejected — HUMAN closed PR without merge */
+export interface QuestPrRejectedPayload {
+  questId: string;
+  prId: string;
+}
+export const QuestPrRejectedPayloadSchema = z.object({
+  questId: z.string().min(1),
+  prId: z.string().min(1),
+});
+
+/** Payload for quest.completed — all tasks verified, PR merged */
+export interface QuestCompletedPayload {
+  questId: string;
+}
+export const QuestCompletedPayloadSchema = z.object({
+  questId: z.string().min(1),
+});
+
+// ============================================================================
+// Task Pipeline Events (M4)
+// ============================================================================
+
+/** Payload for task.review_requested — worker submits to QA */
+export interface TaskReviewRequestedPayload {
+  taskId: string;
+  questId: string;
+  branch: string;
+  commitHash: string;
+  revisionCount?: number;
+  /**
+   * Optional screenshot URI for visual validation.
+   * Supported formats:
+   *   - Local path: "C:/path/to/screenshot.png" or "/path/to/screenshot.png"
+   *   - Remote: "remote://host/path/to/screenshot.png"
+   *   - Cloud: "cloud://dropbox/path/to/screenshot.png"
+   *   - Data URI: "data:image/png;base64,..."
+   *   - HTTP URL: "https://example.com/screenshot.png"
+   */
+  screenshotUri?: string;
+}
+export const TaskReviewRequestedPayloadSchema = z.object({
+  taskId: z.string().min(1),
+  questId: z.string().min(1),
+  branch: z.string().min(1),
+  commitHash: z.string().min(1),
+  revisionCount: z.number().optional(),
+  screenshotUri: z.string().optional(),
+});
+
+/** Payload for task.revision_needed — QA rejects, worker must retry */
+export interface TaskRevisionNeededPayload {
+  taskId: string;
+  questId: string;
+  score: number;
+  feedback: string;
+  revisionCount: number;
+}
+export const TaskRevisionNeededPayloadSchema = z.object({
+  taskId: z.string().min(1),
+  questId: z.string().min(1),
+  score: z.number(),
+  feedback: z.string().min(1),
+  revisionCount: z.number(),
+});
+
+/** Payload for task.validated — QA passes, sent to agent-lead */
+export interface TaskValidatedPayload {
+  taskId: string;
+  questId: string;
+  score: number;
+  severity: 'PASS' | 'WARN' | 'FAIL';
+  feedback: string;
+}
+export const TaskValidatedPayloadSchema = z.object({
+  taskId: z.string().min(1),
+  questId: z.string().min(1),
+  score: z.number(),
+  severity: z.enum(['PASS', 'WARN', 'FAIL']),
+  feedback: z.string(),
+});
+
+/** Payload for task.verified — agent-lead confirms and merges to staging */
+export interface TaskVerifiedPayload {
+  taskId: string;
+  questId: string;
+  isQuestComplete: boolean;
+}
+export const TaskVerifiedPayloadSchema = z.object({
+  taskId: z.string().min(1),
+  questId: z.string().min(1),
+  isQuestComplete: z.boolean(),
+});
+
+/** Payload for pr.changes_requested — GitHub PR review requests changes */
+export interface PrChangesRequestedPayload {
+  questId: string;
+  prId: string;
+  comments: string;
+}
+export const PrChangesRequestedPayloadSchema = z.object({
+  questId: z.string().min(1),
+  prId: z.string().min(1),
+  comments: z.string().min(1),
 });
 
 // ============================================================================

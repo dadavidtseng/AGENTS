@@ -25,7 +25,7 @@
  * - designer: Creates UI/UX designs and mockups
  * - programmer: Writes code and implements features
  */
-export type AgentRole = 'artist' | 'designer' | 'programmer';
+export type AgentRole = 'artist' | 'designer' | 'programmer' | 'builder' | 'deployer';
 
 /**
  * Custom behavior overrides for worker agents
@@ -105,6 +105,14 @@ export interface WorkerBehaviors {
  * ```
  */
 export interface WorkerAgentConfig {
+  /**
+   * Optional custom agent ID for broker registration.
+   * Defaults to `agent-${role}` if not provided.
+   *
+   * @example 'agent-worker-artist'
+   */
+  agentId?: string;
+
   /**
    * Agent role type
    *

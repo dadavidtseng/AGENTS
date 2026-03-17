@@ -85,6 +85,7 @@ export {
 export { KadiEventPublisher, PublisherConfig, validateTopicPattern } from './kadi-event-publisher.js';
 export { logger, MODULE_AGENT, MODULE_SLACK_BOT, MODULE_DISCORD_BOT, MODULE_TASK_HANDLER, MODULE_TOOLS } from './utils/logger.js';
 export { timer, type Timer } from './utils/timer.js';
+export { isWsl, toNativePath } from './utils/path-utils.js';
 export {
   invokeShrimTool,
   isToolSuccess,
@@ -131,11 +132,39 @@ export {
 } from './types/agent-config.js';
 
 export {
+  type KadiEvent,
+  KadiEventSchema,
   type TaskAssignedEvent,
   type TaskCompletedEvent,
   type TaskFailedEvent,
   type TaskRejectedEvent,
   type BackupEvent,
+  type QuestApprovedPayload,
+  type QuestRevisionRequestedPayload,
+  type QuestRejectedPayload,
+  type QuestTasksReadyPayload,
+  type QuestPrCreatedPayload,
+  type QuestMergedPayload,
+  type QuestPrRejectedPayload,
+  type QuestCompletedPayload,
+  type TaskReviewRequestedPayload,
+  type TaskRevisionNeededPayload,
+  type TaskValidatedPayload,
+  type TaskVerifiedPayload,
+  type PrChangesRequestedPayload,
+  QuestApprovedPayloadSchema,
+  QuestRevisionRequestedPayloadSchema,
+  QuestRejectedPayloadSchema,
+  QuestTasksReadyPayloadSchema,
+  QuestPrCreatedPayloadSchema,
+  QuestMergedPayloadSchema,
+  QuestPrRejectedPayloadSchema,
+  QuestCompletedPayloadSchema,
+  TaskReviewRequestedPayloadSchema,
+  TaskRevisionNeededPayloadSchema,
+  TaskValidatedPayloadSchema,
+  TaskVerifiedPayloadSchema,
+  PrChangesRequestedPayloadSchema,
   TaskAssignedEventSchema,
   TaskCompletedEventSchema,
   TaskFailedEventSchema,

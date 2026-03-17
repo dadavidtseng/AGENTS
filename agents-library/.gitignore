@@ -45,9 +45,6 @@ Desktop.ini
 *.key
 *.pem
 
-# Memory data files
-data/memory/
-
 # Spec workflow (if you want to keep it private)
 .spec-workflow/
 
@@ -55,3 +52,4 @@ data/memory/
 .claude/
 CLAUDE.md
 .serena
+data
