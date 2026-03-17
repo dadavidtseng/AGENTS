@@ -1,0 +1,15 @@
+version: "3.9"
+services:
+  agent:
+    image: template-agent-typescript:latest
+    container_name: kadi-agent
+    networks:
+      - kadi-net
+    pull_policy: if_not_present
+    tty: true
+    stdin_open: true
+    volumes:
+      - ./data:/app/data
+networks:
+  kadi-net:
+    driver: bridge

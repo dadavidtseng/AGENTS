@@ -1,0 +1,14 @@
+{
+  "name": "template-agent-typescript",
+  "version": "1.0.0",
+  "description": "A simple agent that connects to the broker",
+  "scripts": {
+    "preflight": "node --version",
+    "setup": "npm install",
+    "start": "npx tsx src/index.ts",
+    "clean": "rm -rf node_modules package-lock.json agent-lock.json"
+  },
+  "abilities": {
+    "ability-file-management": "1.0.0"
+  }
+}

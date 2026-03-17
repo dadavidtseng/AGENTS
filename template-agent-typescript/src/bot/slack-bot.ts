@@ -1,0 +1,659 @@
+/**
+ * Slack Bot Integration for Agent_TypeScript with Resilience
+ * ===========================================================
+ *
+ * Subscribes to Slack @mention events via KĀDI event bus and responds using Claude API.
+ * Extends BaseBot for circuit breaker, retry logic, and metrics tracking.
+ *
+ * Flow:
+ * 1. Subscribe to slack.app_mention.{BOT_USER_ID} events
+ * 2. For each mention, call Claude API with user message
+ * 3. Execute any tool calls Claude requests via KADI broker
+ * 4. Reply to Slack thread via MCP_Slack_Server
+ *
+ * Resilience Features (inherited from BaseBot):
+ * - Exponential backoff retry (3 attempts with 1s, 2s, 4s delays)
+ * - Circuit breaker (opens after 5 failures, resets after 1 minute)
+ * - Timeout metrics tracking
+ */
+
+import Anthropic from '@anthropic-ai/sdk';
+import type { KadiClient } from '@kadi.build/core';
+import { BaseBot, logger, MODULE_SLACK_BOT, timer } from 'agents-library';
+import { SlackMentionEventSchema, SlackMentionEvent } from '../types/slack-events.js';
+import type { ProviderManager, MemoryService, Message, ProviderError, MemoryError } from 'agents-library';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+interface SlackMention {
+  id: string;
+  user: string;
+  text: string;
+  channel: string;
+  thread_ts: string;
+  ts: string;
+}
+
+interface SlackBotConfig {
+  client: KadiClient;
+  anthropicApiKey: string;
+  botUserId: string;
+  providerManager: ProviderManager;
+  memoryService: MemoryService;
+}
+
+// ============================================================================
+// Slack Bot Manager extending BaseBot
+// ============================================================================
+
+export class SlackBot extends BaseBot {
+  private readonly providerManager: ProviderManager;
+  private readonly memoryService: MemoryService;
+
+  constructor(config: SlackBotConfig) {
+    super(config);
+    this.providerManager = config.providerManager;
+    this.memoryService = config.memoryService;
+  }
+
+  /**
+   * Start event subscription for Slack mentions
+   *
+   * Overrides BaseBot.start() to initialize ability response subscription and subscribe to Slack events.
+   */
+  async start(): Promise<void> {
+    logger.info(MODULE_SLACK_BOT, 'Starting Slack bot with event-driven architecture...', timer.elapsed('main'));
+
+    // Initialize ability response subscription from BaseBot
+    await this.initializeAbilityResponseSubscription();
+
+    // Subscribe to Slack mention events
+    await this.subscribeToMentions();
+  }
+
+  /**
+   * Stop event subscription
+   *
+   * Overrides BaseBot.stop() to cleanup Slack-specific resources.
+   */
+  stop(): void {
+    // Unsubscribe from events if needed
+    logger.info(MODULE_SLACK_BOT, 'Slack bot stopped', timer.elapsed('main'));
+  }
+
+  /**
+   * Handle Slack mention event
+   *
+   * Implements BaseBot.handleMention() abstract method.
+   * Processes Slack-specific mention format and delegates to processMention().
+   *
+   * @param event - Slack mention event from KĀDI
+   */
+  protected async handleMention(event: any): Promise<void> {
+    // Convert to SlackMention format
+    const slackMention: SlackMention = {
+      id: event.id,
+      user: event.user,
+      text: event.text,
+      channel: event.channel,
+      thread_ts: event.thread_ts,
+      ts: event.ts,
+    };
+
+    await this.processMention(slackMention);
+  }
+
+  /**
+   * Subscribe to Slack mention events via KĀDI event bus
+   */
+  private async subscribeToMentions(): Promise<void> {
+    const topic = `slack.app_mention.${this.botUserId}`;
+
+    logger.info(MODULE_SLACK_BOT, `Subscriber: Registering subscription {topic: ${topic}, botUserId: ${this.botUserId}}`, timer.elapsed('main'));
+
+    try {
+      await this.client.subscribe(topic, async (event: unknown) => {
+        // Check circuit breaker before processing (from BaseBot)
+        if (this.checkCircuitBreaker()) {
+          logger.warn(MODULE_SLACK_BOT, 'Subscriber: Event processing skipped {reason: circuit breaker OPEN}', timer.elapsed('main'));
+          return;
+        }
+
+        // Extract event data from KĀDI envelope
+        // KĀDI wraps events in: { eventName, data, timestamp, source, metadata }
+        const eventData = (event as any)?.data || event;
+
+        // Validate event payload with schema
+        const validationResult = SlackMentionEventSchema.safeParse(eventData);
+
+        if (!validationResult.success) {
+          const errorDetails = validationResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+          logger.error(MODULE_SLACK_BOT, `Subscriber: Event validation failed {errors: [${errorDetails}]}`, timer.elapsed('main'));
+          return;
+        }
+
+        const mention: SlackMentionEvent = validationResult.data;
+
+        // Truncate text for logging (don't log full message content)
+        const textPreview = mention.text.length > 50
+          ? mention.text.substring(0, 50) + '...'
+          : mention.text;
+
+        logger.info(MODULE_SLACK_BOT, `Subscriber: Event received {mentionId: ${mention.id}, user: ${mention.user}, channel: ${mention.channel}, textPreview: "${textPreview}", timestamp: ${mention.timestamp}}`, timer.elapsed('main'));
+
+        // Process mention using handleMention
+        await this.handleMention(mention);
+      }, { broker: 'default' });
+
+      logger.info(MODULE_SLACK_BOT, `Subscriber: Subscription registered successfully {topic: ${topic}}`, timer.elapsed('main'));
+    } catch (error: any) {
+      logger.error(MODULE_SLACK_BOT, `Subscriber: Subscription registration failed {topic: ${topic}}`, timer.elapsed('main'), error);
+    }
+  }
+
+  /**
+   * Process a single Slack mention with ProviderManager and MemoryService
+   */
+  private async processMention(mention: SlackMention): Promise<void> {
+    // Check circuit breaker before processing
+    if (this.checkCircuitBreaker()) {
+      logger.warn(MODULE_SLACK_BOT, `Circuit breaker OPEN - skipping mention from @${mention.user}`, timer.elapsed('main'));
+
+      // Publish error event
+      await this.client.publish('artist.task.failed', {
+        error: 'Circuit breaker open',
+        errorType: 'circuit_breaker',
+        context: {
+          mentionId: mention.id,
+          user: mention.user,
+          channel: mention.channel,
+        },
+        agent: 'agent-artist',
+        timestamp: new Date().toISOString(),
+      }, { broker: 'default', network: 'global' });
+
+      // Send user-friendly error message
+      await this.sendSlackReply(
+        mention.channel,
+        mention.thread_ts,
+        '⚠️ Service temporarily unavailable due to repeated failures. Please try again in a few minutes.'
+      );
+      return;
+    }
+
+    try {
+      logger.info(MODULE_SLACK_BOT, `Processing mention from @${mention.user}: "${mention.text}"`, timer.elapsed('main'));
+
+      // Step 1: Retrieve conversation context from MemoryService
+      const contextResult = await this.memoryService.retrieveContext(mention.user, mention.channel);
+
+      if (!contextResult.success) {
+        const errorResult = contextResult as { success: false; error: MemoryError };
+        logger.warn(MODULE_SLACK_BOT, `Failed to retrieve context: ${errorResult.error.message}`, timer.elapsed('main'));
+      }
+
+      const context = contextResult.success ? contextResult.data : [];
+
+      // Step 2: Build messages array (context + new user message)
+      const messages: Message[] = [
+        ...context.map(msg => ({
+          role: msg.role,
+          content: msg.content,
+        })),
+        {
+          role: 'user' as const,
+          content: mention.text,
+        },
+      ];
+
+      // Step 3: Detect model from message using regex /\[([^\]]+)\]/
+      const modelMatch = mention.text.match(/\[([^\]]+)\]/);
+      const detectedModel = modelMatch ? modelMatch[1] : undefined;
+
+      if (detectedModel) {
+        logger.info(MODULE_SLACK_BOT, `Model detected from message: ${detectedModel}`, timer.elapsed('main'));
+      }
+
+      // Step 4: Generate response using ProviderManager (STREAMING enabled for better UX)
+      const streamResult = await this.providerManager.streamChat(messages, {
+        model: detectedModel,
+      });
+
+      // Step 5: Handle stream error or success
+      if (!streamResult.success) {
+        // Explicit type cast to error branch
+        const errorResult = streamResult as { success: false; error: ProviderError };
+        logger.error(MODULE_SLACK_BOT, `Provider failed: ${errorResult.error.message}`, timer.elapsed('main'));
+
+        // Record failure for circuit breaker
+        const error = new Error(errorResult.error.message);
+        this.recordFailure(error);
+
+        // Publish detailed error event
+        await this.client.publish('artist.task.failed', {
+          error: errorResult.error.message,
+          errorType: errorResult.error.type,
+          isTransient: errorResult.error.type === 'RATE_LIMIT' || errorResult.error.type === 'TIMEOUT' || errorResult.error.type === 'NETWORK_ERROR',
+          context: {
+            mentionId: mention.id,
+            user: mention.user,
+            channel: mention.channel,
+            textPreview: mention.text.substring(0, 100),
+            provider: errorResult.error.provider,
+          },
+          agent: 'agent-artist',
+          timestamp: new Date().toISOString(),
+        }, { broker: 'default', network: 'global' });
+
+        // Send user-friendly error message (no stack traces)
+        const userMessage = 'Sorry, I encountered an issue generating a response. The issue has been logged.';
+        await this.sendSlackReply(mention.channel, mention.thread_ts, userMessage);
+        return;
+      }
+
+      // Buffer the streamed response
+      let botResponse = '';
+      try {
+        for await (const chunk of streamResult.data) {
+          botResponse += chunk;
+        }
+        logger.info(MODULE_SLACK_BOT, `Streamed response complete (${botResponse.length} chars)`, timer.elapsed('main'));
+      } catch (streamError: any) {
+        logger.error(MODULE_SLACK_BOT, `Stream error: ${streamError.message}`, timer.elapsed('main'));
+        await this.sendSlackReply(mention.channel, mention.thread_ts, 'Sorry, the response stream was interrupted.');
+        return;
+      }
+
+      // Step 6: Store messages in MemoryService
+      // Store user message
+      await this.memoryService.storeMessage(mention.user, mention.channel, {
+        role: 'user',
+        content: mention.text,
+        timestamp: Date.now(),
+      });
+
+      // Store bot response
+      await this.memoryService.storeMessage(mention.user, mention.channel, {
+        role: 'assistant',
+        content: botResponse,
+        timestamp: Date.now(),
+      });
+
+      // Step 7: Send response to channel
+      await this.sendSlackReply(mention.channel, mention.thread_ts, botResponse);
+
+      logger.info(MODULE_SLACK_BOT, `Replied to @${mention.user}`, timer.elapsed('main'));
+
+      // Record success for circuit breaker
+      this.recordSuccess();
+    } catch (error: any) {
+      logger.error(MODULE_SLACK_BOT, `Error processing mention from @${mention.user}`, timer.elapsed('main'), error);
+
+      // Classify error type
+      const errorType = this.classifyError(error);
+      const isTransient = errorType === 'network' || errorType === 'timeout' || errorType === 'rate_limit';
+
+      // Record failure for circuit breaker
+      this.recordFailure(error);
+
+      // Publish detailed error event
+      await this.client.publish('artist.task.failed', {
+        error: error.message || String(error),
+        errorType,
+        isTransient,
+        stack: error.stack,
+        context: {
+          mentionId: mention.id,
+          user: mention.user,
+          channel: mention.channel,
+          textPreview: mention.text.substring(0, 100),
+        },
+        agent: 'agent-artist',
+        timestamp: new Date().toISOString(),
+      }, { broker: 'default', network: 'global' });
+
+      // Send appropriate error message to Slack (no stack traces)
+      const userMessage = isTransient
+        ? 'Sorry, I encountered a temporary issue. Please try again in a moment.'
+        : 'Sorry, I encountered an error processing your message. The issue has been logged.';
+
+      try {
+        await this.sendSlackReply(mention.channel, mention.thread_ts, userMessage);
+      } catch (replyError: any) {
+        logger.error(MODULE_SLACK_BOT, 'Failed to send error reply', timer.elapsed('main'), replyError);
+      }
+    }
+  }
+
+  /**
+   * Classify error type for appropriate handling
+   *
+   * @param error - Error object
+   * @returns Error type classification
+   */
+  private classifyError(error: any): string {
+    const message = error.message?.toLowerCase() || '';
+
+    // Network-related errors (transient)
+    if (message.includes('econnrefused') || message.includes('enotfound') ||
+        message.includes('network') || message.includes('socket')) {
+      return 'network';
+    }
+
+    // Timeout errors (transient)
+    if (message.includes('timeout') || message.includes('timed out')) {
+      return 'timeout';
+    }
+
+    // Rate limiting (transient)
+    if (message.includes('rate limit') || message.includes('429') ||
+        message.includes('too many requests')) {
+      return 'rate_limit';
+    }
+
+    // API errors (non-transient)
+    if (message.includes('api') || message.includes('invalid') ||
+        message.includes('unauthorized') || message.includes('403')) {
+      return 'api_error';
+    }
+
+    // Validation errors (non-transient)
+    if (message.includes('validation') || message.includes('invalid input') ||
+        message.includes('schema')) {
+      return 'validation_error';
+    }
+
+    // Unknown error type
+    return 'unknown';
+  }
+
+  /**
+   * Execute a KADI tool via broker with retry logic
+   * @deprecated This method is unused in the current implementation (tools are invoked via invokeToolWithRetry)
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private async executeKadiTool(
+    toolName: string,
+    input: Record<string, unknown>
+  ): Promise<any> {
+    // Protocol check removed - using invokeToolWithRetry() directly (kadi-core v0.6.0)
+
+    try {
+      logger.info(MODULE_SLACK_BOT, `Executing tool: ${toolName}`, timer.elapsed('main'));
+
+      // Determine target agent based on tool name
+      const targetAgent = this.resolveTargetAgent(toolName);
+
+      // Use invokeToolWithRetry for resilient tool execution
+      const result = await this.invokeToolWithRetry({
+        targetAgent,
+        toolName,
+        toolInput: input,
+        timeout: 30000,
+      });
+
+      // Handle the result - MCP tools return results in various formats
+      // Some return { result: string }, some return { content: [...] }, some return plain values
+      if (result && typeof result === 'object') {
+        // MCP tools often return { content: [{ type: 'text', text: '...' }] }
+        if (Array.isArray(result.content)) {
+          const textContent = result.content
+            .filter((item: any) => item.type === 'text')
+            .map((item: any) => item.text)
+            .join('\n');
+          return textContent || JSON.stringify(result);
+        }
+
+        // Some tools return { result: { ... } }
+        if (result.result !== undefined) {
+          return result.result;
+        }
+
+        // Return the whole result object as fallback
+        return result;
+      }
+
+      return result;
+    } catch (error: any) {
+      logger.error(MODULE_SLACK_BOT, `Tool execution failed (${toolName})`, timer.elapsed('main'), error);
+
+      // Classify error and publish event
+      const errorType = this.classifyError(error);
+      const isTransient = errorType === 'network' || errorType === 'timeout' || errorType === 'rate_limit';
+
+      await this.client.publish('artist.task.failed', {
+        error: error.message || String(error),
+        errorType,
+        isTransient,
+        stack: error.stack,
+        context: {
+          toolName,
+          targetAgent: this.resolveTargetAgent(toolName),
+          input: JSON.stringify(input).substring(0, 200),
+        },
+        agent: 'agent-artist',
+        timestamp: new Date().toISOString(),
+      }, { broker: 'default', network: 'global' });
+
+      // Extract useful error message for Claude
+      const errorMessage = error.message || String(error);
+      return `Error executing tool: ${errorMessage}`;
+    }
+  }
+
+  /**
+   * Send reply to Slack via MCP_Slack_Server
+   *
+   * Handles Slack's 4,000 character limit by splitting long messages
+   * into multiple sequential replies in the same thread.
+   */
+  private async sendSlackReply(
+    channel: string,
+    thread_ts: string,
+    text: string
+  ): Promise<void> {
+    // Protocol check removed - using invokeToolWithRetry() directly (kadi-core v0.6.0)
+
+    const MAX_SLACK_MESSAGE_LENGTH = 4000;
+
+    // If message fits in one reply, send directly
+    if (text.length <= MAX_SLACK_MESSAGE_LENGTH) {
+      await this.invokeToolWithRetry({
+        targetAgent: 'slack-server',
+        toolName: 'slack_send_reply',
+        toolInput: {
+          channel,
+          thread_ts,
+          text,
+        },
+        timeout: parseInt(process.env.BOT_TOOL_TIMEOUT_MS || '10000'),
+      });
+      return;
+    }
+
+    // Split long message into chunks
+    logger.info(MODULE_SLACK_BOT, `Message too long (${text.length} chars), splitting into chunks...`, timer.elapsed('main'));
+
+    const chunks = this.splitMessage(text, MAX_SLACK_MESSAGE_LENGTH);
+
+    logger.info(MODULE_SLACK_BOT, `Sending ${chunks.length} message chunks to Slack`, timer.elapsed('main'));
+
+    // Send all chunks as threaded replies
+    for (let i = 0; i < chunks.length; i++) {
+      await this.invokeToolWithRetry({
+        targetAgent: 'slack-server',
+        toolName: 'slack_send_reply',
+        toolInput: {
+          channel,
+          thread_ts,
+          text: chunks[i],
+        },
+        timeout: parseInt(process.env.BOT_TOOL_TIMEOUT_MS || '10000'),
+      });
+
+      // Small delay between messages to avoid rate limiting
+      if (i < chunks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+  }
+
+  /**
+   * Split message into chunks that respect Slack's character limit
+   *
+   * Tries to split on newlines to keep formatting intact.
+   *
+   * @param text - Full message text
+   * @param maxLength - Maximum length per chunk (default: 4000)
+   * @returns Array of message chunks
+   */
+  private splitMessage(text: string, maxLength: number = 4000): string[] {
+    const chunks: string[] = [];
+    let currentChunk = '';
+
+    // Split by lines to preserve formatting
+    const lines = text.split('\n');
+
+    for (const line of lines) {
+      // If single line exceeds limit, force-split it
+      if (line.length > maxLength) {
+        // Save current chunk if not empty
+        if (currentChunk) {
+          chunks.push(currentChunk);
+          currentChunk = '';
+        }
+
+        // Force-split the long line
+        let remainingLine = line;
+        while (remainingLine.length > maxLength) {
+          chunks.push(remainingLine.substring(0, maxLength));
+          remainingLine = remainingLine.substring(maxLength);
+        }
+        currentChunk = remainingLine + '\n';
+        continue;
+      }
+
+      // Check if adding this line would exceed limit
+      if (currentChunk.length + line.length + 1 > maxLength) {
+        // Save current chunk and start new one
+        chunks.push(currentChunk.trim());
+        currentChunk = line + '\n';
+      } else {
+        // Add line to current chunk
+        currentChunk += line + '\n';
+      }
+    }
+
+    // Add final chunk if not empty
+    if (currentChunk.trim()) {
+      chunks.push(currentChunk.trim());
+    }
+
+    return chunks;
+  }
+
+  /**
+   * Query broker for tools available on connected networks
+   *
+   * Uses KĀDI broker's kadi.ability.list API to discover tools available
+   * on the networks this agent is connected to (global, text, git, slack, discord).
+   *
+   * @returns Array of network tools in Anthropic format
+   */
+  private async queryNetworkTools(): Promise<Anthropic.Tool[]> {
+    try {
+      // Check if client is connected to any broker
+      if (!this.client.isConnected()) {
+        logger.debug(MODULE_SLACK_BOT, 'No broker connection available for network tool discovery', timer.elapsed('main'));
+        return [];
+      }
+
+      // Use kadi-core v0.6.0+ API to discover tools from broker
+      // The broker returns tools with their schemas in the format:
+      // { tools: [{ name, description, inputSchema, tags, providers }] }
+      const response = await this.client.invokeRemote<{ tools: Array<{
+        name: string;
+        description?: string;
+        inputSchema?: Record<string, unknown>;
+        tags?: string[];
+      }> }>('kadi.ability.list', { includeProviders: false });
+
+      if (!response?.tools || !Array.isArray(response.tools)) {
+        logger.warn(MODULE_SLACK_BOT, 'Invalid response from kadi.ability.list', timer.elapsed('main'));
+        return [];
+      }
+
+      // Convert broker tools to Anthropic format
+      const networkTools: Anthropic.Tool[] = response.tools.map(tool => ({
+        name: tool.name,
+        description: tool.description || '',
+        input_schema: tool.inputSchema as Anthropic.Tool.InputSchema || {
+          type: 'object',
+          properties: {},
+          required: []
+        }
+      }));
+
+      logger.debug(MODULE_SLACK_BOT, `Discovered ${networkTools.length} network tools from broker`, timer.elapsed('main'));
+      return networkTools;
+    } catch (error) {
+      logger.error(MODULE_SLACK_BOT, 'Failed to query network tools from broker', timer.elapsed('main'), error as Error | string);
+      return [];  // Fallback to empty array on error
+    }
+  }
+
+  /**
+   * Get available KADI tools formatted for Claude API
+   *
+   * Combines tools from two sources:
+   * 1. Local tools: Registered directly on this agent via client.registerTool()
+   * 2. Network tools: Available via broker on connected networks
+   *
+   * This enables dynamic discovery - when broker tools change, they're
+   * automatically available to Claude without code changes.
+   *
+   * @deprecated This method is unused in the current implementation (tool use removed)
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private async getAvailableTools(): Promise<Anthropic.Tool[]> {
+    // 1. Get locally registered tools (tools on THIS agent)
+    const localTools = this.client.readAgentJson().tools.map(tool => ({
+      name: tool.name,
+      description: tool.description || '',
+      input_schema: tool.inputSchema as Anthropic.Tool.InputSchema
+    }));
+
+    // 2. Query broker for tools available on connected networks
+    const networkTools = await this.queryNetworkTools();
+
+    // 3. Deduplicate: prefer local tools over network tools (local tools are authoritative)
+    const localToolNames = new Set(localTools.map(t => t.name));
+    const uniqueNetworkTools = networkTools.filter(t => !localToolNames.has(t.name));
+
+    // 4. Combine and return (local tools first, then unique network tools)
+    logger.info(MODULE_SLACK_BOT, `Available tools: ${localTools.length} local + ${uniqueNetworkTools.length} network (${networkTools.length - uniqueNetworkTools.length} duplicates removed) = ${localTools.length + uniqueNetworkTools.length} total`, timer.elapsed('main'));
+
+    return [...localTools, ...uniqueNetworkTools];
+  }
+
+  /**
+   * Resolve target agent for a tool name
+   */
+  private resolveTargetAgent(toolName: string): string {
+    // Simple prefix-based routing
+    if (toolName.startsWith('format_') || toolName.startsWith('count_') || toolName.startsWith('validate_') || toolName.startsWith('reverse_') || toolName.startsWith('trim_') || toolName.startsWith('echo')) {
+      return 'template-agent-typescript'; // This agent's own tools
+    }
+    if (toolName.startsWith('slack_')) {
+      return 'slack-server';
+    }
+    if (toolName.startsWith('git_')) {
+      return 'git';
+    }
+
+    // Default: assume it's a tool on this agent
+    return 'template-agent-typescript';
+  }
+}
