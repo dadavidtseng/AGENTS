@@ -57,7 +57,9 @@ export function registerDiscordTools(
     },
     async (params) => {
       try {
-        const result = await discord.sendMessage(params.channel, params.text, params.message_id);
+        // Validate message_id is a proper Discord snowflake (17-20 digit number) — LLMs sometimes hallucinate invalid values
+        const messageId = params.message_id && /^\d{17,20}$/.test(params.message_id) ? params.message_id : undefined;
+        const result = await discord.sendMessage(params.channel, params.text, messageId);
         console.log(`✅ [Discord] Message sent to ${params.channel} (id: ${result.id})`);
         return { success: true, message: 'Message sent successfully', messageId: result.id, channelId: result.channelId };
       } catch (error) {
