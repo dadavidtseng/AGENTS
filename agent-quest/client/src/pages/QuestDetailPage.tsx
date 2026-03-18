@@ -15,28 +15,29 @@ import type { Quest, Task } from '../types';
 /**
  * Status badge color mapping
  */
-const STATUS_COLORS: Record<string, string> = {
-  draft: 'bg-gray-100 text-gray-700',
-  pending: 'bg-gray-100 text-gray-700',
-  pending_approval: 'bg-yellow-100 text-yellow-800',
-  approved: 'bg-green-100 text-green-800',
-  rejected: 'bg-red-100 text-red-800',
-  in_progress: 'bg-blue-100 text-blue-800',
-  completed: 'bg-purple-100 text-purple-800',
-  failed: 'bg-red-100 text-red-800',
-  blocked: 'bg-orange-100 text-orange-800',
-  cancelled: 'bg-gray-200 text-gray-600',
+const STATUS_COLORS: Record<string, { dot: string; text: string }> = {
+  draft: { dot: 'bg-text-tertiary', text: 'Draft' },
+  pending: { dot: 'bg-text-tertiary', text: 'Pending' },
+  pending_approval: { dot: 'bg-yellow animate-pulse-dot', text: 'Pending Approval' },
+  approved: { dot: 'bg-green', text: 'Approved' },
+  rejected: { dot: 'bg-red', text: 'Rejected' },
+  in_progress: { dot: 'bg-blue animate-pulse-dot', text: 'In Progress' },
+  completed: { dot: 'bg-green', text: 'Completed' },
+  failed: { dot: 'bg-red', text: 'Failed' },
+  blocked: { dot: 'bg-orange', text: 'Blocked' },
+  cancelled: { dot: 'bg-text-tertiary', text: 'Cancelled' },
 };
 
 /**
  * Task status badge
  */
 function TaskStatusBadge({ status }: { status: string }) {
-  const colorClass = STATUS_COLORS[status] || 'bg-gray-100 text-gray-700';
+  const config = STATUS_COLORS[status] || { dot: 'bg-text-tertiary', text: status };
 
   return (
-    <span className={`px-3 py-1 rounded-full text-sm font-medium ${colorClass}`}>
-      {status.replace(/_/g, ' ')}
+    <span className="inline-flex items-center gap-2 text-[0.75rem] text-text-secondary border border-border px-3 py-1.5 rounded-full">
+      <span className={`w-1.5 h-1.5 rounded-full ${config.dot}`} />
+      {config.text}
     </span>
   );
 }
@@ -48,16 +49,16 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
   return (
     <div
       onClick={onClick}
-      className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow cursor-pointer border border-gray-200"
+      className="group bg-bg-elevated p-8 cursor-pointer transition-colors duration-300 hover:bg-bg-card card-hover-gradient"
     >
       <div className="flex justify-between items-start mb-3">
-        <h3 className="text-lg font-semibold text-gray-900">{task.name}</h3>
+        <h3 className="text-lg font-medium tracking-tight text-text-primary">{task.name}</h3>
         <TaskStatusBadge status={task.status} />
       </div>
 
-      <p className="text-gray-600 mb-3 line-clamp-2">{task.description}</p>
+      <p className="text-sm font-light leading-relaxed text-text-secondary mb-4 line-clamp-2">{task.description}</p>
 
-      <div className="flex flex-col gap-2 text-sm text-gray-500">
+      <div className="flex flex-col gap-2 text-[0.7rem] font-mono tracking-wide text-text-tertiary">
         {task.assignedAgent && (
           <div className="flex items-center gap-2">
             <span className="font-medium">Agent:</span>
@@ -106,25 +107,25 @@ function ProgressOverview({ tasks }: { tasks: Task[] }) {
   const percent = Math.round((completed / total) * 100);
 
   return (
-    <div className="bg-white rounded-lg shadow mb-6 p-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">Progress</h2>
+    <div className="bg-bg-card rounded-lg border border-border mb-6 p-6">
+      <h2 className="text-lg font-semibold text-text-primary mb-4">Progress</h2>
 
       {/* Progress bar */}
       <div className="mb-4">
-        <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
+        <div className="flex items-center justify-between text-sm text-text-secondary mb-2">
           <span>{completed} of {total} tasks completed</span>
           <span className="font-medium">{percent}%</span>
         </div>
-        <div className="w-full bg-gray-200 rounded-full h-3">
+        <div className="w-full bg-border rounded-full h-3">
           <div
             className={`h-3 rounded-full transition-all ${
               percent >= 100
-                ? 'bg-green-500'
+                ? 'bg-green'
                 : percent >= 60
-                ? 'bg-blue-500'
+                ? 'bg-blue'
                 : percent >= 30
-                ? 'bg-yellow-500'
-                : 'bg-gray-400'
+                ? 'bg-yellow'
+                : 'bg-text-tertiary'
             }`}
             style={{ width: `${percent}%` }}
           />
@@ -133,21 +134,21 @@ function ProgressOverview({ tasks }: { tasks: Task[] }) {
 
       {/* Status breakdown */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="text-center p-3 bg-gray-50 rounded-lg">
-          <div className="text-2xl font-bold text-gray-500">{pending}</div>
-          <div className="text-xs text-gray-500">Pending</div>
+        <div className="text-center p-3 bg-bg-elevated rounded-lg">
+          <div className="text-2xl font-bold text-text-tertiary">{pending}</div>
+          <div className="text-xs text-text-tertiary">Pending</div>
         </div>
-        <div className="text-center p-3 bg-blue-50 rounded-lg">
-          <div className="text-2xl font-bold text-blue-600">{inProgress}</div>
-          <div className="text-xs text-blue-600">Active</div>
+        <div className="text-center p-3 bg-blue/10 rounded-lg">
+          <div className="text-2xl font-bold text-blue">{inProgress}</div>
+          <div className="text-xs text-blue">Active</div>
         </div>
-        <div className="text-center p-3 bg-green-50 rounded-lg">
-          <div className="text-2xl font-bold text-green-600">{completed}</div>
-          <div className="text-xs text-green-600">Completed</div>
+        <div className="text-center p-3 bg-green/10 rounded-lg">
+          <div className="text-2xl font-bold text-green">{completed}</div>
+          <div className="text-xs text-green">Completed</div>
         </div>
-        <div className="text-center p-3 bg-red-50 rounded-lg">
-          <div className="text-2xl font-bold text-red-600">{failed}</div>
-          <div className="text-xs text-red-600">Failed</div>
+        <div className="text-center p-3 bg-red/10 rounded-lg">
+          <div className="text-2xl font-bold text-red">{failed}</div>
+          <div className="text-xs text-red">Failed</div>
         </div>
       </div>
     </div>
@@ -222,10 +223,10 @@ export function QuestDetailPage() {
    */
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="flex items-center justify-center py-32">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading quest details...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue mx-auto mb-4"></div>
+          <p className="text-text-secondary">Loading quest details...</p>
         </div>
       </div>
     );
@@ -236,14 +237,14 @@ export function QuestDetailPage() {
    */
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="flex items-center justify-center py-32">
         <div className="text-center max-w-md">
-          <div className="text-red-600 text-5xl mb-4">⚠️</div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Error Loading Quest</h2>
-          <p className="text-gray-600 mb-6">{error}</p>
+          <div className="text-red text-5xl mb-4">⚠️</div>
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary mb-2">Error Loading Quest</h2>
+          <p className="text-sm font-light text-text-secondary mb-6">{error}</p>
           <button
             onClick={() => navigate('/quests')}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="text-[0.85rem] font-medium text-bg bg-text-primary px-7 py-3 rounded-lg hover:opacity-85 hover:-translate-y-px transition-all"
           >
             Back to Quest List
           </button>
@@ -257,36 +258,36 @@ export function QuestDetailPage() {
    */
   if (!quest) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="flex items-center justify-center py-32">
         <div className="text-center">
-          <p className="text-gray-600">Quest not found</p>
+          <p className="text-text-secondary">Quest not found</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Back Button */}
+    <>
+      {/* Back Button */}
         <button
           onClick={() => navigate('/quests')}
-          className="mb-6 text-blue-600 hover:text-blue-800 flex items-center gap-2"
+          className="mb-8 text-sm text-text-secondary hover:text-text-primary transition-colors flex items-center gap-2"
         >
           ← Back to Quest List
         </button>
 
         {/* Quest Header */}
-        <div className="bg-white rounded-lg shadow mb-6 p-6">
-          <div className="flex justify-between items-start mb-4">
+        <div className="bg-bg-card rounded-xl border border-border mb-8 p-8">
+          <div className="flex justify-between items-start mb-5">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">{quest.questName}</h1>
-              <p className="text-gray-600">ID: {quest.questId}</p>
+              <p className="font-mono text-[0.65rem] tracking-[0.15em] uppercase text-blue mb-3">Quest</p>
+              <h1 className="text-[2rem] font-semibold tracking-tight text-text-primary mb-2">{quest.questName}</h1>
+              <p className="font-mono text-[0.7rem] tracking-wide text-text-tertiary">{quest.questId}</p>
             </div>
             <TaskStatusBadge status={quest.status} />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm font-light text-text-secondary">
             <div>
               <span className="font-medium">Created:</span>{' '}
               {new Date(quest.createdAt).toLocaleDateString()}
@@ -328,8 +329,8 @@ export function QuestDetailPage() {
         )}
 
         {/* Requirements Section */}
-        <div className="bg-white rounded-lg shadow mb-6 p-6">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Requirements</h2>
+        <div className="bg-bg-card rounded-xl border border-border mb-8 p-8">
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary mb-5">Requirements</h2>
           <div className="prose max-w-none overflow-auto max-h-96">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {quest.requirements}
@@ -338,8 +339,8 @@ export function QuestDetailPage() {
         </div>
 
         {/* Design Section */}
-        <div className="bg-white rounded-lg shadow mb-6 p-6">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Design</h2>
+        <div className="bg-bg-card rounded-xl border border-border mb-8 p-8">
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary mb-5">Design</h2>
           <div className="prose max-w-none overflow-auto max-h-96">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {quest.design}
@@ -349,9 +350,11 @@ export function QuestDetailPage() {
 
         {/* Tasks Section */}
         {(quest.tasks ?? []).length > 0 && (
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Tasks ({(quest.tasks ?? []).length})</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="mb-8">
+            <h2 className="text-xl font-semibold tracking-tight text-text-primary mb-5">
+              Tasks ({(quest.tasks ?? []).length})
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-border border border-border rounded-xl overflow-hidden">
               {(quest.tasks ?? []).map((task) => (
                 <TaskCard
                   key={task.id}
@@ -365,13 +368,11 @@ export function QuestDetailPage() {
 
         {/* No Tasks */}
         {(quest.tasks ?? []).length === 0 && (
-          <div className="bg-white rounded-lg shadow p-6 text-center">
-            <p className="text-gray-600">No tasks yet. Split this quest to create tasks.</p>
+          <div className="bg-bg-card rounded-xl border border-border p-8 text-center">
+            <p className="text-sm font-light text-text-secondary">No tasks yet. Split this quest to create tasks.</p>
           </div>
         )}
-      </div>
 
-
-    </div>
+    </>
   );
 }

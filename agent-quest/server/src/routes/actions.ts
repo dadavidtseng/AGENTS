@@ -18,7 +18,7 @@
 
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { kadiClient } from '../index.js';
-import { parseToolResult } from '../kadi-client.js';
+import { parseToolResult } from '../kadi-agent.js';
 import { broadcastEvent } from '../websocket.js';
 
 export const questActionRoutes = Router();
@@ -32,64 +32,79 @@ export const taskActionRoutes = Router();
  * POST /api/quests/:questId/approve — Approve a quest plan
  * Body: { feedback?: string }
  */
-questActionRoutes.post('/:questId/approve', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const questId = req.params.questId as string;
-    const { feedback } = req.body;
+questActionRoutes.post('/:questId/approve', async (req: Request, res: Response, _next: NextFunction) => {
+  const questId = req.params.questId as string;
+  const { feedback } = req.body;
 
-    const result = await kadiClient.questApprove(questId, feedback);
-    const data = parseToolResult(result);
-    broadcastEvent('quest.updated', { questId, action: 'approved' });
-    res.json({ success: true, data });
-  } catch (err) {
-    next(err);
-  }
+  // Respond immediately — the LLM orchestrator in agent-producer can take minutes
+  res.json({ success: true, data: { questId, action: 'approved', status: 'submitted' } });
+
+  // Fire-and-forget: process asynchronously
+  kadiClient.questApprove(questId, feedback)
+    .then((result) => {
+      const data = parseToolResult(result);
+      broadcastEvent('quest.updated', { questId, action: 'approved', data });
+    })
+    .catch((err) => {
+      console.error(`[actions] questApprove async error for ${questId}:`, err?.message ?? err);
+      broadcastEvent('quest.updated', { questId, action: 'approved', error: String(err?.message ?? 'Unknown error') });
+    });
 });
 
 /**
  * POST /api/quests/:questId/revise — Request revision of a quest plan
  * Body: { feedback: string } (required)
  */
-questActionRoutes.post('/:questId/revise', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const questId = req.params.questId as string;
-    const { feedback } = req.body;
+questActionRoutes.post('/:questId/revise', async (req: Request, res: Response, _next: NextFunction) => {
+  const questId = req.params.questId as string;
+  const { feedback } = req.body;
 
-    if (!feedback || typeof feedback !== 'string' || feedback.trim().length === 0) {
-      res.status(400).json({ success: false, error: 'feedback is required for revision' });
-      return;
-    }
-
-    const result = await kadiClient.questRequestRevision(questId, feedback);
-    const data = parseToolResult(result);
-    broadcastEvent('quest.updated', { questId, action: 'revision_requested' });
-    res.json({ success: true, data });
-  } catch (err) {
-    next(err);
+  if (!feedback || typeof feedback !== 'string' || feedback.trim().length === 0) {
+    res.status(400).json({ success: false, error: 'feedback is required for revision' });
+    return;
   }
+
+  // Respond immediately — the LLM orchestrator in agent-producer can take minutes
+  res.json({ success: true, data: { questId, action: 'revision_requested', status: 'submitted' } });
+
+  // Fire-and-forget: process asynchronously
+  kadiClient.questRequestRevision(questId, feedback)
+    .then((result) => {
+      const data = parseToolResult(result);
+      broadcastEvent('quest.updated', { questId, action: 'revision_requested', data });
+    })
+    .catch((err) => {
+      console.error(`[actions] questRequestRevision async error for ${questId}:`, err?.message ?? err);
+      broadcastEvent('quest.updated', { questId, action: 'revision_requested', error: String(err?.message ?? 'Unknown error') });
+    });
 });
 
 /**
  * POST /api/quests/:questId/reject — Reject a quest plan
  * Body: { feedback: string } (required)
  */
-questActionRoutes.post('/:questId/reject', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const questId = req.params.questId as string;
-    const { feedback } = req.body;
+questActionRoutes.post('/:questId/reject', async (req: Request, res: Response, _next: NextFunction) => {
+  const questId = req.params.questId as string;
+  const { feedback } = req.body;
 
-    if (!feedback || typeof feedback !== 'string' || feedback.trim().length === 0) {
-      res.status(400).json({ success: false, error: 'feedback is required for rejection' });
-      return;
-    }
-
-    const result = await kadiClient.questReject(questId, feedback);
-    const data = parseToolResult(result);
-    broadcastEvent('quest.updated', { questId, action: 'rejected' });
-    res.json({ success: true, data });
-  } catch (err) {
-    next(err);
+  if (!feedback || typeof feedback !== 'string' || feedback.trim().length === 0) {
+    res.status(400).json({ success: false, error: 'feedback is required for rejection' });
+    return;
   }
+
+  // Respond immediately — the LLM orchestrator in agent-producer can take minutes
+  res.json({ success: true, data: { questId, action: 'rejected', status: 'submitted' } });
+
+  // Fire-and-forget: process asynchronously
+  kadiClient.questReject(questId, feedback)
+    .then((result) => {
+      const data = parseToolResult(result);
+      broadcastEvent('quest.updated', { questId, action: 'rejected', data });
+    })
+    .catch((err) => {
+      console.error(`[actions] questReject async error for ${questId}:`, err?.message ?? err);
+      broadcastEvent('quest.updated', { questId, action: 'rejected', error: String(err?.message ?? 'Unknown error') });
+    });
 });
 
 // ---------------------------------------------------------------------------

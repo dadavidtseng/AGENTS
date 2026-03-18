@@ -1,1 +1,332 @@
 @import "tailwindcss";
+
+/* ═══════════════════════════════════════════
+   Design Tokens — Portfolio-Inspired Dark Dashboard
+   Adapted from Portfolio's Vercel-inspired monochrome system
+   for a KĀDI quest management dashboard context.
+   ═══════════════════════════════════════════ */
+
+@theme {
+  /* ── Core Palette ── */
+  --color-bg: #000000;
+  --color-bg-elevated: #0a0a0a;
+  --color-bg-card: #111111;
+  --color-bg-input: #0a0a0a;
+  --color-border: #1a1a1a;
+  --color-border-hover: #333333;
+
+  /* ── Text ── */
+  --color-text-primary: #ededed;
+  --color-text-secondary: #888888;
+  --color-text-tertiary: #555555;
+  --color-accent: #ffffff;
+
+  /* ── Brand / Accent ── */
+  --color-blue: #0070f3;
+  --color-blue-hover: #0060d0;
+  --color-blue-glow: rgba(0, 112, 243, 0.15);
+
+  /* ── Gradients ── */
+  --color-gradient-1: #007cf0;
+  --color-gradient-2: #00dfd8;
+  --color-gradient-3: #7928ca;
+  --color-gradient-4: #ff0080;
+
+  /* ── Semantic Status ── */
+  --color-green: #22c55e;
+  --color-green-glow: rgba(34, 197, 94, 0.15);
+  --color-yellow: #eab308;
+  --color-yellow-glow: rgba(234, 179, 8, 0.15);
+  --color-red: #ef4444;
+  --color-red-glow: rgba(239, 68, 68, 0.15);
+  --color-orange: #f97316;
+
+  /* ── Fonts ── */
+  --font-sans: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* ── Animations ── */
+  --animate-fade-up: fade-up 0.6s ease forwards;
+  --animate-fade-up-delay-1: fade-up 0.6s ease 0.1s forwards;
+  --animate-fade-up-delay-2: fade-up 0.6s ease 0.2s forwards;
+  --animate-fade-up-delay-3: fade-up 0.6s ease 0.3s forwards;
+  --animate-pulse-dot: pulse-dot 2s ease-in-out infinite;
+  --animate-fade-in: fade-in 0.2s ease-out forwards;
+  --animate-slide-in: slide-in 0.25s ease-out forwards;
+}
+
+/* ═══════════════════════════════════════════
+   CSS Custom Properties — Glassmorphism & Overlays
+   ═══════════════════════════════════════════ */
+
+:root {
+  --frosted-bg: rgba(0, 0, 0, 0.8);
+  --frosted-border: rgba(255, 255, 255, 0.06);
+  --overlay-bg: rgba(0, 0, 0, 0.6);
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.4);
+  --shadow-glow-blue: 0 0 20px rgba(0, 112, 243, 0.3);
+}
+
+/* ═══════════════════════════════════════════
+   Keyframes
+   ═══════════════════════════════════════════ */
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ═══════════════════════════════════════════
+   Base Styles
+   ═══════════════════════════════════════════ */
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ═══════════════════════════════════════════
+   Utility Classes
+   ═══════════════════════════════════════════ */
+
+.gradient-text-blue {
+  background: linear-gradient(135deg, var(--color-gradient-1), var(--color-gradient-2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-text-pink {
+  background: linear-gradient(135deg, var(--color-gradient-3), var(--color-gradient-4));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.frosted-glass {
+  background: var(--frosted-bg);
+  backdrop-filter: blur(12px) saturate(180%);
+  border: 1px solid var(--frosted-border);
+}
+
+.glow-blue {
+  box-shadow: var(--shadow-glow-blue);
+}
+
+/* ═══════════════════════════════════════════
+   Scrollbar
+   ═══════════════════════════════════════════ */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-hover);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary);
+}
+
+/* ═══════════════════════════════════════════
+   Selection & Focus
+   ═══════════════════════════════════════════ */
+
+::selection {
+  background: rgba(0, 112, 243, 0.3);
+  color: var(--color-text-primary);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-blue);
+  outline-offset: 2px;
+}
+
+/* ═══════════════════════════════════════════
+   Scroll Reveal (for page transitions)
+   ═══════════════════════════════════════════ */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.reveal-delay-1 { transition-delay: 0.1s; }
+.reveal-delay-2 { transition-delay: 0.2s; }
+.reveal-delay-3 { transition-delay: 0.3s; }
+
+/* ═══════════════════════════════════════════
+   Prose (Markdown) — Dark Theme Override
+   ═══════════════════════════════════════════ */
+
+.prose {
+  --tw-prose-body: var(--color-text-secondary);
+  --tw-prose-headings: var(--color-text-primary);
+  --tw-prose-links: var(--color-blue);
+  --tw-prose-bold: var(--color-text-primary);
+  --tw-prose-code: var(--color-text-primary);
+  --tw-prose-pre-bg: var(--color-bg-elevated);
+  --tw-prose-pre-code: var(--color-text-secondary);
+  --tw-prose-quotes: var(--color-text-secondary);
+  --tw-prose-quote-borders: var(--color-border);
+  --tw-prose-hr: var(--color-border);
+  --tw-prose-th-borders: var(--color-border);
+  --tw-prose-td-borders: var(--color-border);
+  color: var(--color-text-secondary);
+  font-weight: 300;
+  line-height: 1.75;
+}
+
+.prose :where(h1, h2, h3, h4):not(:where([class~="not-prose"] *)) {
+  color: var(--color-text-primary);
+  letter-spacing: -0.025em;
+}
+
+.prose :where(a):not(:where([class~="not-prose"] *)) {
+  color: var(--color-blue);
+  text-decoration: none;
+}
+
+.prose :where(a):not(:where([class~="not-prose"] *)):hover {
+  text-decoration: underline;
+}
+
+.prose :where(code):not(:where([class~="not-prose"] *)) {
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  color: var(--color-text-primary);
+}
+
+.prose :where(pre):not(:where([class~="not-prose"] *)) {
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.prose :where(blockquote):not(:where([class~="not-prose"] *)) {
+  border-left-color: var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.prose :where(strong):not(:where([class~="not-prose"] *)) {
+  color: var(--color-text-primary);
+}
+
+.prose :where(table):not(:where([class~="not-prose"] *)) {
+  border-color: var(--color-border);
+}
+
+.prose :where(th, td):not(:where([class~="not-prose"] *)) {
+  border-color: var(--color-border);
+  padding: 0.5rem 0.75rem;
+}
+
+/* ═══════════════════════════════════════════
+   Card Gradient Hover Line
+   ═══════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════
+   Mobile Menu Animations
+   ═══════════════════════════════════════════ */
+
+.mobile-menu-enter {
+  animation: fade-in 0.2s ease forwards;
+}
+
+.mobile-menu-item {
+  opacity: 0;
+  animation: slide-in 0.3s ease forwards;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ═══════════════════════════════════════════
+   Card Gradient Hover Line
+   ═══════════════════════════════════════════ */
+
+.card-hover-gradient {
+  position: relative;
+  overflow: hidden;
+}
+
+.card-hover-gradient::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--color-gradient-1), var(--color-gradient-2));
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.card-hover-gradient:hover::before {
+  opacity: 1;
+}
+
+/* ═══════════════════════════════════════════
+   Toast slide-up animation
+   ═══════════════════════════════════════════ */
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { kadiClient } from '../index.js';
-import { parseToolResult } from '../kadi-client.js';
+import { parseToolResult } from '../kadi-agent.js';
 import { broadcastEvent } from '../websocket.js';
 
 export const approvalRoutes = Router();
@@ -36,10 +36,20 @@ approvalRoutes.post('/:questId', async (req: Request, res: Response, next: NextF
       return;
     }
 
-    const result = await kadiClient.approvalSubmit(questId, decision, reason);
-    const data = parseToolResult(result);
-    broadcastEvent('approval.requested', { questId, decision, ...data as object });
-    res.json({ success: true, data });
+    // Respond immediately — the approval triggers a long chain
+    // (agent-producer task breakdown, LLM calls, etc.) that would timeout the HTTP request.
+    res.json({ success: true, data: { questId, decision, status: 'submitted' } });
+
+    // Fire-and-forget: submit approval and broadcast result asynchronously
+    kadiClient.approvalSubmit(questId, decision, reason)
+      .then((result) => {
+        const data = parseToolResult(result);
+        broadcastEvent('approval.requested', { questId, decision, ...data as object });
+      })
+      .catch((err) => {
+        console.error(`[approval] async approval failed for ${questId}:`, err);
+        broadcastEvent('approval.requested', { questId, decision, error: String(err) });
+      });
   } catch (err) {
     next(err);
   }

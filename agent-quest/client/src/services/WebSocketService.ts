@@ -31,6 +31,13 @@ export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 
 export type StatusChangeHandler = (status: ConnectionStatus) => void;
 
+/** Stored event for history buffer. */
+export interface StoredEvent {
+  id: number;
+  message: WsMessage;
+  receivedAt: string;
+}
+
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
@@ -46,6 +53,8 @@ export interface WebSocketServiceOptions {
   maxReconnectDelay?: number;
   /** Backoff multiplier. Defaults to 2. */
   backoffMultiplier?: number;
+  /** Maximum events to buffer in history. Defaults to 500. */
+  maxEventHistory?: number;
 }
 
 const DEFAULTS: Required<WebSocketServiceOptions> = {
@@ -54,6 +63,7 @@ const DEFAULTS: Required<WebSocketServiceOptions> = {
   initialReconnectDelay: 1_000,
   maxReconnectDelay: 30_000,
   backoffMultiplier: 2,
+  maxEventHistory: 500,
 };
 
 // ---------------------------------------------------------------------------
@@ -65,10 +75,15 @@ export class WebSocketService {
   private options: Required<WebSocketServiceOptions>;
   private listeners = new Map<string, Set<WsEventHandler>>();
   private statusListeners = new Set<StatusChangeHandler>();
+  private globalListeners = new Set<(msg: WsMessage) => void>();
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _status: ConnectionStatus = 'disconnected';
   private intentionalClose = false;
+  
+  // Event history buffer (circular buffer)
+  private eventHistory: StoredEvent[] = [];
+  private eventIdCounter = 0;
 
   constructor(options?: WebSocketServiceOptions) {
     this.options = { ...DEFAULTS, ...options };
@@ -173,6 +188,12 @@ export class WebSocketService {
     }
   }
 
+  /** Subscribe to ALL messages (for event timeline). Returns unsubscribe function. */
+  onMessage(handler: (msg: WsMessage) => void): () => void {
+    this.globalListeners.add(handler);
+    return () => { this.globalListeners.delete(handler); };
+  }
+
   /** Subscribe to connection status changes. */
   onStatusChange(handler: StatusChangeHandler): () => void {
     this.statusListeners.add(handler);
@@ -198,6 +219,46 @@ export class WebSocketService {
   }
 
   // -------------------------------------------------------------------------
+  // Event history
+  // -------------------------------------------------------------------------
+
+  /** Get all buffered events from history. */
+  getEventHistory(): StoredEvent[] {
+    return [...this.eventHistory];
+  }
+
+  /** Add a synthetic event to history (e.g., agent.connected from observer). */
+  addSyntheticEvent(event: string, data: unknown): void {
+    const message: WsMessage = {
+      event,
+      data,
+      timestamp: new Date().toISOString(),
+    };
+
+    const storedEvent: StoredEvent = {
+      id: ++this.eventIdCounter,
+      message,
+      receivedAt: new Date().toISOString(),
+    };
+
+    this.eventHistory.push(storedEvent);
+    if (this.eventHistory.length > this.options.maxEventHistory) {
+      this.eventHistory.shift();
+    }
+
+    // Notify global listeners
+    for (const handler of this.globalListeners) {
+      try { handler(message); } catch { /* ignore */ }
+    }
+  }
+
+  /** Clear event history buffer. */
+  clearEventHistory(): void {
+    this.eventHistory = [];
+    this.eventIdCounter = 0;
+  }
+
+  // -------------------------------------------------------------------------
   // Internal
   // -------------------------------------------------------------------------
 
@@ -208,6 +269,22 @@ export class WebSocketService {
     } catch {
       console.warn('[ws-service] Received non-JSON message, ignoring');
       return;
+    }
+
+    // Store in history buffer (circular buffer)
+    const storedEvent: StoredEvent = {
+      id: ++this.eventIdCounter,
+      message,
+      receivedAt: new Date().toISOString(),
+    };
+    this.eventHistory.push(storedEvent);
+    if (this.eventHistory.length > this.options.maxEventHistory) {
+      this.eventHistory.shift(); // Remove oldest event
+    }
+
+    // Notify global listeners (event timeline)
+    for (const handler of this.globalListeners) {
+      try { handler(message); } catch { /* ignore */ }
     }
 
     const handlers = this.listeners.get(message.event);

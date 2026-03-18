@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { kadiClient, } from '../index.js';
-import { parseToolResult } from '../kadi-client.js';
+import { parseToolResult } from '../kadi-agent.js';
 import { broadcastEvent } from '../websocket.js';
 
 export const questRoutes = Router();
@@ -28,6 +28,11 @@ questRoutes.get('/:questId', async (req: Request, res: Response, next: NextFunct
     const data = parseToolResult(result);
     res.json({ success: true, data });
   } catch (err) {
+    const msg = err instanceof Error ? err.message : '';
+    if (/not found/i.test(msg)) {
+      res.status(404).json({ success: false, error: msg });
+      return;
+    }
     next(err);
   }
 });

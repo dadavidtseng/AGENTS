@@ -1,5 +1,5 @@
 {
-  "name": "mcp-client-quest-server",
+  "name": "agent-quest-server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,12 +11,14 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@kadi.build/core": "file:../../../humin-game-lab/KADI/kadi-core",
+    "agents-library": "file:../../agents-library",
     "chokidar": "^4.0.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^5.0.1",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "zod": "^4.1.5"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

@@ -41,9 +41,17 @@ export interface Task {
   description: string;
   status: TaskStatus;
   assignedAgent?: string;
+  role?: string;
   dependencies: string[];
   startedAt?: string;
   completedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** Flattened task with parent quest context for backlog view. */
+export interface BacklogTask extends Task {
+  questName: string;
 }
 
 export interface Agent {

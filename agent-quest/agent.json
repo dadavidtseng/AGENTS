@@ -1,0 +1,36 @@
+{
+  "name": "agent-quest",
+  "version": "0.1.0",
+  "scripts": {
+    "preflight": "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules')){console.error('Dependencies not installed. Run: npm install');process.exit(1)}console.log('✓ Dependencies OK')\"",
+    "setup": "npm run install:all && npm run build",
+    "dev": "npx concurrently --raw --kill-others-on-fail \"npm run dev:client\" \"npm run dev:server\"",
+    "dev:client": "cd client && npx vite",
+    "dev:server": "cd server && npx tsx watch src/index.ts",
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "npm run build --prefix client",
+    "build:server": "npm run build --prefix server",
+    "start": "npm run start --prefix server",
+    "install:all": "npm install && npm install --prefix client && npm install --prefix server",
+    "lint": "npm run lint --prefix client && npm run lint --prefix server",
+    "test": "npm run test --prefix client && npm run test --prefix server",
+    "type-check": "npx tsc --noEmit --prefix client && npx tsc --noEmit --prefix server"
+  },
+  "build": {
+    "default": {
+      "from": "node:20-alpine",
+      "cli": "latest",
+      "run": [
+        "npm ci --include=dev",
+        "npx tsc",
+        "npm prune --omit=dev"
+      ],
+      "env": {
+        "NODE_ENV": "production"
+      }
+    }
+  },
+  "brokers": {
+    "default": "ws://localhost:8080/kadi"
+  }
+}

@@ -1,57 +1,68 @@
 /**
- * ConnectionStatus — Persistent indicator showing system connectivity.
+ * ConnectionStatus — Persistent footer status bar with glassmorphism.
  *
- * Displays:
- * - WebSocket connection state (connected / connecting / disconnected)
- * - KĀDI broker status (connected / disconnected)
- * - File watcher status (enabled / disabled)
+ * Displays system connectivity at a glance:
+ *  - WebSocket connection state
+ *  - SSE Observer state (live agent/network/tool data)
+ *  - KĀDI broker health
+ *  - Connected agent count
  *
- * Polls the /api/health endpoint every 30s for broker + watcher status.
- * WebSocket status is reactive via the useWebSocket hook.
+ * Polls /api/health every 30s for broker + watcher status.
+ * WebSocket status is reactive via useWebSocket hook.
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { useObserverDirect } from '../hooks/useObserver';
 import { apiClient, type HealthResponse } from '../api/client';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-interface ServiceStatus {
+interface ServiceHealth {
   kadiBroker: 'connected' | 'disconnected' | 'unknown';
   fileWatcher: 'enabled' | 'disabled' | 'unknown';
+  wsClients: number;
   lastChecked: string | null;
 }
+
+type StatusLevel = 'ok' | 'warn' | 'error' | 'muted';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Health poll interval (ms). */
 const HEALTH_POLL_INTERVAL = 30_000;
 
+const DOT_COLOR: Record<StatusLevel, string> = {
+  ok: 'bg-green',
+  warn: 'bg-yellow',
+  error: 'bg-red',
+  muted: 'bg-text-tertiary',
+};
+
 // ---------------------------------------------------------------------------
-// Status indicator dot colors
+// Helpers
 // ---------------------------------------------------------------------------
 
-const DOT_COLORS = {
-  connected: 'bg-green-500',
-  connecting: 'bg-yellow-500 animate-pulse',
-  disconnected: 'bg-red-500',
-  enabled: 'bg-green-500',
-  disabled: 'bg-gray-400',
-  unknown: 'bg-gray-400',
-} as const;
+function wsLevel(s: string): StatusLevel {
+  if (s === 'connected') return 'ok';
+  if (s === 'connecting') return 'warn';
+  return 'error';
+}
 
-const STATUS_LABELS = {
-  connected: 'Connected',
-  connecting: 'Connecting…',
-  disconnected: 'Disconnected',
-  enabled: 'Active',
-  disabled: 'Disabled',
-  unknown: 'Unknown',
-} as const;
+function brokerLevel(s: string): StatusLevel {
+  if (s === 'connected') return 'ok';
+  if (s === 'unknown') return 'muted';
+  return 'error';
+}
+
+function watcherLevel(s: string): StatusLevel {
+  if (s === 'enabled') return 'ok';
+  if (s === 'unknown') return 'muted';
+  return 'muted';
+}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -59,27 +70,25 @@ const STATUS_LABELS = {
 
 export function ConnectionStatus() {
   const { status: wsStatus } = useWebSocket();
-  const [services, setServices] = useState<ServiceStatus>({
+  const { status: observerStatus, snapshot } = useObserverDirect();
+  const [health, setHealth] = useState<ServiceHealth>({
     kadiBroker: 'unknown',
     fileWatcher: 'unknown',
+    wsClients: 0,
     lastChecked: null,
   });
-  const [expanded, setExpanded] = useState(false);
-
-  // -----------------------------------------------------------------------
-  // Health polling
-  // -----------------------------------------------------------------------
 
   const pollHealth = useCallback(async () => {
     try {
-      const health: HealthResponse = await apiClient.healthCheck();
-      setServices({
-        kadiBroker: health.kadiBroker,
-        fileWatcher: health.fileWatcher,
-        lastChecked: health.timestamp,
+      const res: HealthResponse = await apiClient.healthCheck();
+      setHealth({
+        kadiBroker: res.kadiBroker,
+        fileWatcher: res.fileWatcher,
+        wsClients: res.wsClients,
+        lastChecked: res.timestamp,
       });
     } catch {
-      setServices((prev) => ({
+      setHealth((prev) => ({
         ...prev,
         kadiBroker: 'unknown',
         fileWatcher: 'unknown',
@@ -89,127 +98,82 @@ export function ConnectionStatus() {
 
   useEffect(() => {
     pollHealth();
-    const interval = setInterval(pollHealth, HEALTH_POLL_INTERVAL);
-    return () => clearInterval(interval);
+    const id = setInterval(pollHealth, HEALTH_POLL_INTERVAL);
+    return () => clearInterval(id);
   }, [pollHealth]);
 
-  // -----------------------------------------------------------------------
-  // Derived state
-  // -----------------------------------------------------------------------
+  // SSE Observer status
+  const sseLevel: StatusLevel = wsLevel(observerStatus);
+  const sseLabel = observerStatus === 'connected'
+    ? `${snapshot.agents.filter((a) => a.status === 'active').length} agents`
+    : observerStatus === 'connecting' ? 'Connecting…' : 'Offline';
 
-  /** Overall health: green if WS + broker both connected, yellow if partial, red if both down. */
-  const overallStatus: 'healthy' | 'degraded' | 'down' = (() => {
-    const wsOk = wsStatus === 'connected';
-    const brokerOk = services.kadiBroker === 'connected';
-    if (wsOk && brokerOk) return 'healthy';
-    if (wsOk || brokerOk) return 'degraded';
-    return 'down';
-  })();
-
-  const overallDot =
-    overallStatus === 'healthy'
-      ? 'bg-green-500'
-      : overallStatus === 'degraded'
-      ? 'bg-yellow-500'
-      : 'bg-red-500';
-
-  const overallLabel =
-    overallStatus === 'healthy'
-      ? 'All Systems OK'
-      : overallStatus === 'degraded'
-      ? 'Partial Connectivity'
-      : 'Systems Down';
-
-  // -----------------------------------------------------------------------
-  // Render
-  // -----------------------------------------------------------------------
+  const activeAgents = snapshot.agents.filter((a) => a.status === 'active').length;
 
   return (
-    <div className="relative">
-      {/* Compact indicator (always visible) */}
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium text-gray-600 hover:bg-gray-100 transition-colors"
-        title={overallLabel}
-      >
-        <span className={`w-2 h-2 rounded-full ${overallDot}`} />
-        <span className="hidden sm:inline">{overallLabel}</span>
-      </button>
-
-      {/* Expanded dropdown */}
-      {expanded && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 z-40"
-            onClick={() => setExpanded(false)}
+    <footer className="fixed bottom-0 left-0 w-full z-40 bg-bg/80 backdrop-blur-xl backdrop-saturate-[180%] border-t border-border">
+      <div className="max-w-[1100px] mx-auto px-8 max-md:px-6 h-10 flex items-center justify-between text-[0.7rem] font-mono">
+        {/* Left: service indicators */}
+        <div className="flex items-center gap-5">
+          <StatusChip
+            label="WebSocket"
+            level={wsLevel(wsStatus)}
+            detail={wsStatus === 'connected' ? 'Live' : wsStatus === 'connecting' ? 'Connecting…' : 'Offline'}
           />
+          <StatusChip
+            label="Observer"
+            level={sseLevel}
+            detail={sseLabel}
+          />
+          <StatusChip
+            label="Broker"
+            level={brokerLevel(health.kadiBroker)}
+            detail={health.kadiBroker === 'connected' ? 'Healthy' : health.kadiBroker === 'unknown' ? 'Unknown' : 'Down'}
+          />
+          <StatusChip
+            label="Watcher"
+            level={watcherLevel(health.fileWatcher)}
+            detail={health.fileWatcher === 'enabled' ? 'Active' : health.fileWatcher === 'unknown' ? '—' : 'Off'}
+          />
+        </div>
 
-          {/* Dropdown panel */}
-          <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-lg shadow-lg border border-gray-200 z-50 p-4">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">
-              System Status
-            </h3>
-
-            {/* WebSocket */}
-            <StatusRow
-              label="WebSocket"
-              status={wsStatus}
-              dotColor={DOT_COLORS[wsStatus]}
-              statusLabel={STATUS_LABELS[wsStatus]}
-            />
-
-            {/* KĀDI Broker */}
-            <StatusRow
-              label="KĀDI Broker"
-              status={services.kadiBroker}
-              dotColor={DOT_COLORS[services.kadiBroker]}
-              statusLabel={STATUS_LABELS[services.kadiBroker]}
-            />
-
-            {/* File Watcher */}
-            <StatusRow
-              label="File Watcher"
-              status={services.fileWatcher}
-              dotColor={DOT_COLORS[services.fileWatcher]}
-              statusLabel={STATUS_LABELS[services.fileWatcher]}
-            />
-
-            {/* Last checked */}
-            {services.lastChecked && (
-              <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400">
-                Last checked:{' '}
-                {new Date(services.lastChecked).toLocaleTimeString()}
-              </div>
-            )}
-          </div>
-        </>
-      )}
-    </div>
+        {/* Right: meta info */}
+        <div className="flex items-center gap-5 text-text-tertiary">
+          {activeAgents > 0 && (
+            <span>{activeAgents} agent{activeAgents !== 1 ? 's' : ''}</span>
+          )}
+          <span>{health.wsClients} client{health.wsClients !== 1 ? 's' : ''}</span>
+          {health.lastChecked && (
+            <span>
+              {new Date(health.lastChecked).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
+        </div>
+      </div>
+    </footer>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components
+// Sub-component
 // ---------------------------------------------------------------------------
 
-function StatusRow({
+function StatusChip({
   label,
-  dotColor,
-  statusLabel,
+  level,
+  detail,
 }: {
   label: string;
-  status: string;
-  dotColor: string;
-  statusLabel: string;
+  level: StatusLevel;
+  detail: string;
 }) {
   return (
-    <div className="flex items-center justify-between py-2">
-      <span className="text-sm text-gray-700">{label}</span>
-      <div className="flex items-center gap-2">
-        <span className={`w-2 h-2 rounded-full ${dotColor}`} />
-        <span className="text-xs text-gray-500">{statusLabel}</span>
-      </div>
+    <div className="flex items-center gap-2">
+      <span className={`w-1.5 h-1.5 rounded-full ${DOT_COLOR[level]} ${level === 'warn' ? 'animate-pulse' : ''}`} />
+      <span className="text-text-tertiary">{label}</span>
+      <span className={`${level === 'ok' ? 'text-text-secondary' : level === 'error' ? 'text-red' : 'text-text-tertiary'}`}>
+        {detail}
+      </span>
     </div>
   );
 }

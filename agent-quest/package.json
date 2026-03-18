@@ -1,7 +1,7 @@
 {
-  "name": "mcp-client-quest",
+  "name": "agent-quest",
   "version": "0.1.0",
-  "description": "MCP Client for Quest Dashboard - React frontend with Express backend for quest/task management via KĀDI broker",
+  "description": "KĀDI Agent for Quest Dashboard - React frontend with Express backend for quest/task management via KĀDI broker",
   "private": true,
   "type": "module",
   "scripts": {

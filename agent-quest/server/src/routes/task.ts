@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { kadiClient } from '../index.js';
-import { parseToolResult } from '../kadi-client.js';
+import { parseToolResult } from '../kadi-agent.js';
 
 export const taskRoutes = Router();
 
@@ -14,6 +14,11 @@ taskRoutes.get('/', async (req: Request, res: Response, next: NextFunction) => {
     if (req.query.questId) filters.questId = req.query.questId;
     if (req.query.status) filters.status = req.query.status;
     if (req.query.agentId) filters.agentId = req.query.agentId;
+
+    // Broker tool requires at least one parameter; use wildcard query for "all tasks"
+    if (Object.keys(filters).length === 0) {
+      filters.query = '*';
+    }
 
     const result = await kadiClient.taskQuery(filters);
     const data = parseToolResult(result);

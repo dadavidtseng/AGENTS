@@ -5,7 +5,7 @@
  * (see client/src/services/WebSocketService.ts).
  */
 
-import type { Quest, Agent } from '../types';
+import type { Quest, Task, Agent } from '../types';
 
 const API_BASE = '/api';
 const REQUEST_TIMEOUT = 30_000; // 30 seconds
@@ -163,6 +163,58 @@ export class ApiClient {
   // Task endpoints
   // -------------------------------------------------------------------------
 
+  async getAllTasks(filters?: { questId?: string; status?: string; agentId?: string }): Promise<Task[]> {
+    const params = new URLSearchParams();
+    if (filters?.questId) params.append('questId', filters.questId);
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.agentId) params.append('agentId', filters.agentId);
+
+    const url = params.toString()
+      ? `${API_BASE}/tasks?${params.toString()}`
+      : `${API_BASE}/tasks`;
+
+    const response = await this.fetchWithTimeout(url);
+    const data = await this.parseJSON<{ success: boolean; data: unknown }>(response);
+
+    // Broker may return { tasks: [...] }, [...], or other shapes — normalize
+    const raw = data.data as Record<string, unknown>;
+    let tasks: Record<string, unknown>[];
+    if (Array.isArray(raw)) {
+      tasks = raw;
+    } else if (raw && Array.isArray(raw.tasks)) {
+      tasks = raw.tasks;
+    } else {
+      tasks = [];
+    }
+
+    // Normalize field names (broker may use taskName/taskId instead of name/id)
+    const normalized: Task[] = tasks.map((t) => {
+      // Broker may omit the "agent-" prefix on agent names
+      let agent = (t.assignedAgent ?? t.agentId) as string | undefined;
+      if (agent && !agent.startsWith('agent-')) {
+        agent = `agent-${agent}`;
+      }
+
+      return {
+      id: (t.taskId ?? t.id ?? '') as string,
+      questId: (t.questId ?? '') as string,
+      name: (t.name ?? t.taskName ?? '') as string,
+      description: (t.description ?? '') as string,
+      status: (t.status ?? 'pending') as Task['status'],
+      assignedAgent: agent,
+      role: (t.role ?? t.agentRole) as string | undefined,
+      dependencies: (t.dependencies ?? []) as string[],
+      startedAt: t.startedAt as string | undefined,
+      completedAt: t.completedAt as string | undefined,
+      createdAt: (t.createdAt ?? t.created_at) as string | undefined,
+      updatedAt: (t.updatedAt ?? t.updated_at) as string | undefined,
+    };
+    });
+
+    console.log(`[API] Fetched ${normalized.length} tasks`);
+    return normalized;
+  }
+
   async getTaskDetails(questId: string, taskId: string): Promise<any> {
     const response = await this.fetchWithTimeout(
       `${API_BASE}/tasks/${taskId}?questId=${encodeURIComponent(questId)}`,
@@ -242,6 +294,26 @@ export class ApiClient {
   async healthCheck(): Promise<HealthResponse> {
     const response = await this.fetchWithTimeout(`${API_BASE}/health`);
     return this.parseJSON(response);
+  }
+
+  // -------------------------------------------------------------------------
+  // Tool playground
+  // -------------------------------------------------------------------------
+
+  async listTools(): Promise<Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>> {
+    const response = await this.fetchWithTimeout(`${API_BASE}/tools`);
+    const data = await this.parseJSON<{ tools?: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }> }>(response);
+    return data.tools ?? [];
+  }
+
+  async executeTool(toolName: string, args: Record<string, unknown>): Promise<unknown> {
+    const response = await this.fetchWithTimeout(`${API_BASE}/tools/${encodeURIComponent(toolName)}/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(args),
+    });
+    const data = await this.parseJSON<{ success: boolean; result: unknown }>(response);
+    return data.result;
   }
 }
 

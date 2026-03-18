@@ -12,18 +12,18 @@ import type { Agent, AgentStatus, AgentRole } from '../types';
  * Status indicator colors and icons
  */
 const STATUS_CONFIG: Record<AgentStatus, { color: string; icon: string; label: string }> = {
-  available: { color: 'bg-green-200 text-green-800', icon: '🟢', label: 'Available' },
-  busy: { color: 'bg-yellow-200 text-yellow-800', icon: '🟡', label: 'Busy' },
-  offline: { color: 'bg-red-200 text-red-800', icon: '🔴', label: 'Offline' },
+  available: { color: 'bg-green/15 text-green', icon: '🟢', label: 'Available' },
+  busy: { color: 'bg-yellow/15 text-yellow', icon: '🟡', label: 'Busy' },
+  offline: { color: 'bg-red/15 text-red', icon: '🔴', label: 'Offline' },
 };
 
 /**
- * Role badge colors
+ * Role badge — Portfolio-style mono tag
  */
 const ROLE_COLORS: Record<AgentRole, string> = {
-  artist: 'bg-purple-100 text-purple-700 border-purple-300',
-  designer: 'bg-blue-100 text-blue-700 border-blue-300',
-  programmer: 'bg-green-100 text-green-700 border-green-300',
+  artist: 'font-mono text-[0.6rem] text-[#a855f7] bg-bg border border-[#a855f7]/20 px-2.5 py-0.5 rounded',
+  designer: 'font-mono text-[0.6rem] text-blue bg-bg border border-blue/20 px-2.5 py-0.5 rounded',
+  programmer: 'font-mono text-[0.6rem] text-green bg-bg border border-green/20 px-2.5 py-0.5 rounded',
 };
 
 /**
@@ -97,68 +97,62 @@ function AgentCard({ agent }: AgentCardProps) {
   }, [agent.lastSeen]);
 
   return (
-    <div className="bg-white rounded-lg shadow hover:shadow-lg transition-shadow p-6 border border-gray-200">
+    <div className="group bg-bg-elevated p-8 transition-colors duration-300 hover:bg-bg-card card-hover-gradient">
       {/* Header: Name and Status */}
-      <div className="flex items-start justify-between mb-4">
+      <div className="flex items-start justify-between mb-5">
         <div className="flex-1">
-          <h3 className="text-lg font-semibold text-gray-900 mb-1">
+          <h3 className="text-lg font-medium tracking-tight text-text-primary mb-2">
             {agent.name}
           </h3>
-          <span
-            className={`inline-block px-2 py-1 rounded-md text-xs font-medium border ${
-              ROLE_COLORS[agent.role]
-            }`}
-          >
+          <span className={ROLE_COLORS[agent.role]}>
             {ROLE_LABELS[agent.role]}
           </span>
         </div>
         <div className="flex flex-col items-end">
-          <span className="text-2xl mb-1">{statusConfig.icon}</span>
-          <span
-            className={`px-2 py-1 rounded-full text-xs font-medium ${statusConfig.color}`}
-          >
+          <span className="inline-flex items-center gap-2 text-[0.75rem] text-text-secondary border border-border px-3 py-1.5 rounded-full">
+            <span className={`w-1.5 h-1.5 rounded-full ${statusConfig.color.split(' ')[0].replace('bg-', 'bg-').replace('/15', '')} ${agent.status === 'busy' ? 'animate-pulse-dot' : ''}`} />
             {statusConfig.label}
           </span>
         </div>
       </div>
 
       {/* Task Count */}
-      <div className="mb-4 pb-4 border-b border-gray-200">
+      <div className="mb-5 pb-5 border-b border-border">
         <div className="flex items-center justify-between text-sm">
-          <span className="text-gray-600">Current Tasks:</span>
-          <span className="font-semibold text-gray-900">
+          <span className="text-text-secondary font-light">Current Tasks</span>
+          <span className="font-mono text-text-primary">
             {agent.currentTasks.length}
           </span>
         </div>
       </div>
 
       {/* Capabilities */}
-      <div className="mb-4">
-        <p className="text-xs text-gray-500 mb-2">Capabilities:</p>
-        <div className="flex flex-wrap gap-1">
+      <div className="mb-5">
+        <p className="font-mono text-[0.6rem] tracking-[0.1em] uppercase text-text-tertiary mb-2">Capabilities</p>
+        <div className="flex flex-wrap gap-1.5">
           {agent.capabilities && agent.capabilities.length > 0 ? (
             agent.capabilities.map((capability, index) => (
               <span
                 key={index}
-                className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs"
+                className="font-mono text-[0.6rem] text-text-tertiary bg-bg border border-border px-2.5 py-0.5 rounded"
               >
                 {capability}
               </span>
             ))
           ) : (
-            <span className="text-xs text-gray-400 italic">No capabilities listed</span>
+            <span className="text-[0.7rem] text-text-tertiary italic">No capabilities listed</span>
           )}
         </div>
       </div>
 
       {/* Last Seen */}
-      <div className="text-xs text-gray-500">
-        <span>Last seen: {lastSeen}</span>
+      <div className="font-mono text-[0.6rem] tracking-wide text-text-tertiary">
+        Last seen: {lastSeen}
       </div>
 
       {/* Agent ID */}
-      <div className="mt-2 text-xs text-gray-400">
-        ID: {agent.agentId.slice(0, 8)}...
+      <div className="mt-1.5 font-mono text-[0.6rem] tracking-wide text-text-tertiary">
+        {agent.agentId.slice(0, 8)}
       </div>
     </div>
   );
@@ -214,10 +208,19 @@ export function AgentMonitorPage() {
   }, [agents, statusFilter, roleFilter]);
 
   /**
-   * Initialize: load agents and setup WebSocket
+   * Initialize: load agents, setup WebSocket, and poll every 30s
+   * (agents send heartbeats every 30s, so polling keeps status fresh)
    */
   useEffect(() => {
     loadAgents();
+
+    const pollInterval = setInterval(() => {
+      apiClient.getAgents().then(setAgents).catch((err) => {
+        console.warn('[AgentMonitor] Poll error:', err);
+      });
+    }, 30_000);
+
+    return () => clearInterval(pollInterval);
   }, []);
 
   // WebSocket connection
@@ -246,10 +249,10 @@ export function AgentMonitorPage() {
    */
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="flex items-center justify-center py-32">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading agents...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue mx-auto mb-4"></div>
+          <p className="text-text-secondary">Loading agents...</p>
         </div>
       </div>
     );
@@ -260,16 +263,16 @@ export function AgentMonitorPage() {
    */
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="bg-white rounded-lg shadow p-8 max-w-md">
-          <div className="text-red-600 text-4xl mb-4">⚠️</div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">
+      <div className="flex items-center justify-center py-32">
+        <div className="bg-bg-card rounded-lg shadow p-8 max-w-md border border-border">
+          <div className="text-red text-4xl mb-4">⚠️</div>
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary mb-2">
             Failed to Load Agents
           </h2>
-          <p className="text-gray-600 mb-4">{error}</p>
+          <p className="text-sm font-light text-text-secondary mb-4">{error}</p>
           <button
             onClick={loadAgents}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+            className="text-[0.85rem] font-medium text-bg bg-text-primary px-7 py-3 rounded-lg hover:opacity-85 hover:-translate-y-px transition-all"
           >
             Try Again
           </button>
@@ -283,20 +286,18 @@ export function AgentMonitorPage() {
    */
   if (agents.length === 0) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 py-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8">Agent Monitor</h1>
-          <div className="bg-white rounded-lg shadow p-12 text-center">
+      <>
+          <h1 className="text-[2.5rem] font-semibold tracking-tight text-text-primary mb-10">Agents</h1>
+          <div className="bg-bg-card rounded-xl border border-border p-16 text-center">
             <div className="text-6xl mb-4">🤖</div>
-            <h2 className="text-2xl font-semibold text-gray-900 mb-2">
+            <h2 className="text-xl font-medium tracking-tight text-text-primary mb-2">
               No Agents Registered
             </h2>
-            <p className="text-gray-600 mb-6">
+            <p className="text-sm font-light text-text-secondary mb-6">
               Agents will appear here once they register with the system
             </p>
           </div>
-        </div>
-      </div>
+      </>
     );
   }
 
@@ -304,12 +305,16 @@ export function AgentMonitorPage() {
    * Render agent monitor
    */
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Agent Monitor</h1>
-          <p className="text-gray-600">
+    <>
+      {/* Header */}
+        <div className="mb-10">
+          <p className="font-mono text-[0.65rem] tracking-[0.15em] uppercase text-blue mb-3">
+            Monitoring
+          </p>
+          <h1 className="text-[2.5rem] font-semibold tracking-tight text-text-primary mb-2">
+            Agents
+          </h1>
+          <p className="text-[0.9rem] font-light leading-relaxed text-text-secondary">
             {filteredAgents.length} {filteredAgents.length === 1 ? 'agent' : 'agents'}
             {' '}
             {statusFilter !== 'all' && `(${STATUS_CONFIG[statusFilter].label})`}
@@ -318,15 +323,15 @@ export function AgentMonitorPage() {
         </div>
 
         {/* Status Filter Tabs */}
-        <div className="bg-white rounded-lg shadow mb-4 p-2 flex gap-2 overflow-x-auto">
+        <div className="flex gap-2 mb-4 overflow-x-auto">
           {STATUS_FILTERS.map((tab) => (
             <button
               key={tab.value}
               onClick={() => setStatusFilter(tab.value)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
+              className={`px-4 py-2 rounded-lg text-sm transition-all whitespace-nowrap ${
                 statusFilter === tab.value
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-700 hover:bg-gray-100'
+                  ? 'text-text-primary bg-bg-card border border-border-hover'
+                  : 'text-text-secondary hover:text-text-primary'
               }`}
             >
               {tab.label}
@@ -335,15 +340,15 @@ export function AgentMonitorPage() {
         </div>
 
         {/* Role Filter Tabs */}
-        <div className="bg-white rounded-lg shadow mb-6 p-2 flex gap-2 overflow-x-auto">
+        <div className="flex gap-2 mb-8 overflow-x-auto">
           {ROLE_FILTERS.map((tab) => (
             <button
               key={tab.value}
               onClick={() => setRoleFilter(tab.value)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
+              className={`px-4 py-2 rounded-lg text-sm transition-all whitespace-nowrap ${
                 roleFilter === tab.value
-                  ? 'bg-green-600 text-white'
-                  : 'text-gray-700 hover:bg-gray-100'
+                  ? 'text-text-primary bg-bg-card border border-border-hover'
+                  : 'text-text-secondary hover:text-text-primary'
               }`}
             >
               {tab.label}
@@ -353,24 +358,22 @@ export function AgentMonitorPage() {
 
         {/* Agent Grid */}
         {filteredAgents.length === 0 ? (
-          <div className="bg-white rounded-lg shadow p-12 text-center">
-            <div className="text-4xl mb-4">🔍</div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">
+          <div className="bg-bg-card rounded-xl border border-border p-16 text-center">
+            <h2 className="text-xl font-medium tracking-tight text-text-primary mb-2">
               No {statusFilter !== 'all' && STATUS_CONFIG[statusFilter].label}{' '}
               {roleFilter !== 'all' && ROLE_LABELS[roleFilter]} Agents
             </h2>
-            <p className="text-gray-600">
+            <p className="text-sm font-light text-text-secondary">
               Try selecting a different filter
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-border border border-border rounded-xl overflow-hidden">
             {filteredAgents.map((agent) => (
               <AgentCard key={agent.agentId} agent={agent} />
             ))}
           </div>
         )}
-      </div>
-    </div>
+    </>
   );
 }

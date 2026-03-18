@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { kadiClient } from '../index.js';
-import { parseToolResult } from '../kadi-client.js';
+import { parseToolResult } from '../kadi-agent.js';
 
 export const agentRoutes = Router();
 

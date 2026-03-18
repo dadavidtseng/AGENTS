@@ -10,16 +10,16 @@ import { useWebSocket, useWsEvent } from '../hooks/useWebSocket';
 import type { Quest, QuestStatus, TaskStatus } from '../types';
 
 /**
- * Status badge colors for visual distinction
+ * Status badge — Portfolio-style border badge with pulse dot
  */
-const STATUS_COLORS: Record<QuestStatus, string> = {
-  draft: 'bg-gray-200 text-gray-700',
-  pending_approval: 'bg-yellow-200 text-yellow-800',
-  approved: 'bg-green-200 text-green-800',
-  rejected: 'bg-red-200 text-red-800',
-  in_progress: 'bg-blue-200 text-blue-800',
-  completed: 'bg-purple-200 text-purple-800',
-  cancelled: 'bg-gray-300 text-gray-600',
+const STATUS_BADGE: Record<QuestStatus, { dot: string; text: string }> = {
+  draft: { dot: 'bg-text-tertiary', text: 'Draft' },
+  pending_approval: { dot: 'bg-yellow animate-pulse-dot', text: 'Pending' },
+  approved: { dot: 'bg-green', text: 'Approved' },
+  rejected: { dot: 'bg-red', text: 'Rejected' },
+  in_progress: { dot: 'bg-blue animate-pulse-dot', text: 'In Progress' },
+  completed: { dot: 'bg-green', text: 'Completed' },
+  cancelled: { dot: 'bg-text-tertiary', text: 'Cancelled' },
 };
 
 /**
@@ -51,10 +51,10 @@ const FILTER_TABS: Array<{ label: string; value: QuestStatus | 'all' }> = [
  * Progress bar color based on completion percentage
  */
 function getProgressColor(percent: number): string {
-  if (percent >= 100) return 'bg-green-500';
-  if (percent >= 60) return 'bg-blue-500';
-  if (percent >= 30) return 'bg-yellow-500';
-  return 'bg-gray-400';
+  if (percent >= 100) return 'bg-green';
+  if (percent >= 60) return 'bg-blue';
+  if (percent >= 30) return 'bg-yellow';
+  return 'bg-text-tertiary';
 }
 
 /**
@@ -89,55 +89,53 @@ interface QuestCardProps {
 
 function QuestCard({ quest, onClick }: QuestCardProps) {
   const stats = getTaskStats(quest);
+  const badge = STATUS_BADGE[quest.status];
 
   return (
     <div
       onClick={onClick}
-      className="bg-white rounded-lg shadow hover:shadow-lg transition-shadow cursor-pointer p-6 border border-gray-200"
+      className="group bg-bg-elevated p-8 cursor-pointer transition-colors duration-300 hover:bg-bg-card card-hover-gradient"
     >
       {/* Header: Title and Status */}
       <div className="flex items-start justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 flex-1">
+        <h3 className="text-lg font-medium tracking-tight text-text-primary flex-1 pr-4">
           {quest.questName}
         </h3>
-        <span
-          className={`px-3 py-1 rounded-full text-xs font-medium ${
-            STATUS_COLORS[quest.status]
-          }`}
-        >
-          {STATUS_LABELS[quest.status]}
+        <span className="inline-flex items-center gap-2 text-[0.75rem] text-text-secondary border border-border px-3 py-1.5 rounded-full shrink-0">
+          <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
+          {badge.text}
         </span>
       </div>
 
       {/* Description */}
-      <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+      <p className="text-sm font-light leading-relaxed text-text-secondary mb-5 line-clamp-2">
         {quest.description}
       </p>
 
       {/* Task Progress */}
       {stats.total > 0 && (
-        <div className="mb-4">
-          <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-            <span>{stats.completed}/{stats.total} tasks completed</span>
+        <div className="mb-5">
+          <div className="flex items-center justify-between text-[0.7rem] font-mono tracking-wide text-text-tertiary mb-1.5">
+            <span>{stats.completed}/{stats.total} tasks</span>
             <span>{stats.percent}%</span>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
+          <div className="w-full bg-border rounded-full h-1">
             <div
-              className={`h-2 rounded-full transition-all ${getProgressColor(stats.percent)}`}
+              className={`h-1 rounded-full transition-all ${getProgressColor(stats.percent)}`}
               style={{ width: `${stats.percent}%` }}
             />
           </div>
           {/* Status breakdown */}
-          <div className="flex gap-3 mt-2 text-xs text-gray-500">
+          <div className="flex gap-3 mt-2 text-[0.7rem] font-mono text-text-tertiary">
             {stats.inProgress > 0 && (
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" />
+              <span className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue animate-pulse-dot" />
                 {stats.inProgress} active
               </span>
             )}
             {stats.failed > 0 && (
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-red-400 inline-block" />
+              <span className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-red" />
                 {stats.failed} failed
               </span>
             )}
@@ -146,18 +144,9 @@ function QuestCard({ quest, onClick }: QuestCardProps) {
       )}
 
       {/* Metadata */}
-      <div className="flex items-center justify-between text-sm text-gray-500">
-        <div className="flex items-center gap-4">
-          <span>
-            {new Date(quest.createdAt).toLocaleDateString()}
-          </span>
-          {stats.total > 0 && (
-            <span>{stats.total} task{stats.total !== 1 ? 's' : ''}</span>
-          )}
-        </div>
-        <span className="text-xs">
-          ID: {quest.questId.slice(0, 8)}...
-        </span>
+      <div className="flex items-center justify-between text-[0.7rem] font-mono tracking-wide text-text-tertiary">
+        <span>{new Date(quest.createdAt).toLocaleDateString()}</span>
+        <span>{quest.questId.slice(0, 8)}</span>
       </div>
     </div>
   );
@@ -238,10 +227,10 @@ export function QuestListPage() {
    */
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="flex items-center justify-center py-32">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading quests...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue mx-auto mb-4"></div>
+          <p className="text-text-secondary">Loading quests...</p>
         </div>
       </div>
     );
@@ -252,16 +241,16 @@ export function QuestListPage() {
    */
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="bg-white rounded-lg shadow p-8 max-w-md">
-          <div className="text-red-600 text-4xl mb-4">⚠️</div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">
+      <div className="flex items-center justify-center py-32">
+        <div className="bg-bg-card rounded-lg shadow p-8 max-w-md border border-border">
+          <div className="text-red text-4xl mb-4">⚠️</div>
+          <h2 className="text-xl font-semibold tracking-tight text-text-primary mb-2">
             Failed to Load Quests
           </h2>
-          <p className="text-gray-600 mb-4">{error}</p>
+          <p className="text-sm font-light text-text-secondary mb-4">{error}</p>
           <button
             onClick={loadQuests}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+            className="text-[0.85rem] font-medium text-bg bg-text-primary px-7 py-3 rounded-lg hover:opacity-85 hover:-translate-y-px transition-all"
           >
             Try Again
           </button>
@@ -275,20 +264,23 @@ export function QuestListPage() {
    */
   if (quests.length === 0) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 py-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8">Quest Dashboard</h1>
-          <div className="bg-white rounded-lg shadow p-12 text-center">
+      <>
+          <p className="font-mono text-[0.65rem] tracking-[0.15em] uppercase text-blue mb-3">
+            Dashboard
+          </p>
+          <h1 className="text-[2.5rem] font-semibold tracking-tight text-text-primary mb-10">
+            Quests
+          </h1>
+          <div className="bg-bg-card rounded-xl border border-border p-16 text-center">
             <div className="text-6xl mb-4">📋</div>
-            <h2 className="text-2xl font-semibold text-gray-900 mb-2">
+            <h2 className="text-xl font-medium tracking-tight text-text-primary mb-2">
               No Quests Yet
             </h2>
-            <p className="text-gray-600 mb-6">
+            <p className="text-sm font-light text-text-secondary mb-6">
               Create your first quest to get started
             </p>
           </div>
-        </div>
-      </div>
+      </>
     );
   }
 
@@ -296,26 +288,31 @@ export function QuestListPage() {
    * Render quest list
    */
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
+    <>
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Quest Dashboard</h1>
-        <p className="text-gray-600">
+      <div className="mb-10">
+        <p className="font-mono text-[0.65rem] tracking-[0.15em] uppercase text-blue mb-3">
+          Dashboard
+        </p>
+        <h1 className="text-[2.5rem] font-semibold tracking-tight text-text-primary mb-2">
+          Quests
+        </h1>
+        <p className="text-[0.9rem] font-light leading-relaxed text-text-secondary">
           {filteredQuests.length} {filteredQuests.length === 1 ? 'quest' : 'quests'}
-          {filter !== 'all' && ` (${STATUS_LABELS[filter as QuestStatus]})`}
+          {filter !== 'all' && ` · ${STATUS_LABELS[filter as QuestStatus]}`}
         </p>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="bg-white rounded-lg shadow mb-6 p-2 flex gap-2 overflow-x-auto">
+      {/* Filter Tabs — Portfolio-style pill tabs */}
+      <div className="flex gap-2 mb-8 overflow-x-auto">
         {FILTER_TABS.map((tab) => (
           <button
             key={tab.value}
             onClick={() => setFilter(tab.value)}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
+            className={`px-4 py-2 rounded-lg text-sm transition-all whitespace-nowrap ${
               filter === tab.value
-                ? 'bg-blue-600 text-white'
-                : 'text-gray-700 hover:bg-gray-100'
+                ? 'text-text-primary bg-bg-card border border-border-hover'
+                : 'text-text-secondary hover:text-text-primary'
             }`}
           >
             {tab.label}
@@ -323,19 +320,18 @@ export function QuestListPage() {
         ))}
       </div>
 
-      {/* Quest Grid */}
+      {/* Quest Grid — Portfolio gap-px technique */}
       {filteredQuests.length === 0 ? (
-        <div className="bg-white rounded-lg shadow p-12 text-center">
-          <div className="text-4xl mb-4">🔍</div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">
+        <div className="bg-bg-card rounded-xl border border-border p-16 text-center">
+          <h2 className="text-xl font-medium tracking-tight text-text-primary mb-2">
             No {filter !== 'all' && STATUS_LABELS[filter as QuestStatus]} Quests
           </h2>
-          <p className="text-gray-600">
+          <p className="text-sm font-light text-text-secondary">
             Try selecting a different filter
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-border border border-border rounded-xl overflow-hidden">
           {filteredQuests.map((quest) => (
             <QuestCard
               key={quest.questId}
@@ -345,6 +341,6 @@ export function QuestListPage() {
           ))}
         </div>
       )}
-    </div>
+    </>
   );
 }

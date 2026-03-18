@@ -42,8 +42,8 @@ const DECISION_CONFIG: Record<
   approved: {
     label: 'Approve',
     description: 'Meets requirements and can proceed',
-    buttonClass: 'bg-green-600 text-white hover:bg-green-700',
-    radioClass: 'text-green-600 focus:ring-green-500',
+    buttonClass: 'bg-green text-white hover:bg-green/80',
+    radioClass: 'text-green focus:ring-green',
     feedbackRequired: false,
     feedbackLabel: 'Comments (Optional)',
     feedbackPlaceholder: 'Add any comments or notes about this approval...',
@@ -51,8 +51,8 @@ const DECISION_CONFIG: Record<
   revision_requested: {
     label: 'Request Revision',
     description: 'Needs changes before it can be approved',
-    buttonClass: 'bg-yellow-600 text-white hover:bg-yellow-700',
-    radioClass: 'text-yellow-600 focus:ring-yellow-500',
+    buttonClass: 'bg-yellow text-black hover:bg-yellow/80',
+    radioClass: 'text-yellow focus:ring-yellow',
     feedbackRequired: true,
     feedbackLabel: 'Revision Feedback',
     feedbackPlaceholder: 'Provide detailed feedback on what needs to be changed...',
@@ -60,8 +60,8 @@ const DECISION_CONFIG: Record<
   rejected: {
     label: 'Reject',
     description: 'Not viable and should be cancelled',
-    buttonClass: 'bg-red-600 text-white hover:bg-red-700',
-    radioClass: 'text-red-600 focus:ring-red-500',
+    buttonClass: 'bg-red text-white hover:bg-red/80',
+    radioClass: 'text-red focus:ring-red',
     feedbackRequired: true,
     feedbackLabel: 'Rejection Reason',
     feedbackPlaceholder: 'Explain why this is being rejected...',
@@ -130,16 +130,16 @@ export function ApprovalPanel({ entityType, onSubmit, hidden }: ApprovalPanelPro
 
   if (showRejectConfirm) {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
-          <h3 className="text-xl font-semibold text-gray-900 mb-4">
+      <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+        <div className="bg-bg-card rounded-lg shadow-xl p-6 max-w-md w-full mx-4 border border-border">
+          <h3 className="text-xl font-semibold text-text-primary mb-4">
             Confirm Rejection
           </h3>
-          <p className="text-gray-700 mb-6">
+          <p className="text-text-secondary mb-6">
             Are you sure you want to reject this {entityType}? This action cannot be undone.
           </p>
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-            <p className="text-sm text-yellow-800">
+          <div className="bg-yellow/10 border border-yellow/30 rounded-lg p-4 mb-6">
+            <p className="text-sm text-yellow">
               <span className="font-medium">Your reason:</span> {feedback}
             </p>
           </div>
@@ -147,14 +147,14 @@ export function ApprovalPanel({ entityType, onSubmit, hidden }: ApprovalPanelPro
             <button
               onClick={() => setShowRejectConfirm(false)}
               disabled={loading}
-              className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium disabled:opacity-50"
+              className="px-6 py-2 bg-bg-elevated text-text-secondary rounded-lg hover:bg-border transition-colors font-medium disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               onClick={handleSubmit}
               disabled={loading}
-              className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium disabled:opacity-50 flex items-center gap-2"
+              className="px-6 py-2 bg-red text-white rounded-lg hover:bg-red/80 transition-colors font-medium disabled:opacity-50 flex items-center gap-2"
             >
               {loading && (
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
@@ -172,22 +172,22 @@ export function ApprovalPanel({ entityType, onSubmit, hidden }: ApprovalPanelPro
   // -----------------------------------------------------------------------
 
   return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <h3 className="text-xl font-semibold text-gray-900 mb-6">
+    <div className="bg-bg-card rounded-xl border border-border p-8">
+      <h3 className="text-xl font-semibold tracking-tight text-text-primary mb-6">
         Submit Approval Decision
       </h3>
 
       {/* Error */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-          <p className="text-red-800">{error}</p>
+        <div className="bg-red/10 border border-red/30 rounded-lg p-4 mb-6">
+          <p className="text-red">{error}</p>
         </div>
       )}
 
       {/* Decision radio buttons */}
       <div className="mb-6">
-        <label className="block text-sm font-medium text-gray-700 mb-3">
-          Decision <span className="text-red-500">*</span>
+        <label className="block text-sm font-medium text-text-secondary mb-3">
+          Decision <span className="text-red">*</span>
         </label>
         <div className="space-y-3">
           {(Object.keys(DECISION_CONFIG) as ApprovalDecision[]).map((key) => {
@@ -195,7 +195,7 @@ export function ApprovalPanel({ entityType, onSubmit, hidden }: ApprovalPanelPro
             return (
               <label
                 key={key}
-                className="flex items-center p-4 border-2 rounded-lg cursor-pointer transition-colors hover:bg-gray-50"
+                className="flex items-center p-4 border-2 border-border rounded-lg cursor-pointer transition-colors hover:bg-bg-elevated"
               >
                 <input
                   type="radio"
@@ -206,10 +206,10 @@ export function ApprovalPanel({ entityType, onSubmit, hidden }: ApprovalPanelPro
                   className={`w-4 h-4 ${cfg.radioClass}`}
                 />
                 <div className="ml-3">
-                  <div className="text-sm font-medium text-gray-900">
+                  <div className="text-sm font-medium text-text-primary tracking-tight">
                     {cfg.label}
                   </div>
-                  <div className="text-sm text-gray-500">
+                  <div className="text-[0.8rem] font-light text-text-tertiary">
                     {cfg.description}
                   </div>
                 </div>
@@ -221,10 +221,10 @@ export function ApprovalPanel({ entityType, onSubmit, hidden }: ApprovalPanelPro
 
       {/* Feedback textarea */}
       <div className="mb-6">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label className="block text-sm font-medium text-text-secondary mb-2">
           {config.feedbackLabel}
           {config.feedbackRequired && (
-            <span className="text-red-500"> *</span>
+            <span className="text-red"> *</span>
           )}
         </label>
         <textarea
@@ -235,14 +235,14 @@ export function ApprovalPanel({ entityType, onSubmit, hidden }: ApprovalPanelPro
           }}
           placeholder={config.feedbackPlaceholder}
           rows={config.feedbackRequired ? 6 : 3}
-          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 resize-none ${
+          className={`w-full px-4 py-3 bg-bg-input border rounded-lg focus:outline-none focus:ring-2 resize-none text-text-primary placeholder-text-tertiary ${
             validationError
-              ? 'border-red-300 focus:ring-red-500'
-              : 'border-gray-300 focus:ring-blue-500'
+              ? 'border-red focus:ring-red'
+              : 'border-border focus:ring-blue'
           }`}
         />
         {validationError && (
-          <p className="mt-2 text-sm text-red-600">{validationError}</p>
+          <p className="mt-2 text-sm text-red">{validationError}</p>
         )}
       </div>
 
