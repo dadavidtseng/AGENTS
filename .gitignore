@@ -247,4 +247,8 @@ docs/_build/
 # Claude Code planning documents (local working files)
 .claude/
 
+# Serena and spec-workflow (local working files)
+.serena/
+.spec-workflow/
+
 
