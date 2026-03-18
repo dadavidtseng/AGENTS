@@ -41,8 +41,8 @@ When updating status, agentId is required for authorization (must match assigned
       },
       status: {
         type: 'string',
-        enum: ['in_progress', 'pending_approval', 'completed', 'failed'],
-        description: 'New task status (optional, requires agentId for authorization)',
+        enum: ['in_progress', 'pending_approval', 'completed', 'failed', 'rejected'],
+        description: 'New task status (optional, requires agentId for authorization). Use "rejected" when a worker agent rejects a task due to capability mismatch.',
       },
       agentId: {
         type: 'string',
@@ -110,7 +110,7 @@ const RelatedFileSchema = z.object({
 const InputSchema = z.object({
   questId: z.string().uuid(),
   taskId: z.string().uuid(),
-  status: z.enum(['in_progress', 'pending_approval', 'completed', 'failed']).optional(),
+  status: z.enum(['in_progress', 'pending_approval', 'completed', 'failed', 'rejected']).optional(),
   agentId: z.string().optional(),
   name: z.string().optional(),
   description: z.string().optional(),
@@ -215,10 +215,12 @@ export async function handleQuestUpdateTask(args: unknown) {
     const validTransitions: Record<string, string[]> = {
       pending: ['assigned', 'in_progress'],
       assigned: ['in_progress', 'completed'],
-      in_progress: ['pending_approval', 'completed', 'failed'],
+      in_progress: ['pending_approval', 'completed', 'failed', 'rejected'],
       pending_approval: ['completed', 'failed', 'in_progress'],
       completed: [],
       failed: ['in_progress'],
+      rejected: ['pending', 'assigned', 'in_progress'],
+      needs_revision: ['in_progress', 'assigned'],
     };
     const allowed = validTransitions[task.status] || [];
     if (!allowed.includes(input.status)) {
@@ -232,12 +234,17 @@ export async function handleQuestUpdateTask(args: unknown) {
     // Use TaskModel for status update (handles timestamps, quest status)
     await TaskModel.updateStatus(task.id, quest.questId, input.status as TaskStatus);
 
-    // Remove from agent workload if terminal
-    if (input.status === 'completed' || input.status === 'failed') {
+    // Remove from agent workload if terminal or rejected
+    if (input.status === 'completed' || input.status === 'failed' || input.status === 'rejected') {
       try {
         await AgentModel.removeTaskFromAgent(input.agentId, task.id);
       } catch (error) {
         console.warn(`[quest_update_task] Failed to remove task from agent workload: ${error}`);
+      }
+
+      // Clear agent assignment on rejection so task can be reassigned
+      if (input.status === 'rejected') {
+        task.assignedAgent = undefined;
       }
     }
   }

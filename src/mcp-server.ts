@@ -15,23 +15,25 @@ import { config } from './utils/config.js';
 
 async function main() {
   try {
-    console.log('[Startup] Initializing mcp-server-quest...');
-    console.log(`[Startup] Quest data directory: ${config.questDataDir}`);
+    console.error('[Startup] Initializing mcp-server-quest...');
+    console.error(`[Startup] Quest data directory: ${config.questDataDir}`);
 
     // Initialize quest data repository
-    console.log('[Startup] Initializing Git repository...');
+    console.error('[Startup] Initializing Git repository...');
     await initQuestDataRepo(config.questDataDir);
 
     // Initialize quest templates
-    console.log('[Startup] Initializing quest templates...');
+    console.error('[Startup] Initializing quest templates...');
     await TemplateModel.initBuiltInTemplates();
 
     // Start MCP server (this will keep the process alive via stdio)
-    console.log('[Startup] Starting MCP server...');
+    console.error('[Startup] Starting MCP server...');
     await startMCPServer();
 
-    console.log('[Startup] ✅ MCP server ready!');
-    console.log(`[Startup] MCP: stdio transport (connected to KĀDI broker)`);
+    const transportType = process.env.MCP_TRANSPORT_TYPE || 'stdio';
+    const port = process.env.MCP_PORT || '3100';
+    console.error('[Startup] ✅ MCP server ready!');
+    console.error(`[Startup] MCP: ${transportType} transport${transportType === 'http' ? ` → http://0.0.0.0:${port}/mcp` : ' (connected to KĀDI broker)'}`);
   } catch (error) {
     console.error('[Startup] ❌ Failed to start:', error);
     process.exit(1);
@@ -40,12 +42,12 @@ async function main() {
 
 // Handle graceful shutdown
 process.on('SIGINT', () => {
-  console.log('\n[Shutdown] Received SIGINT, shutting down...');
+  console.error('\n[Shutdown] Received SIGINT, shutting down...');
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-  console.log('\n[Shutdown] Received SIGTERM, shutting down...');
+  console.error('\n[Shutdown] Received SIGTERM, shutting down...');
   process.exit(0);
 });
 

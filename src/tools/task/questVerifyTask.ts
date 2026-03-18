@@ -35,6 +35,10 @@ export const questVerifyTaskTool: Tool = {
         type: 'string',
         description: 'Agent or user ID performing verification',
       },
+      passed: {
+        type: 'boolean',
+        description: 'Explicit pass/fail override from the verifying agent. If provided, takes precedence over score-based threshold.',
+      },
     },
     required: ['taskId', 'score', 'summary', 'verifiedBy'],
   },
@@ -48,6 +52,7 @@ interface QuestVerifyTaskInput {
   score: number;
   summary: string;
   verifiedBy: string;
+  passed?: boolean;
 }
 
 /**
@@ -120,7 +125,10 @@ export async function handleQuestVerifyTask(args: unknown) {
   }
   
   const { task, quest } = result;
-  
+
+  // Wrap the entire load-modify-save cycle in a per-quest lock
+  // to prevent concurrent verifications from corrupting the quest JSON
+  return QuestModel.withLock(quest.questId, async () => {
   // Reload quest from disk to get the latest status
   // This ensures we see any status updates made by other tools (e.g., quest_update_task)
   const freshQuest = await QuestModel.load(quest.questId);
@@ -131,14 +139,22 @@ export async function handleQuestVerifyTask(args: unknown) {
   }
 
   // Validate task status using fresh data from disk
-  if (freshTask.status !== 'completed') {
+  // Accept 'completed', 'in_progress', and 'needs_revision':
+  //   - 'completed'/'in_progress': normal verification flow
+  //   - 'needs_revision': retry cycle — a previous verification scored low, the task was
+  //     retried by the worker, and this is the new completion's verification. The status
+  //     may still be 'needs_revision' due to a read-modify-write race on the quest JSON
+  //     (concurrent verifications for different tasks in the same quest can overwrite each
+  //     other's status changes).
+  if (freshTask.status !== 'completed' && freshTask.status !== 'in_progress' && freshTask.status !== 'needs_revision') {
     throw new Error(
-      `Task must be 'completed' to verify (current status: ${freshTask.status})`
+      `Task must be 'completed' or 'in_progress' to verify (current status: ${freshTask.status})`
     );
   }
 
-  // Determine if verification passed (score >= 80)
-  const passed = input.score >= 80;
+  // Determine if verification passed
+  // Use explicit `passed` from verifying agent if provided; otherwise fall back to score threshold
+  const passed = input.passed !== undefined ? input.passed : input.score >= 80;
 
   // Create verification result record
   const verificationResult: VerificationResult = {
@@ -172,7 +188,7 @@ export async function handleQuestVerifyTask(args: unknown) {
     newStatus = 'completed';
   } else {
     // Score < 80: mark as needs_revision
-    freshTask.status = 'needs_revision' as any; // TypeScript doesn't have this status yet
+    freshTask.status = 'needs_revision';
     freshTask.artifacts.verified = false;
     freshTask.artifacts.verificationScore = input.score;
     freshTask.artifacts.revisionFeedback = input.summary;
@@ -214,4 +230,5 @@ export async function handleQuestVerifyTask(args: unknown) {
       },
     ],
   };
+  }); // end QuestModel.withLock
 }

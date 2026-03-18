@@ -58,7 +58,7 @@ export async function initQuestDataRepo(dataDir: string): Promise<void> {
 
     // Check if already initialized
     if (existsSync(gitDir)) {
-      console.log('[Git] Repository already initialized');
+      console.error('[Git] Repository already initialized');
       return;
     }
 
@@ -67,7 +67,7 @@ export async function initQuestDataRepo(dataDir: string): Promise<void> {
       cwd: dataDir,
       stdio: 'ignore',
     });
-    console.log('[Git] Repository initialized');
+    console.error('[Git] Repository initialized');
 
     // Check if repo is empty (no commits)
     let isEmpty = false;
@@ -98,7 +98,7 @@ export async function initQuestDataRepo(dataDir: string): Promise<void> {
           cwd: dataDir,
           stdio: 'ignore',
         });
-        console.log('[Git] Initial commit created');
+        console.error('[Git] Initial commit created');
       } catch (error) {
         console.warn('[Git] Failed to create initial commit:', error instanceof Error ? error.message : 'Unknown error');
       }
@@ -154,7 +154,7 @@ export async function commitQuestChanges(
     }
 
     if (!hasChanges) {
-      console.log('[Git] No changes to commit');
+      console.error('[Git] No changes to commit');
       return;
     }
 
@@ -170,7 +170,7 @@ export async function commitQuestChanges(
       stdio: ['pipe', 'ignore', 'ignore'],
     });
 
-    console.log('[Git] Changes committed:', message);
+    console.error('[Git] Changes committed:', message);
   } catch (error) {
     // Check if error is ENOENT (git not found)
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {

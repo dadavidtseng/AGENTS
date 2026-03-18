@@ -14,19 +14,19 @@ import { config } from './utils/config.js';
  * Main server initialization
  */
 async function main() {
-  console.log('[Startup] Initializing mcp-server-quest...');
-  console.log(`[Startup] Quest data directory: ${config.questDataDir}`);
+  console.error('[Startup] Initializing mcp-server-quest...');
+  console.error(`[Startup] Quest data directory: ${config.questDataDir}`);
 
   try {
     // Initialize quest data repository with Git
-    console.log('[Startup] Initializing Git repository...');
+    console.error('[Startup] Initializing Git repository...');
     await initQuestDataRepo(config.questDataDir);
 
     // Initialize built-in quest templates
-    console.log('[Startup] Initializing quest templates...');
+    console.error('[Startup] Initializing quest templates...');
     await TemplateModel.initBuiltInTemplates();
 
-    console.log('[Startup] ✅ Data layer ready!');
+    console.error('[Startup] ✅ Data layer ready!');
   } catch (error) {
     console.error('[Startup] ❌ Failed to initialize:', error);
     process.exit(1);
@@ -35,12 +35,12 @@ async function main() {
 
 // Handle graceful shutdown
 process.on('SIGINT', () => {
-  console.log('\n[Shutdown] Received SIGINT, shutting down...');
+  console.error('\n[Shutdown] Received SIGINT, shutting down...');
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-  console.log('\n[Shutdown] Received SIGTERM, shutting down...');
+  console.error('\n[Shutdown] Received SIGTERM, shutting down...');
   process.exit(0);
 });
 

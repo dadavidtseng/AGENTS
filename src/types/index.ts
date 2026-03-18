@@ -30,7 +30,7 @@ export type QuestStatus =
  * - completed: Task successfully completed
  * - failed: Task execution failed
  */
-export type TaskStatus = 'pending' | 'assigned' | 'in_progress' | 'pending_approval' | 'completed' | 'failed';
+export type TaskStatus = 'pending' | 'assigned' | 'in_progress' | 'pending_approval' | 'completed' | 'failed' | 'rejected' | 'needs_revision';
 
 /**
  * Agent role types for capability matching
@@ -245,6 +245,8 @@ export interface Task {
     description: string;
     /** Current execution status */
     status: TaskStatus;
+    /** Target agent role for this task (programmer, artist, designer) */
+    role?: AgentRole;
     /** Assigned agent ID (optional) */
     assignedAgent?: string;
     /** Implementation guide (includes role, requirements, restrictions) */

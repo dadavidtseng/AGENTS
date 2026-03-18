@@ -132,7 +132,7 @@ export async function handleQuestAgentHeartbeat(args: unknown) {
     // Broadcast a generic update event
     // Note: We don't have a specific agent event broadcaster, so we'll skip this
     // or implement a custom broadcast if needed
-    console.log(`[quest_agent_heartbeat] Agent ${input.agentId} heartbeat: ${input.status}, ${input.currentTasks.length} tasks`);
+    console.error(`[quest_agent_heartbeat] Agent ${input.agentId} heartbeat: ${input.status}, ${input.currentTasks.length} tasks`);
   } catch (error) {
     console.warn(
       `[quest_agent_heartbeat] Failed to broadcast heartbeat event: ${error}`

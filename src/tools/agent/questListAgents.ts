@@ -1,86 +1,43 @@
 /**
  * quest_list_agents MCP Tool
- * Lists registered agents with optional filtering
+ * Lists ALL registered agents — no filters, no ambiguity
  */
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { AgentModel } from '../../models/agentModel.js';
-import type { AgentStatus, AgentRole } from '../../types';
 
 /**
  * Tool definition for MCP protocol
+ *
+ * No filter parameters — always returns the complete agent roster.
+ * This prevents LLMs from accidentally filtering out agents.
  */
 export const questListAgentsTool: Tool = {
   name: 'quest_list_agents',
-  description: 'List ALL registered agents in the system. Returns complete agent information including status (available/busy/offline), role, capabilities, and current task assignments. By default, shows ALL agents regardless of status or role. Optional filters can narrow results if needed, but calling without any parameters is the recommended way to see the complete agent roster.',
+  description:
+    'List ALL registered agents in the system. Always returns every agent regardless of status or role. Use this to discover the full agent roster before planning or assigning tasks. No parameters needed.',
   inputSchema: {
     type: 'object',
-    properties: {
-      status: {
-        type: 'string',
-        enum: ['available', 'busy', 'offline'],
-        description: 'OPTIONAL filter by agent status. Leave empty to see all agents.',
-      },
-      role: {
-        type: 'string',
-        enum: ['artist', 'designer', 'programmer'],
-        description: 'OPTIONAL filter by agent role. Leave empty to see all roles.',
-      },
-    },
+    properties: {},
     additionalProperties: false,
   },
 };
 
 /**
- * Input parameters for quest_list_agents tool
- */
-interface QuestListAgentsInput {
-  status?: AgentStatus;
-  role?: AgentRole;
-}
-
-/**
  * Handle quest_list_agents tool call
+ *
+ * Always returns all agents — the LLM can reason about
+ * status/role in its own context after seeing the full list.
  */
-export async function handleQuestListAgents(args: unknown) {
-  const input = (args as QuestListAgentsInput) || {};
-  
-  // Validate status if provided
-  if (input.status) {
-    const validStatuses: AgentStatus[] = ['available', 'busy', 'offline'];
-    if (!validStatuses.includes(input.status)) {
-      throw new Error(`status must be one of: ${validStatuses.join(', ')}`);
-    }
-  }
-  
-  // Validate role if provided
-  if (input.role) {
-    const validRoles: AgentRole[] = ['artist', 'designer', 'programmer'];
-    if (!validRoles.includes(input.role)) {
-      throw new Error(`role must be one of: ${validRoles.join(', ')}`);
-    }
-  }
-  
+export async function handleQuestListAgents(_args: unknown) {
   // Mark offline agents (5 minute timeout)
   await AgentModel.markOfflineAgents(5);
-  
-  // List agents with filters
-  const agents = await AgentModel.listAll({
-    status: input.status,
-    role: input.role,
-  });
-  
-  // If filtered results are empty and filters were provided, get all agents as fallback
-  let allAgents = agents;
-  let usedFallback = false;
-  
-  if (agents.length === 0 && (input.status || input.role)) {
-    allAgents = await AgentModel.listAll({});
-    usedFallback = true;
-  }
-  
+
+  // Always list ALL agents — no filters
+  const agents = await AgentModel.listAll({});
+
   // Convert to response format with Date serialization
-  const agentList = allAgents.map((agent) => ({
+  const agentList = agents.map((agent) => ({
     agentId: agent.agentId,
     name: agent.name,
     role: agent.role,
@@ -88,30 +45,24 @@ export async function handleQuestListAgents(args: unknown) {
     currentTasks: agent.currentTasks,
     capabilities: agent.capabilities,
     maxConcurrentTasks: agent.maxConcurrentTasks,
-    lastSeen: typeof agent.lastSeen === 'string' 
-      ? agent.lastSeen 
-      : agent.lastSeen.toISOString(),
+    lastSeen:
+      typeof agent.lastSeen === 'string'
+        ? agent.lastSeen
+        : agent.lastSeen.toISOString(),
   }));
-  
-  const response: any = {
-    agents: agentList,
-    total: agentList.length,
-    filters: {
-      status: input.status || 'all',
-      role: input.role || 'all',
-    },
-  };
-  
-  // Add fallback notice if we had to retrieve all agents
-  if (usedFallback) {
-    response.notice = `No agents found matching filters (status: ${input.status || 'any'}, role: ${input.role || 'any'}). Showing all ${agentList.length} registered agents instead.`;
-  }
-  
+
   return {
     content: [
       {
         type: 'text',
-        text: JSON.stringify(response, null, 2),
+        text: JSON.stringify(
+          {
+            agents: agentList,
+            total: agentList.length,
+          },
+          null,
+          2
+        ),
       },
     ],
   };

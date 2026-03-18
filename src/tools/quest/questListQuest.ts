@@ -118,9 +118,18 @@ export async function handleQuestListQuest(args: unknown) {
   const allQuests = await QuestModel.listAll();
 
   // Filter by status if provided
-  const filteredQuests = input.status
+  let filteredQuests = input.status
     ? allQuests.filter((quest) => quest.status === input.status)
     : allQuests;
+
+  // Auto-fallback: if status filter returned 0 results, return ALL quests instead.
+  // This prevents LLMs from looping when they pass a wrong status filter —
+  // the tool always returns useful data regardless of what parameters the LLM sends.
+  let usedFallback = false;
+  if (filteredQuests.length === 0 && input.status && allQuests.length > 0) {
+    filteredQuests = allQuests;
+    usedFallback = true;
+  }
 
   // Get total count before pagination
   const total = filteredQuests.length;
@@ -138,6 +147,17 @@ export async function handleQuestListQuest(args: unknown) {
     approvalCount: quest.approvalHistory.length,
   }));
 
+  // Build message and nextStep based on whether fallback was used
+  let message: string;
+  let nextStep: string;
+  if (usedFallback) {
+    message = `No quests found with status '${input.status}', showing all ${total} quest(s) instead`;
+    nextStep = 'Present these quest results to the user. Do not call quest_list_quest again.';
+  } else {
+    message = `Found ${total} quest(s)${input.status ? ` with status '${input.status}'` : ''}`;
+    nextStep = 'Present these quest results to the user. Do not call quest_list_quest again.';
+  }
+
   // Return result
   return {
     content: [
@@ -149,7 +169,8 @@ export async function handleQuestListQuest(args: unknown) {
             total,
             limit,
             offset,
-            message: `Found ${total} quest(s)${input.status ? ` with status '${input.status}'` : ''}`,
+            message,
+            nextStep,
           },
           null,
           2

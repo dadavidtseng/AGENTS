@@ -4,12 +4,63 @@
  */
 
 import { randomUUID } from 'crypto';
-import { readdir, readFile, writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
+import { readdir, readFile, writeFile, mkdir, rename } from 'fs/promises';
+import { join, dirname } from 'path';
 import { Quest, ConversationContext, Task, ApprovalDecision } from '../types/index.js';
 import { commitQuestChanges } from '../utils/git.js';
 import { config } from '../utils/config.js';
 import { broadcastQuestCreated, broadcastQuestUpdated } from '../events/broadcast.js';
+
+/**
+ * Atomic file write: write to a temp file, then rename.
+ * Rename is atomic on POSIX and near-atomic on Windows (NTFS).
+ * Prevents concurrent readers from seeing truncated/partial content.
+ */
+async function atomicWriteFile(filePath: string, data: string): Promise<void> {
+  const tmpPath = filePath + `.tmp.${Date.now()}`;
+  await writeFile(tmpPath, data, 'utf-8');
+  await rename(tmpPath, filePath);
+}
+
+/**
+ * Simple in-process mutex for serializing file read-modify-write cycles.
+ * Prevents race conditions when multiple concurrent calls hit save().
+ */
+class Mutex {
+  private queue: Array<() => void> = [];
+  private locked = false;
+
+  async acquire(): Promise<void> {
+    if (!this.locked) {
+      this.locked = true;
+      return;
+    }
+    return new Promise<void>((resolve) => {
+      this.queue.push(resolve);
+    });
+  }
+
+  release(): void {
+    if (this.queue.length > 0) {
+      const next = this.queue.shift()!;
+      next();
+    } else {
+      this.locked = false;
+    }
+  }
+}
+
+/** Per-quest mutexes to serialize concurrent operations on the same quest */
+const questMutexes = new Map<string, Mutex>();
+
+function getQuestMutex(questId: string): Mutex {
+  let mutex = questMutexes.get(questId);
+  if (!mutex) {
+    mutex = new Mutex();
+    questMutexes.set(questId, mutex);
+  }
+  return mutex;
+}
 
 /**
  * Parameters for creating a new quest
@@ -31,6 +82,23 @@ export interface CreateQuestParams {
  * Quest Model - Handles all quest persistence operations
  */
 export class QuestModel {
+  /**
+   * Execute a callback while holding the per-quest mutex.
+   * Use this to wrap load-modify-save cycles to prevent concurrent corruption.
+   *
+   * @param questId - Quest to lock
+   * @param fn - Callback to execute under lock
+   * @returns Result of the callback
+   */
+  static async withLock<T>(questId: string, fn: () => Promise<T>): Promise<T> {
+    const mutex = getQuestMutex(questId);
+    await mutex.acquire();
+    try {
+      return await fn();
+    } finally {
+      mutex.release();
+    }
+  }
   /**
    * Create a new quest with file-based storage
    * 
@@ -177,12 +245,12 @@ export class QuestModel {
 
     const questDir = join(config.questDataDir, 'quests', quest.questId);
 
-    // Write files (in place, not versioned)
+    // Write files atomically (JSON files use temp+rename to prevent partial reads)
     await Promise.all([
       writeFile(join(questDir, 'requirements.md'), quest.requirements, 'utf-8'),
       writeFile(join(questDir, 'design.md'), quest.design, 'utf-8'),
-      writeFile(join(questDir, 'tasks.json'), JSON.stringify(quest.tasks, null, 2), 'utf-8'),
-      writeFile(join(questDir, 'approval-history.json'), JSON.stringify(quest.approvalHistory, null, 2), 'utf-8'),
+      atomicWriteFile(join(questDir, 'tasks.json'), JSON.stringify(quest.tasks, null, 2)),
+      atomicWriteFile(join(questDir, 'approval-history.json'), JSON.stringify(quest.approvalHistory, null, 2)),
     ]);
 
     // Update metadata
@@ -197,7 +265,7 @@ export class QuestModel {
       revisionNumber: quest.revisionNumber,
       ...(quest.metadata && { metadata: quest.metadata }),
     };
-    await writeFile(join(questDir, 'metadata.json'), JSON.stringify(metadata, null, 2), 'utf-8');
+    await atomicWriteFile(join(questDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
 
     // Broadcast quest updated event (after file writes succeed)
     await broadcastQuestUpdated(quest.questId, quest.status);

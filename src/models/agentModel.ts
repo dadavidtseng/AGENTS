@@ -10,6 +10,37 @@ import { config } from '../utils/config.js';
 import { broadcastAgentRegistered, broadcastAgentStatusChanged } from '../events/broadcast.js';
 
 /**
+ * Simple in-process mutex for serializing file read-modify-write cycles.
+ * Prevents race conditions when multiple concurrent calls hit saveAgents().
+ */
+class Mutex {
+  private queue: Array<() => void> = [];
+  private locked = false;
+
+  async acquire(): Promise<void> {
+    if (!this.locked) {
+      this.locked = true;
+      return;
+    }
+    return new Promise<void>((resolve) => {
+      this.queue.push(resolve);
+    });
+  }
+
+  release(): void {
+    if (this.queue.length > 0) {
+      const next = this.queue.shift()!;
+      next();
+    } else {
+      this.locked = false;
+    }
+  }
+}
+
+/** Serializes all agent registry read-modify-write operations */
+const agentFileMutex = new Mutex();
+
+/**
  * Filters for querying agents
  */
 export interface AgentFilters {
@@ -94,33 +125,33 @@ export class AgentModel {
    * });
    */
   static async register(agent: Agent): Promise<void> {
-    const agents = await AgentModel.loadAgents();
+    await agentFileMutex.acquire();
+    try {
+      const agents = await AgentModel.loadAgents();
 
-    // Find existing agent
-    const existingIndex = agents.findIndex((a) => a.agentId === agent.agentId);
+      const existingIndex = agents.findIndex((a) => a.agentId === agent.agentId);
 
-    // Prepare agent record
-    const agentRecord: Agent = {
-      ...agent,
-      status: 'available', // Always set to available on registration
-      lastSeen: new Date(),
-    };
+      const agentRecord: Agent = {
+        ...agent,
+        status: 'available',
+        lastSeen: new Date(),
+      };
 
-    const isNewAgent = existingIndex === -1;
+      const isNewAgent = existingIndex === -1;
 
-    if (existingIndex !== -1) {
-      // Update existing agent (upsert)
-      agents[existingIndex] = agentRecord;
-    } else {
-      // Add new agent
-      agents.push(agentRecord);
-    }
+      if (existingIndex !== -1) {
+        agents[existingIndex] = agentRecord;
+      } else {
+        agents.push(agentRecord);
+      }
 
-    await AgentModel.saveAgents(agents);
+      await AgentModel.saveAgents(agents);
 
-    // Broadcast agent registered event only for new agents
-    if (isNewAgent) {
-      await broadcastAgentRegistered(agentRecord);
+      if (isNewAgent) {
+        await broadcastAgentRegistered(agentRecord);
+      }
+    } finally {
+      agentFileMutex.release();
     }
   }
 
@@ -164,20 +195,24 @@ export class AgentModel {
    * await AgentModel.updateStatus('agent-001', 'busy');
    */
   static async updateStatus(agentId: string, status: AgentStatus): Promise<void> {
-    const agents = await AgentModel.loadAgents();
+    await agentFileMutex.acquire();
+    try {
+      const agents = await AgentModel.loadAgents();
 
-    const agent = agents.find((a) => a.agentId === agentId);
-    if (!agent) {
-      throw new Error(`Agent not found: ${agentId}`);
+      const agent = agents.find((a) => a.agentId === agentId);
+      if (!agent) {
+        throw new Error(`Agent not found: ${agentId}`);
+      }
+
+      agent.status = status;
+      agent.lastSeen = new Date();
+
+      await AgentModel.saveAgents(agents);
+
+      await broadcastAgentStatusChanged(agentId, status);
+    } finally {
+      agentFileMutex.release();
     }
-
-    agent.status = status;
-    agent.lastSeen = new Date();
-
-    await AgentModel.saveAgents(agents);
-
-    // Broadcast agent status changed event
-    await broadcastAgentStatusChanged(agentId, status);
   }
 
   /**
@@ -192,26 +227,29 @@ export class AgentModel {
    * await AgentModel.addTaskToAgent('agent-001', 'task-123');
    */
   static async addTaskToAgent(agentId: string, taskId: string): Promise<void> {
-    const agents = await AgentModel.loadAgents();
+    await agentFileMutex.acquire();
+    try {
+      const agents = await AgentModel.loadAgents();
 
-    const agent = agents.find((a) => a.agentId === agentId);
-    if (!agent) {
-      throw new Error(`Agent not found: ${agentId}`);
+      const agent = agents.find((a) => a.agentId === agentId);
+      if (!agent) {
+        throw new Error(`Agent not found: ${agentId}`);
+      }
+
+      if (!agent.currentTasks.includes(taskId)) {
+        agent.currentTasks.push(taskId);
+      }
+
+      if (agent.currentTasks.length >= agent.maxConcurrentTasks) {
+        agent.status = 'busy';
+      }
+
+      agent.lastSeen = new Date();
+
+      await AgentModel.saveAgents(agents);
+    } finally {
+      agentFileMutex.release();
     }
-
-    // Add task to current tasks (avoid duplicates)
-    if (!agent.currentTasks.includes(taskId)) {
-      agent.currentTasks.push(taskId);
-    }
-
-    // Update status based on workload
-    if (agent.currentTasks.length >= agent.maxConcurrentTasks) {
-      agent.status = 'busy';
-    }
-
-    agent.lastSeen = new Date();
-
-    await AgentModel.saveAgents(agents);
   }
 
   /**
@@ -226,24 +264,27 @@ export class AgentModel {
    * await AgentModel.removeTaskFromAgent('agent-001', 'task-123');
    */
   static async removeTaskFromAgent(agentId: string, taskId: string): Promise<void> {
-    const agents = await AgentModel.loadAgents();
+    await agentFileMutex.acquire();
+    try {
+      const agents = await AgentModel.loadAgents();
 
-    const agent = agents.find((a) => a.agentId === agentId);
-    if (!agent) {
-      throw new Error(`Agent not found: ${agentId}`);
+      const agent = agents.find((a) => a.agentId === agentId);
+      if (!agent) {
+        throw new Error(`Agent not found: ${agentId}`);
+      }
+
+      agent.currentTasks = agent.currentTasks.filter((id) => id !== taskId);
+
+      if (agent.currentTasks.length < agent.maxConcurrentTasks && agent.status === 'busy') {
+        agent.status = 'available';
+      }
+
+      agent.lastSeen = new Date();
+
+      await AgentModel.saveAgents(agents);
+    } finally {
+      agentFileMutex.release();
     }
-
-    // Remove task from current tasks
-    agent.currentTasks = agent.currentTasks.filter((id) => id !== taskId);
-
-    // Update status based on workload
-    if (agent.currentTasks.length < agent.maxConcurrentTasks && agent.status === 'busy') {
-      agent.status = 'available';
-    }
-
-    agent.lastSeen = new Date();
-
-    await AgentModel.saveAgents(agents);
   }
 
   /**
@@ -257,24 +298,28 @@ export class AgentModel {
    * await AgentModel.markOfflineAgents(30);
    */
   static async markOfflineAgents(timeoutMinutes: number): Promise<void> {
-    const agents = await AgentModel.loadAgents();
-    const now = new Date();
-    const timeoutMs = timeoutMinutes * 60 * 1000;
+    await agentFileMutex.acquire();
+    try {
+      const agents = await AgentModel.loadAgents();
+      const now = new Date();
+      const timeoutMs = timeoutMinutes * 60 * 1000;
 
-    let updated = false;
+      let updated = false;
 
-    for (const agent of agents) {
-      const inactiveDuration = now.getTime() - agent.lastSeen.getTime();
-      
-      if (inactiveDuration > timeoutMs && agent.status !== 'offline') {
-        agent.status = 'offline';
-        updated = true;
+      for (const agent of agents) {
+        const inactiveDuration = now.getTime() - agent.lastSeen.getTime();
+
+        if (inactiveDuration > timeoutMs && agent.status !== 'offline') {
+          agent.status = 'offline';
+          updated = true;
+        }
       }
-    }
 
-    // Only write if changes were made
-    if (updated) {
-      await AgentModel.saveAgents(agents);
+      if (updated) {
+        await AgentModel.saveAgents(agents);
+      }
+    } finally {
+      agentFileMutex.release();
     }
   }
 
@@ -297,17 +342,22 @@ export class AgentModel {
     currentTasks: string[],
     timestamp: Date
   ): Promise<void> {
-    const agents = await AgentModel.loadAgents();
+    await agentFileMutex.acquire();
+    try {
+      const agents = await AgentModel.loadAgents();
 
-    const agent = agents.find((a) => a.agentId === agentId);
-    if (!agent) {
-      throw new Error(`Agent not found: ${agentId}`);
+      const agent = agents.find((a) => a.agentId === agentId);
+      if (!agent) {
+        throw new Error(`Agent not found: ${agentId}`);
+      }
+
+      agent.status = status;
+      agent.currentTasks = currentTasks;
+      agent.lastSeen = timestamp;
+
+      await AgentModel.saveAgents(agents);
+    } finally {
+      agentFileMutex.release();
     }
-
-    agent.status = status;
-    agent.currentTasks = currentTasks;
-    agent.lastSeen = timestamp;
-
-    await AgentModel.saveAgents(agents);
   }
 }

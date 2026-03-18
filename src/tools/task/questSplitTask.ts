@@ -52,7 +52,7 @@ Each task will be created with:
 **Next Steps:**
 After tasks are created, you can:
 - Assign tasks to agents using quest_assign_task
-- Execute tasks using quest_execute_task
+- Execute tasks using task_execution (on agent-producer)
 - Monitor task progress using quest_query_quest`,
   inputSchema: {
     type: 'object',
@@ -69,6 +69,7 @@ After tasks are created, you can:
           properties: {
             name: { type: 'string' },
             description: { type: 'string' },
+            role: { type: 'string', enum: ['programmer', 'artist', 'designer'], description: 'Target agent role for this task' },
             implementationGuide: { type: 'string' },
             verificationCriteria: { type: 'string' },
             dependencies: {
@@ -83,7 +84,7 @@ After tasks are created, you can:
               },
             },
           },
-          required: ['name', 'description'],
+          required: ['name', 'description', 'role'],
         },
       },
       globalAnalysisResult: {
@@ -103,6 +104,7 @@ interface QuestSplitTaskInput {
   tasks: Array<{
     name: string;
     description: string;
+    role: 'programmer' | 'artist' | 'designer';
     implementationGuide?: string;
     verificationCriteria?: string;
     dependencies?: string[];
@@ -146,6 +148,18 @@ export async function handleQuestSplitTask(args: unknown) {
     throw new Error('tasks array cannot be empty');
   }
 
+  // Validate each task has a role
+  const validRoles = ['programmer', 'artist', 'designer'];
+  for (let i = 0; i < input.tasks.length; i++) {
+    const t = input.tasks[i];
+    if (!t.role || !validRoles.includes(t.role)) {
+      throw new Error(
+        `tasks[${i}] ("${t.name || 'unnamed'}") is missing a valid role. ` +
+        `Must be one of: ${validRoles.join(', ')}. Got: ${JSON.stringify(t.role)}`
+      );
+    }
+  }
+
   // Load quest
   let quest;
   try {
@@ -175,6 +189,7 @@ export async function handleQuestSplitTask(args: unknown) {
       name: taskData.name,
       description: taskData.description,
       status: 'pending' as const,
+      role: taskData.role,
       implementationGuide: taskData.implementationGuide || '',
       verificationCriteria: taskData.verificationCriteria || '',
       dependencies: Array.isArray(taskData.dependencies) ? taskData.dependencies : [],
@@ -194,14 +209,14 @@ export async function handleQuestSplitTask(args: unknown) {
   });
 
   // Build name-to-ID mapping for dependency resolution
-  console.log('[quest_split_task] Building task name-to-ID mapping...');
+  console.error('[quest_split_task] Building task name-to-ID mapping...');
   const taskNameToIdMap = new Map<string, string>();
   tasks.forEach((task) => {
     taskNameToIdMap.set(task.name, task.id);
   });
 
   // Resolve dependencies: convert task names to task IDs
-  console.log('[quest_split_task] Resolving dependencies...');
+  console.error('[quest_split_task] Resolving dependencies...');
   for (const task of tasks) {
     const resolvedDependencies: string[] = [];
 
@@ -215,7 +230,7 @@ export async function handleQuestSplitTask(args: unknown) {
         if (taskNameToIdMap.has(dep)) {
           const resolvedId = taskNameToIdMap.get(dep)!;
           resolvedDependencies.push(resolvedId);
-          console.log(`[quest_split_task] Resolved dependency "${dep}" to ${resolvedId}`);
+          console.error(`[quest_split_task] Resolved dependency "${dep}" to ${resolvedId}`);
         } else {
           console.warn(`[quest_split_task] Warning: Dependency "${dep}" not found in task list, skipping`);
           // Skip this dependency - validation will catch if it's critical
@@ -227,7 +242,7 @@ export async function handleQuestSplitTask(args: unknown) {
   }
 
   // Validate dependencies (now all should be UUIDs)
-  console.log('[quest_split_task] Validating dependencies...');
+  console.error('[quest_split_task] Validating dependencies...');
   const validation = TaskModel.validateDependencies(tasks);
 
   if (!validation.valid) {
@@ -258,6 +273,7 @@ export async function handleQuestSplitTask(args: unknown) {
             tasks: tasks.map((t) => ({
               id: t.id,
               name: t.name,
+              role: t.role,
               description: t.description,
               dependencies: t.dependencies,
               status: t.status,
