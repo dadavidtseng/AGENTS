@@ -245,6 +245,6 @@ docs/_build/
 .env.test
 
 # Claude Code planning documents (local working files)
-.claude/plan/
+.claude/
 
 
