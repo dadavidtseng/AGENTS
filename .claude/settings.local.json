@@ -71,7 +71,8 @@
       "mcp__plugin_serena_serena__read_memory",
       "mcp__plugin_serena_serena__switch_modes",
       "Skill(zcf:git-commit)",
-      "mcp__kadi-remote__memory-store"
+      "mcp__kadi-remote__memory-store",
+      "mcp__kadi-remote__list-available-models"
     ]
   },
   "enableAllProjectMcpServers": true,
