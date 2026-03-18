@@ -34,6 +34,7 @@ const MemoryConfigSchema = z.object({
 /** Full shadow role configuration schema */
 const ShadowRoleConfigSchema = z.object({
   role: z.string().min(1, 'Role name is required'),
+  mainRepoPath: z.string().min(1).optional(),
   workerWorktreePath: z.string().min(1, 'workerWorktreePath is required'),
   shadowWorktreePath: z.string().min(1, 'shadowWorktreePath is required'),
   workerBranch: z.string().min(1, 'workerBranch is required'),
@@ -125,12 +126,14 @@ export class ShadowRoleValidator {
 
     const parsed = result.data;
 
-    // Layer 2: Worktree path existence checks
-    if (!fs.existsSync(parsed.workerWorktreePath)) {
-      errors.push(`workerWorktreePath: Directory does not exist: ${parsed.workerWorktreePath}`);
-    }
-    if (!fs.existsSync(parsed.shadowWorktreePath)) {
-      errors.push(`shadowWorktreePath: Directory does not exist: ${parsed.shadowWorktreePath}`);
+    // Layer 2: Worktree path existence checks (skip if mainRepoPath is set — auto-creation will handle it)
+    if (!parsed.mainRepoPath) {
+      if (!fs.existsSync(parsed.workerWorktreePath)) {
+        errors.push(`workerWorktreePath: Directory does not exist: ${parsed.workerWorktreePath}`);
+      }
+      if (!fs.existsSync(parsed.shadowWorktreePath)) {
+        errors.push(`shadowWorktreePath: Directory does not exist: ${parsed.shadowWorktreePath}`);
+      }
     }
 
     // Layer 3: Git branch name format validation

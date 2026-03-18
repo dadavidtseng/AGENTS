@@ -20,6 +20,7 @@
  */
 
 import 'dotenv/config';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createShadowAgent, BaseAgent, logger, MODULE_AGENT, timer } from 'agents-library';
@@ -46,6 +47,34 @@ async function main() {
   logger.info(MODULE_AGENT, `   Worker branch: ${roleConfig.workerBranch}`, timer.elapsed('main'));
   logger.info(MODULE_AGENT, `   Shadow branch: ${roleConfig.shadowBranch}`, timer.elapsed('main'));
   logger.info(MODULE_AGENT, `   Monitoring interval: ${roleConfig.monitoringInterval}ms`, timer.elapsed('main'));
+
+  // Auto-create worktrees if they don't exist
+  const mainRepoPath = (roleConfig as any).mainRepoPath;
+  if (mainRepoPath) {
+    const { execSync } = await import('child_process');
+    for (const [wtPath, branch] of [
+      [roleConfig.workerWorktreePath, roleConfig.workerBranch],
+      [roleConfig.shadowWorktreePath, roleConfig.shadowBranch],
+    ] as const) {
+      if (!fs.existsSync(wtPath)) {
+        logger.info(MODULE_AGENT, `   📂 Worktree not found at ${wtPath} — creating...`, timer.elapsed('main'));
+        try {
+          execSync(`git worktree add "${wtPath}" -b "${branch}"`, { cwd: mainRepoPath, stdio: 'pipe' });
+          logger.info(MODULE_AGENT, `   ✅ Worktree created: ${wtPath} (branch: ${branch})`, timer.elapsed('main'));
+        } catch {
+          try {
+            execSync(`git worktree add "${wtPath}" "${branch}"`, { cwd: mainRepoPath, stdio: 'pipe' });
+            logger.info(MODULE_AGENT, `   ✅ Worktree created (existing branch): ${wtPath}`, timer.elapsed('main'));
+          } catch (retryError: any) {
+            logger.error(MODULE_AGENT, `   ❌ Failed to create worktree: ${retryError.message}`, timer.elapsed('main'));
+            process.exit(1);
+          }
+        }
+      } else {
+        logger.info(MODULE_AGENT, `   📂 Worktree exists: ${wtPath}`, timer.elapsed('main'));
+      }
+    }
+  }
 
   // Validate required environment variables
   const brokerUrl = process.env.KADI_BROKER_URL;
