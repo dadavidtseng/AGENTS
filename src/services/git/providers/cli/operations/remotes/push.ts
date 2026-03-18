@@ -28,6 +28,10 @@ export async function executePush(
     const args: string[] = [];
     const remote = options.remote || 'origin';
 
+    if (options.delete) {
+      args.push('--delete');
+    }
+
     args.push(remote);
 
     if (options.branch) {
