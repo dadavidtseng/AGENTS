@@ -1,0 +1,27 @@
+{
+  "name": "ability-file-remote",
+  "version": "1.1.0",
+  "type": "module",
+  "description": "Remote file sharing ability - tunneling, temporary URL management, and S3-compatible HTTP server",
+  "author": "Yu-Wei Tseng",
+  "license": "Apache License 2.0",
+  "exports": {
+    ".": "./index.ts",
+    "./s3": "./src/s3/index.js"
+  },
+  "dependencies": {
+    "@kadi.build/core": "^0.9.0",
+    "chalk": "^5.3.0",
+    "debug": "^4.3.7",
+    "dotenv": "^17.3.1",
+    "fs-extra": "^11.2.0",
+    "localtunnel": "^2.0.2",
+    "ngrok": "^4.3.3",
+    "tsx": "^4.21.0"
+  },
+  "overrides": {
+    "localtunnel": {
+      "axios": "^1.7.7"
+    }
+  }
+}
