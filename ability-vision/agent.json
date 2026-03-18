@@ -1,0 +1,14 @@
+{
+  "name": "ability-vision",
+  "version": "1.0.0",
+  "description": "Vision analysis ability - image understanding via multimodal LLMs (Claude, GPT-4V)",
+  "entrypoint": "index.ts",
+  "scripts": {
+    "preflight": "node --version",
+    "setup": "npm install",
+    "start": "npx tsx index.ts",
+    "serve": "npx tsx index.ts stdio",
+    "serve:broker": "npx tsx index.ts broker",
+    "clean": "rm -rf node_modules package-lock.json"
+  }
+}
