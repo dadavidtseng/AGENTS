@@ -1,8 +1,9 @@
 {
   "$schema": "../shadow-role-schema.json",
   "role": "artist",
-  "workerWorktreePath": "C:/GitHub/agent-playground-artist",
-  "shadowWorktreePath": "C:/GitHub/shadow-agent-playground-artist",
+  "mainRepoPath": "/mnt/c/GitHub/agent-playground",
+  "workerWorktreePath": "/mnt/c/GitHub/agent-playground-artist",
+  "shadowWorktreePath": "/mnt/c/GitHub/shadow-agent-playground-artist",
   "workerBranch": "agent-playground-artist",
   "shadowBranch": "shadow-agent-playground-artist",
   "monitoringInterval": 5000,
