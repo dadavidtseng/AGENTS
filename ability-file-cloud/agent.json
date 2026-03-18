@@ -1,0 +1,14 @@
+{
+  "name": "ability-file-cloud",
+  "version": "1.0.0",
+  "description": "Cloud file operations - Dropbox, Google Drive, Box",
+  "entrypoint": "index.ts",
+  "scripts": {
+    "preflight": "node --version",
+    "setup": "npm install",
+    "start": "npx tsx index.ts",
+    "serve": "npx tsx index.ts stdio",
+    "serve:broker": "npx tsx index.ts broker",
+    "clean": "rm -rf node_modules abilities agent-lock.json package-lock.json"
+  }
+}
