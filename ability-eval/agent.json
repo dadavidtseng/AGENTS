@@ -1,0 +1,14 @@
+{
+  "name": "ability-eval",
+  "version": "0.1.0",
+  "description": "Evaluation engine ability - code diffs, test results, logs, behavior traces analysis",
+  "entrypoint": "index.ts",
+  "scripts": {
+    "preflight": "node --version",
+    "setup": "npm install",
+    "start": "npx tsx index.ts",
+    "serve": "npx tsx index.ts stdio",
+    "serve:broker": "npx tsx index.ts broker",
+    "clean": "rm -rf node_modules package-lock.json"
+  }
+}

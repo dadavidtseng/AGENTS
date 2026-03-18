@@ -1,0 +1,10 @@
+{
+  "name": "ability-tunnel",
+  "version": "0.1.0",
+  "entrypoint": "index.ts",
+  "scripts": {
+    "start": "npx tsx index.ts stdio",
+    "serve": "npx tsx index.ts stdio",
+    "serve:broker": "npx tsx index.ts broker"
+  }
+}

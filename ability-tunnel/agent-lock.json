@@ -1,0 +1,14 @@
+{
+  "lockfileVersion": 1,
+  "metadata": {
+    "kadiVersion": "0.0.7",
+    "generated": "2026-02-22T23:46:17.130Z",
+    "metaHash": "sha256-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source": "agent.json"
+  },
+  "agent": {
+    "name": "ability-tunnel",
+    "version": "0.1.0"
+  },
+  "abilities": {}
+}
