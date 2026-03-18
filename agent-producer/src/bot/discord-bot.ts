@@ -60,14 +60,14 @@ interface DiscordBotConfig extends BaseBotConfig {
 export class DiscordBot extends BaseBot {
     constructor(config: DiscordBotConfig) {
         super(config);
-        
+
         // Log service availability (services are stored in BaseBot)
         if (this.providerManager) {
             logger.info(MODULE_DISCORD_BOT, 'ProviderManager initialized and available', timer.elapsed('main'));
         } else {
             logger.warn(MODULE_DISCORD_BOT, 'ProviderManager not provided - using direct Anthropic client', timer.elapsed('main'));
         }
-        
+
         if (this.memoryService) {
             logger.info(MODULE_DISCORD_BOT, 'MemoryService initialized and available', timer.elapsed('main'));
         } else {
@@ -316,7 +316,7 @@ export class DiscordBot extends BaseBot {
 
       // Step 3: Detect model from message using regex /\[([^\]]+)\]/
       const modelMatch = mention.text.match(/\[([^\]]+)\]/);
-      const detectedModel = modelMatch ? modelMatch[1] : 'gpt-5';
+      const detectedModel = modelMatch ? modelMatch[1] : 'gpt-5-mini';
 
       logger.info(MODULE_DISCORD_BOT, `Model: ${detectedModel}${modelMatch ? ' (from message)' : ' (default)'}`, timer.elapsed('main'));
 

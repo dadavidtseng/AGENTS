@@ -21,7 +21,7 @@ import { QUEST_WORKFLOW_SYSTEM_PROMPT } from '../prompts/quest-workflow.js';
 // ============================================================================
 
 /** Default model used when no model is specified */
-const DEFAULT_MODEL = 'gpt-5';
+const DEFAULT_MODEL = 'gpt-5-mini';
 
 // ============================================================================
 // Types
