@@ -1,7 +1,7 @@
 {
   "name": "mcp-server-quest",
   "type": "module",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Comprehensive quest orchestration system with KĀDI broker integration",
   "engines": {
     "node": ">=18.0.0"
@@ -18,9 +18,11 @@
     "test:ui": "vitest --ui"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "latest"
+    "@modelcontextprotocol/sdk": "latest",
+    "express": "^5.2.1"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "latest",
     "@vitest/coverage-v8": "^4.0.18",
     "tsx": "latest",
