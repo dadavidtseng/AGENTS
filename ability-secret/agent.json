@@ -1,0 +1,10 @@
+{
+  "name": "ability-secret",
+  "version": "0.7.0",
+  "entrypoint": "src/index.ts",
+  "scripts": {
+    "start": "npx tsx src/index.ts stdio",
+    "serve": "npx tsx src/index.ts stdio",
+    "serve:broker": "npx tsx src/index.ts broker"
+  }
+}
