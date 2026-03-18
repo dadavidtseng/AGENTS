@@ -7,10 +7,13 @@ import { startStdioTransport } from '@/mcp-server/transports/stdio/stdioTranspor
 import { startHttpTransport } from '@/mcp-server/transports/http/httpTransport.js';
 import { logger } from '@/utils/index.js';
 
-export async function startTransport(server: McpServer): Promise<void> {
+export async function startTransport(
+  server: McpServer,
+  serverFactory?: () => Promise<McpServer>,
+): Promise<void> {
   if (config.mcpTransportType === 'http') {
     logger.info('Starting HTTP transport...');
-    await startHttpTransport(server);
+    await startHttpTransport(serverFactory ?? (async () => server));
   } else {
     logger.info('Starting STDIO transport...');
     await startStdioTransport(server);

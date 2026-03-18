@@ -35,7 +35,8 @@ async function main(): Promise<void> {
   const server = await createMcpServerInstance();
 
   // Start the selected transport
-  await startTransport(server);
+  // For HTTP, pass the factory so each session gets a fresh server instance
+  await startTransport(server, createMcpServerInstance);
 }
 
 // Graceful shutdown
