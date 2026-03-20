@@ -86,6 +86,59 @@ export interface MemoryError {
  *
  * Manages hybrid memory storage with automatic archival and graceful degradation
  */
+
+/**
+ * Extracted entity from task context (topics, tools, patterns, technologies)
+ */
+export interface ExtractedEntity {
+  name: string;
+  type: 'topic' | 'tool' | 'pattern' | 'technology' | 'agent' | 'error';
+  confidence: number;
+}
+
+/**
+ * Task memory entry stored after task completion
+ */
+export interface TaskMemory {
+  taskId: string;
+  questId: string;
+  agentId: string;
+  agentRole: string;
+  taskType: string;
+  description: string;
+  outcome: 'success' | 'failure';
+  context: string;
+  result: string;
+  entities: ExtractedEntity[];
+  duration: number;
+  timestamp: number;
+}
+
+/**
+ * Feedback stored on task approval/rejection
+ */
+export interface TaskFeedback {
+  taskId: string;
+  questId: string;
+  agentId: string;
+  approved: boolean;
+  score: number;
+  reason: string;
+  timestamp: number;
+}
+
+/**
+ * Relevant memory recalled for context injection
+ */
+export interface RelevantMemory {
+  type: 'task' | 'feedback';
+  taskId: string;
+  summary: string;
+  relevanceScore: number;
+  entities: ExtractedEntity[];
+  timestamp: number;
+}
+
 export class MemoryService {
   private fileStorage: FileStorageAdapter;
   private dbAdapter: ArcadeDBAdapter | null = null;
@@ -556,6 +609,334 @@ export class MemoryService {
    *
    * @returns Result indicating success or error
    */
+
+  /**
+   * Store task memory after task completion
+   *
+   * Saves task context and outcome to both file storage (short-term) and
+   * ArcadeDB (long-term graph). Entities are stored as vertices linked to the task.
+   *
+   * @param memory - Task memory entry
+   * @returns Result indicating success or error
+   */
+  async storeTaskMemory(memory: TaskMemory): Promise<Result<void, MemoryError>> {
+    // Validate required fields
+    if (!memory.taskId || !memory.questId || !memory.agentId) {
+      return err({
+        type: 'VALIDATION_ERROR',
+        message: 'TaskMemory must have taskId, questId, and agentId',
+      });
+    }
+
+    // Store in file storage (always available)
+    const taskMemoryPath = `tasks/${memory.questId}/${memory.taskId}.json`;
+    const writeResult = await this.fileStorage.writeJSON(taskMemoryPath, memory);
+
+    if (!writeResult.success) {
+      return err({
+        type: 'FILE_ERROR',
+        message: `Failed to store task memory: ${writeResult.error.message}`,
+        originalError: writeResult.error,
+      });
+    }
+
+    // Append to task index for fast lookup
+    const indexPath = `tasks/${memory.questId}/index.json`;
+    const indexEntry = {
+      taskId: memory.taskId,
+      agentId: memory.agentId,
+      agentRole: memory.agentRole,
+      taskType: memory.taskType,
+      outcome: memory.outcome,
+      timestamp: memory.timestamp,
+    };
+    await this.fileStorage.appendToJSONArray(indexPath, indexEntry);
+
+    // Store in ArcadeDB if available (non-blocking for graph enrichment)
+    if (this.isDbAvailable && this.dbAdapter) {
+      try {
+        // Create TaskMemory vertex
+        const vertexResult = await this.dbAdapter.createVertex('TaskMemory', {
+          taskId: memory.taskId,
+          questId: memory.questId,
+          agentId: memory.agentId,
+          agentRole: memory.agentRole,
+          taskType: memory.taskType,
+          outcome: memory.outcome,
+          description: memory.description,
+          context: memory.context,
+          result: memory.result,
+          duration: memory.duration,
+          timestamp: memory.timestamp,
+        });
+
+        // Store entities as vertices and link to task
+        if (vertexResult.success && memory.entities.length > 0) {
+          for (const entity of memory.entities) {
+            const entityResult = await this.dbAdapter.createVertex('Entity', {
+              name: entity.name,
+              entityType: entity.type,
+              confidence: entity.confidence,
+            });
+
+            if (entityResult.success) {
+              await this.dbAdapter.createEdge(
+                vertexResult.data,
+                entityResult.data,
+                'HAS_ENTITY',
+                { confidence: entity.confidence }
+              );
+            }
+          }
+        }
+      } catch (error) {
+        // Log but don't fail — file storage is the primary record
+        console.warn(
+          `[MemoryService] Failed to store task memory in ArcadeDB for ${memory.taskId}: ${error}`
+        );
+      }
+    }
+
+    return ok(undefined);
+  }
+
+  /**
+   * Store feedback on task approval/rejection
+   *
+   * Records approval/rejection feedback for learning and quality improvement.
+   * Links feedback to the original task memory in the graph.
+   *
+   * @param feedback - Task feedback entry
+   * @returns Result indicating success or error
+   */
+  async storeFeedback(feedback: TaskFeedback): Promise<Result<void, MemoryError>> {
+    // Validate required fields
+    if (!feedback.taskId || !feedback.questId) {
+      return err({
+        type: 'VALIDATION_ERROR',
+        message: 'TaskFeedback must have taskId and questId',
+      });
+    }
+
+    // Store in file storage
+    const feedbackPath = `feedback/${feedback.questId}/${feedback.taskId}.json`;
+    const writeResult = await this.fileStorage.writeJSON(feedbackPath, feedback);
+
+    if (!writeResult.success) {
+      return err({
+        type: 'FILE_ERROR',
+        message: `Failed to store feedback: ${writeResult.error.message}`,
+        originalError: writeResult.error,
+      });
+    }
+
+    // Store in ArcadeDB and link to task memory if available
+    if (this.isDbAvailable && this.dbAdapter) {
+      try {
+        const feedbackVertex = await this.dbAdapter.createVertex('TaskFeedback', {
+          taskId: feedback.taskId,
+          questId: feedback.questId,
+          agentId: feedback.agentId,
+          approved: feedback.approved,
+          score: feedback.score,
+          reason: feedback.reason,
+          timestamp: feedback.timestamp,
+        });
+
+        // Link feedback to task memory
+        if (feedbackVertex.success) {
+          const taskQuery = `MATCH (t:TaskMemory) WHERE t.taskId = $taskId AND t.questId = $questId RETURN t`;
+          const taskResult = await this.dbAdapter.query(taskQuery, {
+            taskId: feedback.taskId,
+            questId: feedback.questId,
+          });
+
+          if (taskResult.success && taskResult.data.length > 0 && taskResult.data[0]['@rid']) {
+            await this.dbAdapter.createEdge(
+              taskResult.data[0]['@rid'],
+              feedbackVertex.data,
+              'HAS_FEEDBACK',
+              { score: feedback.score }
+            );
+          }
+        }
+      } catch (error) {
+        console.warn(
+          `[MemoryService] Failed to store feedback in ArcadeDB for ${feedback.taskId}: ${error}`
+        );
+      }
+    }
+
+    return ok(undefined);
+  }
+
+  /**
+   * Recall relevant memories for a given task context
+   *
+   * Searches both file storage and ArcadeDB for task memories and feedback
+   * relevant to the given context. Uses keyword matching on file storage
+   * and graph traversal on ArcadeDB when available.
+   *
+   * @param taskType - Type of the new task
+   * @param _description - Description of the new task (used for semantic search in 5.2)
+   * @param agentRole - Role of the agent (optional, for filtering)
+   * @param limit - Maximum memories to return (default: 5)
+   * @returns Result with relevant memories or error
+   */
+  async recallRelevant(
+    taskType: string,
+    _description: string,
+    agentRole?: string,
+    limit: number = 5
+  ): Promise<Result<RelevantMemory[], MemoryError>> {
+    const memories: RelevantMemory[] = [];
+
+    // Strategy 1: Graph-based recall from ArcadeDB (preferred — richer signals)
+    if (this.isDbAvailable && this.dbAdapter) {
+      try {
+        // Find task memories with matching taskType or agent role
+        let cypher: string;
+        let params: Record<string, any>;
+
+        if (agentRole) {
+          cypher = `
+            MATCH (t:TaskMemory)
+            WHERE t.taskType = $taskType OR t.agentRole = $agentRole
+            RETURN t
+            ORDER BY t.timestamp DESC
+            LIMIT $limit
+          `;
+          params = { taskType, agentRole, limit: limit * 2 };
+        } else {
+          cypher = `
+            MATCH (t:TaskMemory)
+            WHERE t.taskType = $taskType
+            RETURN t
+            ORDER BY t.timestamp DESC
+            LIMIT $limit
+          `;
+          params = { taskType, limit: limit * 2 };
+        }
+
+        const taskResult = await this.dbAdapter.query(cypher, params);
+
+        if (taskResult.success) {
+          for (const row of taskResult.data) {
+            const t = row.t || row;
+            const rid = t['@rid'];
+
+            // Fetch linked entities for this task
+            let entities: ExtractedEntity[] = [];
+            if (rid) {
+              const entityQuery = `
+                MATCH (t)-[:HAS_ENTITY]->(e:Entity)
+                WHERE id(t) = $rid
+                RETURN e
+              `;
+              const entityResult = await this.dbAdapter.query(entityQuery, { rid });
+              if (entityResult.success) {
+                entities = entityResult.data.map((r: any) => ({
+                  name: (r.e || r).name,
+                  type: (r.e || r).entityType,
+                  confidence: (r.e || r).confidence,
+                }));
+              }
+            }
+
+            // Fetch linked feedback
+            let feedbackSummary = '';
+            if (rid) {
+              const fbQuery = `
+                MATCH (t)-[:HAS_FEEDBACK]->(f:TaskFeedback)
+                WHERE id(t) = $rid
+                RETURN f
+              `;
+              const fbResult = await this.dbAdapter.query(fbQuery, { rid });
+              if (fbResult.success && fbResult.data.length > 0) {
+                const fb = fbResult.data[0].f || fbResult.data[0];
+                feedbackSummary = fb.approved
+                  ? ` [Approved, score: ${fb.score}]`
+                  : ` [Rejected: ${fb.reason}]`;
+              }
+            }
+
+            // Compute simple relevance score based on matching criteria
+            let relevanceScore = 0.5;
+            if (t.taskType === taskType) relevanceScore += 0.3;
+            if (agentRole && t.agentRole === agentRole) relevanceScore += 0.1;
+            if (t.outcome === 'success') relevanceScore += 0.1;
+
+            memories.push({
+              type: 'task',
+              taskId: t.taskId,
+              summary: `[${t.outcome}] ${t.description}${feedbackSummary}`,
+              relevanceScore: Math.min(relevanceScore, 1.0),
+              entities,
+              timestamp: t.timestamp,
+            });
+          }
+        }
+      } catch (error) {
+        console.warn(
+          `[MemoryService] ArcadeDB recall failed, falling back to file storage: ${error}`
+        );
+      }
+    }
+
+    // Strategy 2: File-based recall (fallback or supplement)
+    if (memories.length < limit) {
+      try {
+        // Scan task index files for matching task types
+        const questDirs = await this.fileStorage.listFiles('tasks');
+        if (questDirs.success && questDirs.data) {
+          for (const questDir of questDirs.data) {
+            const indexPath = `tasks/${questDir}/index.json`;
+            const indexResult = await this.fileStorage.readJSON<any[]>(indexPath);
+
+            if (!indexResult.success || !indexResult.data) continue;
+
+            for (const entry of indexResult.data) {
+              // Filter by taskType or agentRole
+              if (entry.taskType !== taskType && (!agentRole || entry.agentRole !== agentRole)) {
+                continue;
+              }
+
+              // Skip if already found from ArcadeDB
+              if (memories.some(m => m.taskId === entry.taskId)) continue;
+
+              // Read full task memory
+              const taskPath = `tasks/${questDir}/${entry.taskId}.json`;
+              const taskResult = await this.fileStorage.readJSON<TaskMemory>(taskPath);
+
+              if (!taskResult.success || !taskResult.data) continue;
+
+              const task = taskResult.data;
+              let relevanceScore = 0.4; // File-based gets slightly lower base score
+              if (task.taskType === taskType) relevanceScore += 0.3;
+              if (agentRole && task.agentRole === agentRole) relevanceScore += 0.1;
+              if (task.outcome === 'success') relevanceScore += 0.1;
+
+              memories.push({
+                type: 'task',
+                taskId: task.taskId,
+                summary: `[${task.outcome}] ${task.description}`,
+                relevanceScore: Math.min(relevanceScore, 1.0),
+                entities: task.entities || [],
+                timestamp: task.timestamp,
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(`[MemoryService] File-based recall failed: ${error}`);
+      }
+    }
+
+    // Sort by relevance and limit
+    memories.sort((a, b) => b.relevanceScore - a.relevanceScore);
+    return ok(memories.slice(0, limit));
+  }
+
   async dispose(): Promise<Result<void, MemoryError>> {
     if (this.dbAdapter && this.isDbAvailable) {
       const result = await this.dbAdapter.disconnect();
