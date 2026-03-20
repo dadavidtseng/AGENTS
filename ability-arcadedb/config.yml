@@ -1,0 +1,40 @@
+# arcadedb-ability configuration
+# ==============================
+#
+# Non-sensitive settings only. Credentials (ARCADE_USERNAME, ARCADE_PASSWORD)
+# are managed by secret-ability via the `arcadedb` vault — never put them here.
+#
+# This file is discovered via walk-up search from CWD.
+# Environment variables override any value (ARCADE_HOST, ARCADE_PORT, etc.).
+
+arcadedb:
+  host: localhost
+  port: 2480
+  container_name: kadi-arcadedb
+  backup_retention_days: 30
+  log_lines: 50
+
+  # ── Storage paths (per deployment mode) ──────────────────────────────
+  # "local" paths are used when running outside a container (Docker mode,
+  # dev machine).  "container" paths are used when KADI_DEPLOY_MODE=container
+  # (the agent + ArcadeDB run together inside a single image).
+  local:
+    data_dir: ./arcadedb-data
+    backup_dir: ./arcadedb-data/backups
+  container:
+    data_dir: /home/arcadedb/databases
+    backup_dir: /home/arcadedb/backups
+
+# ── Tunnel Services ────────────────────────────────────────────────────
+# Used by the backup file-sharing server to expose downloads across the
+# network in distributed (Akash) deployments.
+# Token is in secrets.toml vault 'tunnel' → KADI_TUNNEL_TOKEN
+tunnel:
+  server_addr: broker.kadi.build
+  tunnel_domain: tunnel.kadi.build
+  server_port: 7000
+  ssh_port: 2200
+  mode: frpc
+  transport: wss
+  wss_control_host: tunnel-control.kadi.build
+  agent_id: arcadedb-ability

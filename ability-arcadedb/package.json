@@ -1,0 +1,215 @@
+{
+  "name": "ability-arcadedb",
+  "version": "0.1.0",
+  "description": "KADI ability wrapping ArcadeDB as 17 broker-callable tools (includes backup/restore with distributed file transfer)",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "arcade-admin": "./arcade-admin.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./arcade-admin.mjs",
+      "require": "./arcade-admin.js"
+    },
+    "./lib/container": {
+      "import": "./lib/container.mjs",
+      "require": "./lib/container.js"
+    },
+    "./lib/database": {
+      "import": "./lib/database.mjs",
+      "require": "./lib/database.js"
+    },
+    "./lib/backup": {
+      "import": "./lib/backup.mjs",
+      "require": "./lib/backup.js"
+    },
+    "./lib/import-export": {
+      "import": "./lib/import-export.mjs",
+      "require": "./lib/import-export.js"
+    },
+    "./lib/monitoring": {
+      "import": "./lib/monitoring.mjs",
+      "require": "./lib/monitoring.js"
+    }
+  },
+  "scripts": {
+    "start": "node arcade-admin.js start",
+    "start:test": "node arcade-admin.js start --with-test-data",
+    "stop": "node arcade-admin.js stop",
+    "restart": "node arcade-admin.js restart",
+    "status": "node arcade-admin.js status",
+    "health": "node arcade-admin.js health",
+    "logs": "node arcade-admin.js logs",
+    "metrics": "node arcade-admin.js metrics",
+    "diagnostics": "node arcade-admin.js diagnostics",
+    "backup": "node arcade-admin.js backup",
+    "list-backups": "node arcade-admin.js list-backups",
+    "cleanup": "node arcade-admin.js cleanup",
+    "clear": "node arcade-admin.js clear-databases",
+    "clean-all": "node arcade-admin.js clean-all",
+    "help": "node arcade-admin.js help",
+    "build": "tsc",
+    "kadi:start": "node dist/index.js broker",
+    "kadi:dev": "npx tsx src/index.ts",
+    "test:all": "node test-runner.js",
+    "test": "vitest run",
+    "test:integration": "vitest run tests/integration",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "chmod +x arcade-admin.js",
+    "postinstall": "node -e \"console.log('\\n🎮 ArcadeDB Admin Tool installed successfully!\\n\\nQuick start:\\n  npx arcade-admin help\\n  npx arcade-admin start --with-test-data\\n')\"",
+    "docs": "jsdoc -c jsdoc.conf.json",
+    "docker:build": "docker build -t arcade-admin .",
+    "docker:run": "docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd):/workspace arcade-admin"
+  },
+  "keywords": [
+    "arcadedb",
+    "database",
+    "admin",
+    "cli",
+    "backup",
+    "restore",
+    "monitoring",
+    "graph-database",
+    "multi-model"
+  ],
+  "author": {
+    "name": "Your Name",
+    "email": "your.email@example.com",
+    "url": "https://github.com/yourusername"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/yourusername/arcade-admin#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/arcade-admin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/arcade-admin/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "os": [
+    "linux",
+    "darwin",
+    "win32"
+  ],
+  "dependencies": {
+    "@kadi.build/core": "^0.9.0",
+    "@kadi.build/file-sharing": "^1.0.0",
+    "@kadi.build/tunnel-services": "^1.0.0",
+    "csv-parser": "^3.0.0",
+    "csv-writer": "^1.6.0",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "eslint": "^8.55.0",
+    "eslint-config-standard": "^17.1.0",
+    "eslint-plugin-import": "^2.29.0",
+    "eslint-plugin-n": "^16.4.0",
+    "eslint-plugin-promise": "^6.1.0",
+    "jest": "^29.7.0",
+    "jsdoc": "^4.0.2",
+    "prettier": "^3.1.0",
+    "supertest": "^6.3.3",
+    "tmp": "^0.2.1",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.4"
+  },
+  "files": [
+    "arcade-admin.js",
+    "lib/",
+    "config.yml",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "preferGlobal": true,
+  "publishConfig": {
+    "access": "public"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "collectCoverage": true,
+    "coverageDirectory": "coverage",
+    "coverageReporters": [
+      "text",
+      "lcov",
+      "html"
+    ],
+    "collectCoverageFrom": [
+      "lib/**/*.js",
+      "arcade-admin.js",
+      "!**/node_modules/**",
+      "!**/test/**"
+    ],
+    "testMatch": [
+      "**/test/**/*.test.js"
+    ],
+    "setupFilesAfterEnv": [
+      "<rootDir>/test/setup.js"
+    ]
+  },
+  "eslintConfig": {
+    "extends": [
+      "standard"
+    ],
+    "env": {
+      "node": true,
+      "jest": true
+    },
+    "rules": {
+      "no-console": "off",
+      "prefer-const": "error",
+      "no-unused-vars": [
+        "error",
+        {
+          "argsIgnorePattern": "^_"
+        }
+      ]
+    }
+  },
+  "prettier": {
+    "semi": true,
+    "singleQuote": true,
+    "tabWidth": 2,
+    "trailingComma": "es5",
+    "printWidth": 100
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/yourusername"
+  },
+  "config": {
+    "default_data_dir": "./arcadedb-data",
+    "default_container_name": "arcadeDB",
+    "default_port": 2480
+  },
+  "nodemonConfig": {
+    "watch": [
+      "lib/",
+      "arcade-admin.js",
+      "config.yml"
+    ],
+    "ext": "js,yml,yaml",
+    "ignore": [
+      "node_modules/",
+      "test/",
+      "coverage/",
+      "arcadedb-data/"
+    ]
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "npm run lint && npm run format:check",
+      "pre-push": "npm run test"
+    }
+  }
+}

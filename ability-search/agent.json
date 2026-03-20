@@ -1,0 +1,82 @@
+{
+  "name": "search-ability",
+  "version": "0.1.1",
+  "description": "KADI ability providing chunking, embedding, and hybrid search over text content via 8 broker-callable tools",
+  "kind": "ability",
+  "entrypoint": "dist/index.js",
+  "abilities": {
+    "secret-ability": "^0.9.0"
+  },
+  "brokers": {
+    "default": "wss://broker.kadi.build/kadi",
+    "local": "ws://localhost:8080/kadi"
+  },
+  "scripts": {
+    "setup": "npm install && npm run build",
+    "start": "node dist/index.js broker"
+  },
+  "build": {
+    "default": {
+      "image": "search-ability:0.1.4",
+      "from": "node:22-slim",
+      "platform": "linux/amd64",
+      "cli": "latest",
+      "run": [
+        "npm ci",
+        "npm run build",
+        "kadi install kadi-install",
+        "kadi install kadi-run",
+        "kadi install kadi-secret",
+        "kadi install"
+      ],
+      "cmd": ["sh", "-c", "kadi run start"]
+    }
+  },
+  "deploy": {
+    "local": {
+      "target": "local",
+      "engine": "docker",
+      "services": {
+        "agent": {
+          "image": "search-ability:0.1.4",
+          "command": ["sh", "-c", "kadi secret receive --vault models && kadi run start"]
+        }
+      },
+      "secrets": {
+        "vault": "models",
+        "required": ["SEARCH_API_KEY", "SEARCH_EMBEDDING_API_URL"],
+        "delivery": "broker"
+      }
+    },
+    "akash": {
+      "target": "akash",
+      "network": "mainnet",
+      "services": {
+        "agent": {
+          "image": "search-ability:0.1.4",
+          "command": ["sh", "-c", "kadi secret receive --vault models && kadi run start"],
+          "env": [
+            "NODE_ENV=production"
+          ],
+          "expose": [
+            {
+              "port": 80,
+              "as": 80,
+              "to": [{ "global": true }]
+            }
+          ],
+          "resources": {
+            "cpu": 1,
+            "memory": "1Gi",
+            "ephemeralStorage": "1Gi"
+          }
+        }
+      },
+      "secrets": {
+        "vault": "models",
+        "required": ["SEARCH_API_KEY", "SEARCH_EMBEDDING_API_URL"],
+        "delivery": "broker"
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+# search-ability configuration
+# ============================
+#
+# Non-sensitive settings only. Credentials (SEARCH_API_KEY) are managed by
+# secret-ability via the `models` vault — never put them here.
+#
+# This file is discovered via walk-up search from CWD.
+# Environment variables override any value (SEARCH_CHUNK_SIZE, etc.).
+
+search:
+  chunk_size: 500
+  embedding_model: humin-nomic-embed-text-v2-moe:latest
+  database: kadi_memory
+  embedding_transport: api            # 'api' (default) or 'broker' — api is ~10x faster
+  # embedding_api_url:                # loaded from vault (SEARCH_EMBEDDING_API_URL)

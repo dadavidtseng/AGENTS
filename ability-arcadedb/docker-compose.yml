@@ -1,0 +1,26 @@
+version: "3.9"
+services:
+  agent:
+    image: arcadedb-ability:0.1.3
+    container_name: kadi-agent
+    networks:
+      - kadi-net
+    pull_policy: if_not_present
+    tty: true
+    stdin_open: true
+    environment:
+      KADI_DEPLOY_NONCE: a41852c1bb5e490d4a1068635b8f33ed3b94ab118295d6241be85cdf24198a2e
+      KADI_SECRET_DELIVERY: broker
+      KADI_REQUIRED_SECRETS: ARCADE_USERNAME,ARCADE_PASSWORD,KADI_TUNNEL_TOKEN
+      KADI_BROKER_URLS: wss://broker.kadi.build/kadi,ws://host.docker.internal:8080/kadi
+      KADI_RENDEZVOUS_BROKER: wss://broker.kadi.build/kadi
+    ports:
+      - "2480:2480"
+      - "9090:9090"
+    command:
+      - sh
+      - "-c"
+      - kadi secret receive --vault arcadedb && . ./scripts/start-arcadedb.sh && kadi run start
+networks:
+  kadi-net:
+    driver: bridge
