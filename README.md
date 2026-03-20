@@ -116,12 +116,12 @@ All agents communicate through the KADI event bus using pub/sub messaging on the
 
 ### Real-Time Dashboard
 
-mcp-client-quest provides a React + Express web dashboard with:
+agent-quest provides a React + Express web dashboard with:
 
 - WebSocket-based real-time updates for quest/task status
 - Visual quest and task management interface
 - Agent status monitoring and health checks
-- Slack and Discord notification pipeline integration
+- Slack and Discord notification pipeline integration (via agent-chatbot)
 
 ---
 
@@ -145,7 +145,7 @@ cd AGENTS
 cd mcp-server-quest && npm install
 cd ../agent-producer && npm install
 cd ../agent-worker && npm install
-cd ../mcp-client-quest && npm install
+cd ../agent-quest && npm install
 ```
 
 ## How to Use
@@ -164,7 +164,7 @@ cd agent-producer && npm start
 cd agent-worker && npm start -- --role=programmer
 
 # 5. Start the dashboard
-cd mcp-client-quest && npm start
+cd agent-quest && npm start
 
 # 6. Create a quest via Discord
 # Type in Discord: "Create a simple login page"
@@ -179,11 +179,9 @@ AGENTS/
 +-- mcp-server-quest/     # Quest and task management (34 MCP tools)
 +-- agent-producer/       # Orchestrator agent (event-driven)
 +-- agent-worker/         # Generic worker with role-based config
-+-- shadow-agent-worker/  # Backup and monitoring agent
-+-- mcp-client-quest/     # React + Express real-time dashboard
-+-- mcp-client-discord/   # Discord bot interface
-+-- mcp-client-slack/     # Slack bot interface
-+-- DaemonAgent/          # C++ game engine agent integration
++-- agent-shadow-worker/  # Backup and monitoring agent
++-- agent-quest/          # React + Express real-time dashboard
++-- agent-chatbot/        # Discord & Slack bot interface
 +-- agents-library/       # Shared utilities and base classes
 +-- Docs/                 # Architecture and workflow documentation
 +-- scripts/              # Setup and utility scripts
@@ -195,9 +193,9 @@ AGENTS/
 | mcp-server-quest | State management: quest CRUD, task lifecycle, LLM verification |
 | agent-producer | Orchestration: task decomposition, assignment, git merge workflow |
 | agent-worker | Execution: role-based task execution in isolated git worktrees |
-| shadow-agent-worker | Reliability: backup snapshots, monitoring, automatic rollback |
-| mcp-client-quest | Visibility: real-time dashboard with WebSocket updates |
-| DaemonAgent | Game engine: C++/JavaScript cross-language command system |
+| agent-shadow-worker | Reliability: backup snapshots, monitoring, automatic rollback |
+| agent-quest | Visibility: real-time dashboard with WebSocket updates |
+| DaemonAgent | Game engine: C++/JavaScript cross-language command system (separate repo) |
 
 ## Future Roadmap
 
