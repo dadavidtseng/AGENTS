@@ -3,22 +3,24 @@
  *
  * Orchestrates hybrid memory system:
  * - Short-term: Conversation context in JSON files (FileStorageAdapter)
- * - Long-term: Summarized history in ArcadeDB (ArcadeDBAdapter)
+ * - Long-term: KĀDI memory tools via broker (memory-store, memory-recall, memory-relate)
  * - Private: User preferences in JSON files
  * - Public: Shared knowledge base in JSON files
  *
  * Features:
  * - Automatic archival when conversation exceeds 20 messages
  * - LLM-based summarization before archival
- * - Graceful degradation if ArcadeDB unavailable
+ * - Graceful degradation if KĀDI memory tools unavailable
  */
 
 import type { Result } from '../common/result.js';
 import { ok, err } from '../common/result.js';
 
 import { FileStorageAdapter } from './file-storage-adapter.js';
-import { ArcadeDBAdapter } from './arcadedb-adapter.js';
 import type { ProviderManager } from '../providers/provider-manager.js';
+
+// KadiClient type — import only the type to avoid hard dependency
+import type { KadiClient } from '@kadi.build/core';
 
 /**
  * Message in conversation history
@@ -82,12 +84,6 @@ export interface MemoryError {
 }
 
 /**
- * Memory Service
- *
- * Manages hybrid memory storage with automatic archival and graceful degradation
- */
-
-/**
  * Extracted entity from task context (topics, tools, patterns, technologies)
  */
 export interface ExtractedEntity {
@@ -139,63 +135,120 @@ export interface RelevantMemory {
   timestamp: number;
 }
 
+/**
+ * Format recalled memories into a concise text block for LLM prompt injection.
+ *
+ * Groups by type (task memories first, then feedback), truncates each entry
+ * to 200 chars, and caps the total output at `maxChars`.
+ *
+ * @param memories - Array of recalled memories from MemoryService.recallRelevant()
+ * @param maxChars - Maximum total characters for the formatted output (default 2000)
+ * @returns Formatted string, or empty string if no memories
+ */
+export function formatMemoryContext(memories: RelevantMemory[], maxChars: number = 2000): string {
+  if (!memories || memories.length === 0) return '';
+
+  // Group by type: task memories first, then feedback
+  const taskMemories = memories.filter(m => m.type === 'task');
+  const feedbackMemories = memories.filter(m => m.type === 'feedback');
+  const ordered = [...taskMemories, ...feedbackMemories];
+
+  const lines: string[] = [];
+  let totalLength = 0;
+
+  for (const mem of ordered) {
+    const label = mem.type === 'task' ? 'TASK' : 'FEEDBACK';
+    const relevance = Math.round(mem.relevanceScore * 100);
+    const summary = mem.summary.length > 200
+      ? mem.summary.slice(0, 197) + '...'
+      : mem.summary;
+    const line = `- [${label}] (relevance: ${relevance}%) ${summary}`;
+
+    if (totalLength + line.length + 1 > maxChars) break;
+    lines.push(line);
+    totalLength += line.length + 1; // +1 for newline
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Memory Service
+ *
+ * Manages hybrid memory storage:
+ * - File storage for short-term context (always available)
+ * - KĀDI memory tools via broker for long-term graph memory (optional)
+ *
+ * When a KadiClient is provided, the service uses `invokeRemote` to call
+ * ability-memory tools (memory-store, memory-recall, memory-relate) through
+ * the broker. This replaces the previous direct ArcadeDB connection.
+ */
 export class MemoryService {
   private fileStorage: FileStorageAdapter;
-  private dbAdapter: ArcadeDBAdapter | null = null;
-  private isDbAvailable: boolean = false;
+  private kadiClient: KadiClient | null = null;
+  private kadiAvailable: boolean = false;
   private readonly archiveThreshold: number = 20;
+  private readonly agentId: string;
 
   /**
    * Create Memory Service
    *
    * @param memoryDataPath - Base directory for file storage
-   * @param arcadedbUrl - ArcadeDB connection URL (optional)
-   * @param arcadedbPassword - ArcadeDB root password (optional, defaults to 'root')
+   * @param kadiClient - KadiClient for invoking KĀDI memory tools (optional)
    * @param providerManager - LLM provider for summarization (optional)
+   * @param agentId - Agent identifier for memory scoping (optional, defaults to 'unknown')
    */
   constructor(
     memoryDataPath: string,
-    arcadedbUrl?: string,
-    arcadedbPassword?: string,
-    private readonly providerManager?: ProviderManager
+    kadiClient?: KadiClient,
+    private readonly providerManager?: ProviderManager,
+    agentId?: string,
   ) {
     this.fileStorage = new FileStorageAdapter(memoryDataPath);
-
-    if (arcadedbUrl) {
-      this.dbAdapter = new ArcadeDBAdapter(
-        arcadedbUrl,
-        'root',
-        arcadedbPassword || 'root'
-      );
-    }
+    this.kadiClient = kadiClient ?? null;
+    this.agentId = agentId ?? 'unknown';
   }
 
   /**
    * Initialize memory service
    *
-   * Attempts to connect to ArcadeDB, logs warning if unavailable but continues
+   * Probes KĀDI memory tools with a lightweight memory-recall call.
+   * If the probe fails (ability-memory not running, broker down, etc.),
+   * the service falls back to file storage only.
    *
    * @returns Result indicating initialization success
    */
   async initialize(): Promise<Result<void, MemoryError>> {
-    if (this.dbAdapter) {
-      const result = await this.dbAdapter.connect();
+    if (this.kadiClient) {
+      try {
+        // Lightweight probe: recall with an empty query, limit 1, 5s timeout
+        await this.kadiClient.invokeRemote('memory-recall', {
+          query: '__probe__',
+          limit: 1,
+          agent: this.agentId,
+        }, { timeout: 5000 });
 
-      if (!result.success) {
+        this.kadiAvailable = true;
+        console.log('[MemoryService] KADI memory tools available');
+      } catch (error: any) {
         console.warn(
-          `[MemoryService] ArcadeDB unavailable: ${result.error.message}. ` +
-          'Continuing with short-term storage only.'
+          `[MemoryService] KADI memory tools unavailable: ${error.message || String(error)}. ` +
+          'Continuing with file storage only.'
         );
-        this.isDbAvailable = false;
-      } else {
-        this.isDbAvailable = true;
-        console.log('[MemoryService] ArcadeDB connected successfully');
+        this.kadiAvailable = false;
       }
     } else {
-      console.log('[MemoryService] ArcadeDB not configured, using file storage only');
+      console.log('[MemoryService] KadiClient not configured, using file storage only');
     }
 
     return ok(undefined);
+  }
+
+  /**
+   * Check if KĀDI memory tools are available
+   */
+  isKadiAvailable(): boolean {
+    return this.kadiAvailable;
   }
 
   /**
@@ -455,8 +508,8 @@ export class MemoryService {
   /**
    * Archive conversation to long-term storage
    *
-   * Summarizes conversation using LLM and stores in ArcadeDB
-   * Trims short-term storage to keep only recent messages
+   * Summarizes conversation using LLM and stores via KĀDI memory-store.
+   * Trims short-term storage to keep only recent messages.
    *
    * @param userId - User identifier
    * @param channelId - Channel identifier
@@ -467,11 +520,11 @@ export class MemoryService {
     channelId: string,
     messages: ConversationMessage[]
   ): Promise<void> {
-    // Skip if database unavailable
-    if (!this.isDbAvailable || !this.dbAdapter) {
+    // Skip if KĀDI unavailable
+    if (!this.kadiAvailable || !this.kadiClient) {
       console.warn(
         `[MemoryService] Cannot archive conversation for ${userId}/${channelId}: ` +
-        'Database unavailable'
+        'KADI memory tools unavailable'
       );
       return;
     }
@@ -486,30 +539,36 @@ export class MemoryService {
       summary = `Conversation with ${messages.length} messages`;
     }
 
-    // Create archived summary
-    const archivedSummary: ArchivedSummary = {
-      userId,
-      channelId,
-      summary,
-      messageCount: messages.length,
-      startTime: messages[0].timestamp,
-      endTime: messages[messages.length - 1].timestamp,
-    };
+    // Store via KĀDI memory-store (fire-and-forget)
+    try {
+      await this.kadiClient.invokeRemote('memory-store', {
+        content: `[archived-conversation] ${summary}\n\nUser: ${userId}, Channel: ${channelId}\nMessages: ${messages.length}\nPeriod: ${new Date(messages[0].timestamp).toISOString()} - ${new Date(messages[messages.length - 1].timestamp).toISOString()}`,
+        topics: ['archived-conversation'],
+        entities: [
+          { name: userId, type: 'person' },
+          { name: channelId, type: 'concept' },
+        ],
+        metadata: {
+          userId,
+          channelId,
+          messageCount: messages.length,
+          startTime: messages[0].timestamp,
+          endTime: messages[messages.length - 1].timestamp,
+        },
+        agent: this.agentId,
+        skipExtraction: true,
+      }, { timeout: 10000 });
 
-    // Store in ArcadeDB as vertex
-    const vertexResult = await this.dbAdapter.createVertex('ArchivedConversation', archivedSummary);
-
-    if (!vertexResult.success) {
+      console.log(
+        `[MemoryService] Archived conversation ${userId}/${channelId} ` +
+        `(${messages.length} messages) via KADI memory-store`
+      );
+    } catch (error: any) {
       console.error(
-        `[MemoryService] Failed to archive conversation: ${vertexResult.error.message}`
+        `[MemoryService] Failed to archive conversation: ${error.message || String(error)}`
       );
       return;
     }
-
-    console.log(
-      `[MemoryService] Archived conversation ${userId}/${channelId} ` +
-      `(${messages.length} messages) with @rid ${vertexResult.data}`
-    );
 
     // Trim short-term storage to keep last 10 messages
     const conversationPath = `${userId}/${channelId}.json`;
@@ -559,7 +618,7 @@ export class MemoryService {
   /**
    * Search long-term storage
    *
-   * Queries ArcadeDB for archived conversations matching criteria
+   * Queries KĀDI memory-recall for archived conversations matching criteria
    *
    * @param userId - User identifier
    * @param searchTerm - Search term for summary content
@@ -571,50 +630,51 @@ export class MemoryService {
     searchTerm: string,
     limit: number = 10
   ): Promise<Result<ArchivedSummary[], MemoryError>> {
-    if (!this.isDbAvailable || !this.dbAdapter) {
+    if (!this.kadiAvailable || !this.kadiClient) {
       return err({
         type: 'DATABASE_ERROR',
         message: 'Long-term storage unavailable',
       });
     }
 
-    // Query ArcadeDB using Cypher
-    const cypher = `
-      MATCH (c:ArchivedConversation)
-      WHERE c.userId = $userId AND c.summary CONTAINS $searchTerm
-      RETURN c
-      ORDER BY c.endTime DESC
-      LIMIT $limit
-    `;
+    try {
+      const result = await this.kadiClient.invokeRemote<any>('memory-recall', {
+        query: `${searchTerm} user:${userId}`,
+        mode: 'hybrid',
+        topics: ['archived-conversation'],
+        limit,
+        agent: this.agentId,
+      }, { timeout: 10000 });
 
-    const result = await this.dbAdapter.query(cypher, { userId, searchTerm, limit });
+      // Map memory-recall results to ArchivedSummary format
+      const results = result?.results || result?.content?.[0]?.text
+        ? JSON.parse(result.content[0].text).results || []
+        : [];
 
-    if (!result.success) {
+      const summaries: ArchivedSummary[] = results.map((r: any) => ({
+        userId: r.metadata?.userId || userId,
+        channelId: r.metadata?.channelId || 'unknown',
+        summary: r.content || r.summary || '',
+        messageCount: r.metadata?.messageCount || 0,
+        startTime: r.metadata?.startTime || 0,
+        endTime: r.metadata?.endTime || 0,
+      }));
+
+      return ok(summaries);
+    } catch (error: any) {
       return err({
         type: 'DATABASE_ERROR',
-        message: `Search failed: ${result.error.message}`,
-        originalError: result.error,
+        message: `Search failed: ${error.message || String(error)}`,
+        originalError: error,
       });
     }
-
-    // Extract ArchivedSummary from results
-    const summaries: ArchivedSummary[] = result.data.map((row: any) => row.c);
-    return ok(summaries);
   }
-
-  /**
-   * Dispose of memory service
-   *
-   * Disconnects from ArcadeDB and performs cleanup
-   *
-   * @returns Result indicating success or error
-   */
 
   /**
    * Store task memory after task completion
    *
    * Saves task context and outcome to both file storage (short-term) and
-   * ArcadeDB (long-term graph). Entities are stored as vertices linked to the task.
+   * KĀDI memory-store (long-term graph). Fire-and-forget for KĀDI call.
    *
    * @param memory - Task memory entry
    * @returns Result indicating success or error
@@ -640,6 +700,8 @@ export class MemoryService {
       });
     }
 
+    console.log(`[MemoryService] Stored task memory to file for ${memory.taskId} (quest: ${memory.questId})`);
+
     // Append to task index for fast lookup
     const indexPath = `tasks/${memory.questId}/index.json`;
     const indexEntry = {
@@ -652,49 +714,39 @@ export class MemoryService {
     };
     await this.fileStorage.appendToJSONArray(indexPath, indexEntry);
 
-    // Store in ArcadeDB if available (non-blocking for graph enrichment)
-    if (this.isDbAvailable && this.dbAdapter) {
-      try {
-        // Create TaskMemory vertex
-        const vertexResult = await this.dbAdapter.createVertex('TaskMemory', {
+    // Store via KĀDI memory-store if available (fire-and-forget)
+    if (this.kadiAvailable && this.kadiClient) {
+      console.log(`[MemoryService] Sending task memory to KADI for ${memory.taskId}...`);
+      this.kadiClient.invokeRemote('memory-store', {
+        content: `[${memory.outcome}] ${memory.description}\n\nContext: ${memory.context}\n\nResult: ${memory.result}`,
+        topics: [memory.taskType, memory.agentRole],
+        entities: memory.entities.map(e => ({ name: e.name, type: e.type })),
+        metadata: {
           taskId: memory.taskId,
           questId: memory.questId,
           agentId: memory.agentId,
           agentRole: memory.agentRole,
           taskType: memory.taskType,
           outcome: memory.outcome,
-          description: memory.description,
-          context: memory.context,
-          result: memory.result,
           duration: memory.duration,
-          timestamp: memory.timestamp,
-        });
-
-        // Store entities as vertices and link to task
-        if (vertexResult.success && memory.entities.length > 0) {
-          for (const entity of memory.entities) {
-            const entityResult = await this.dbAdapter.createVertex('Entity', {
-              name: entity.name,
-              entityType: entity.type,
-              confidence: entity.confidence,
-            });
-
-            if (entityResult.success) {
-              await this.dbAdapter.createEdge(
-                vertexResult.data,
-                entityResult.data,
-                'HAS_ENTITY',
-                { confidence: entity.confidence }
-              );
-            }
-          }
+        },
+        conversationId: memory.questId,
+        agent: this.agentId,
+        skipExtraction: true,
+      }, { timeout: 10000 }).then((result: any) => {
+        const parsed = result?.content?.[0]?.text ? JSON.parse(result.content[0].text) : result;
+        if (parsed?.stored === false) {
+          console.warn(`[MemoryService] ⚠ KADI memory-store returned error for ${memory.taskId}: ${parsed.error}`);
+        } else {
+          console.log(`[MemoryService] ✅ Stored task memory via KADI for ${memory.taskId} (rid: ${parsed?.rid || 'unknown'})`);
         }
-      } catch (error) {
-        // Log but don't fail — file storage is the primary record
+      }).catch((error: any) => {
         console.warn(
-          `[MemoryService] Failed to store task memory in ArcadeDB for ${memory.taskId}: ${error}`
+          `[MemoryService] ⚠ Failed to store task memory via KADI for ${memory.taskId}: ${error.message || String(error)}`
         );
-      }
+      });
+    } else {
+      console.log(`[MemoryService] KADI unavailable, task memory stored to file only for ${memory.taskId}`);
     }
 
     return ok(undefined);
@@ -704,7 +756,7 @@ export class MemoryService {
    * Store feedback on task approval/rejection
    *
    * Records approval/rejection feedback for learning and quality improvement.
-   * Links feedback to the original task memory in the graph.
+   * Links feedback to the original task memory via memory-relate.
    *
    * @param feedback - Task feedback entry
    * @returns Result indicating success or error
@@ -730,41 +782,67 @@ export class MemoryService {
       });
     }
 
-    // Store in ArcadeDB and link to task memory if available
-    if (this.isDbAvailable && this.dbAdapter) {
-      try {
-        const feedbackVertex = await this.dbAdapter.createVertex('TaskFeedback', {
-          taskId: feedback.taskId,
-          questId: feedback.questId,
-          agentId: feedback.agentId,
-          approved: feedback.approved,
-          score: feedback.score,
-          reason: feedback.reason,
-          timestamp: feedback.timestamp,
-        });
+    console.log(`[MemoryService] Stored feedback to file for ${feedback.taskId} (approved: ${feedback.approved})`);
 
-        // Link feedback to task memory
-        if (feedbackVertex.success) {
-          const taskQuery = `MATCH (t:TaskMemory) WHERE t.taskId = $taskId AND t.questId = $questId RETURN t`;
-          const taskResult = await this.dbAdapter.query(taskQuery, {
-            taskId: feedback.taskId,
-            questId: feedback.questId,
-          });
+    // Store via KĀDI and link to task memory if available (fire-and-forget)
+    if (this.kadiAvailable && this.kadiClient) {
+      console.log(`[MemoryService] Sending feedback to KADI for ${feedback.taskId}...`);
+      const client = this.kadiClient;
 
-          if (taskResult.success && taskResult.data.length > 0 && taskResult.data[0]['@rid']) {
-            await this.dbAdapter.createEdge(
-              taskResult.data[0]['@rid'],
-              feedbackVertex.data,
-              'HAS_FEEDBACK',
-              { score: feedback.score }
-            );
+      (async () => {
+        try {
+          // Store feedback as memory
+          const feedbackResult = await client.invokeRemote<any>('memory-store', {
+            content: `[feedback] Task ${feedback.taskId}: ${feedback.approved ? 'approved' : 'rejected'} (score: ${feedback.score})\nReason: ${feedback.reason}`,
+            topics: ['task-feedback'],
+            entities: [
+              { name: feedback.agentId, type: 'concept' },
+              { name: feedback.taskId, type: 'concept' },
+            ],
+            metadata: {
+              taskId: feedback.taskId,
+              questId: feedback.questId,
+              agentId: feedback.agentId,
+              approved: feedback.approved,
+              score: feedback.score,
+            },
+            conversationId: feedback.questId,
+            agent: this.agentId,
+            skipExtraction: true,
+          }, { timeout: 10000 });
+
+          // Try to find the original task memory and link to it
+          // Use agent: '*' because the task was likely stored by a different agent
+          const taskRecall = await client.invokeRemote<any>('memory-recall', {
+            query: `task ${feedback.taskId}`,
+            mode: 'keyword',
+            limit: 1,
+            agent: '*',
+          }, { timeout: 5000 });
+
+          // Extract RIDs and relate if both exist
+          const feedbackRid = feedbackResult?.rid || feedbackResult?.content?.[0]?.text;
+          const taskResults = taskRecall?.results || [];
+          const taskRid = taskResults[0]?.rid;
+
+          if (feedbackRid && taskRid) {
+            await client.invokeRemote('memory-relate', {
+              fromRid: taskRid,
+              toRid: feedbackRid,
+              relationship: 'has_feedback',
+              weight: feedback.score / 100,
+            }, { timeout: 5000 });
           }
+
+          console.log(`[MemoryService] ✅ Stored feedback via KADI for ${feedback.taskId} (approved: ${feedback.approved})`);
+        } catch (error: any) {
+          console.warn(
+            `[MemoryService] ⚠ Failed to store feedback via KADI for ${feedback.taskId}: ${error.message || String(error)}`
+          );
         }
-      } catch (error) {
-        console.warn(
-          `[MemoryService] Failed to store feedback in ArcadeDB for ${feedback.taskId}: ${error}`
-        );
-      }
+      })();
+    } else {
+      console.log(`[MemoryService] KADI unavailable, feedback stored to file only for ${feedback.taskId}`);
     }
 
     return ok(undefined);
@@ -773,114 +851,95 @@ export class MemoryService {
   /**
    * Recall relevant memories for a given task context
    *
-   * Searches both file storage and ArcadeDB for task memories and feedback
-   * relevant to the given context. Uses keyword matching on file storage
-   * and graph traversal on ArcadeDB when available.
+   * Uses KĀDI memory-recall with hybrid search when available,
+   * falls back to file-based keyword matching.
    *
    * @param taskType - Type of the new task
-   * @param _description - Description of the new task (used for semantic search in 5.2)
+   * @param description - Description of the new task (used for semantic search)
    * @param agentRole - Role of the agent (optional, for filtering)
    * @param limit - Maximum memories to return (default: 5)
+   * @param crossAgentIds - Agent IDs for cross-agent recall (optional).
+   *   Pass ['*'] for all agents, or ['agent-worker', 'agent-qa'] for specific agents.
+   *   Default (undefined) uses only this agent's own memories.
    * @returns Result with relevant memories or error
    */
   async recallRelevant(
     taskType: string,
-    _description: string,
+    description: string,
     agentRole?: string,
-    limit: number = 5
+    limit: number = 5,
+    crossAgentIds?: string[],
   ): Promise<Result<RelevantMemory[], MemoryError>> {
     const memories: RelevantMemory[] = [];
 
-    // Strategy 1: Graph-based recall from ArcadeDB (preferred — richer signals)
-    if (this.isDbAvailable && this.dbAdapter) {
+    // Strategy 1: KĀDI memory-recall (preferred — semantic + graph search)
+    if (this.kadiAvailable && this.kadiClient) {
       try {
-        // Find task memories with matching taskType or agent role
-        let cypher: string;
-        let params: Record<string, any>;
+        const topics = [taskType];
+        if (agentRole) topics.push(agentRole);
 
-        if (agentRole) {
-          cypher = `
-            MATCH (t:TaskMemory)
-            WHERE t.taskType = $taskType OR t.agentRole = $agentRole
-            RETURN t
-            ORDER BY t.timestamp DESC
-            LIMIT $limit
-          `;
-          params = { taskType, agentRole, limit: limit * 2 };
-        } else {
-          cypher = `
-            MATCH (t:TaskMemory)
-            WHERE t.taskType = $taskType
-            RETURN t
-            ORDER BY t.timestamp DESC
-            LIMIT $limit
-          `;
-          params = { taskType, limit: limit * 2 };
-        }
+        console.log(`[MemoryService] Recalling memories for "${taskType}" (topics: ${topics.join(', ')})...`);
 
-        const taskResult = await this.dbAdapter.query(cypher, params);
-
-        if (taskResult.success) {
-          for (const row of taskResult.data) {
-            const t = row.t || row;
-            const rid = t['@rid'];
-
-            // Fetch linked entities for this task
-            let entities: ExtractedEntity[] = [];
-            if (rid) {
-              const entityQuery = `
-                MATCH (t)-[:HAS_ENTITY]->(e:Entity)
-                WHERE id(t) = $rid
-                RETURN e
-              `;
-              const entityResult = await this.dbAdapter.query(entityQuery, { rid });
-              if (entityResult.success) {
-                entities = entityResult.data.map((r: any) => ({
-                  name: (r.e || r).name,
-                  type: (r.e || r).entityType,
-                  confidence: (r.e || r).confidence,
-                }));
-              }
-            }
-
-            // Fetch linked feedback
-            let feedbackSummary = '';
-            if (rid) {
-              const fbQuery = `
-                MATCH (t)-[:HAS_FEEDBACK]->(f:TaskFeedback)
-                WHERE id(t) = $rid
-                RETURN f
-              `;
-              const fbResult = await this.dbAdapter.query(fbQuery, { rid });
-              if (fbResult.success && fbResult.data.length > 0) {
-                const fb = fbResult.data[0].f || fbResult.data[0];
-                feedbackSummary = fb.approved
-                  ? ` [Approved, score: ${fb.score}]`
-                  : ` [Rejected: ${fb.reason}]`;
-              }
-            }
-
-            // Compute simple relevance score based on matching criteria
-            let relevanceScore = 0.5;
-            if (t.taskType === taskType) relevanceScore += 0.3;
-            if (agentRole && t.agentRole === agentRole) relevanceScore += 0.1;
-            if (t.outcome === 'success') relevanceScore += 0.1;
-
-            memories.push({
-              type: 'task',
-              taskId: t.taskId,
-              summary: `[${t.outcome}] ${t.description}${feedbackSummary}`,
-              relevanceScore: Math.min(relevanceScore, 1.0),
-              entities,
-              timestamp: t.timestamp,
-            });
+        // Determine agent filter for cross-agent recall
+        let agentParam: string | string[] = this.agentId;
+        if (crossAgentIds) {
+          if (crossAgentIds.includes('*')) {
+            agentParam = '*';
+          } else {
+            agentParam = [this.agentId, ...crossAgentIds];
           }
         }
-      } catch (error) {
+
+        const result = await this.kadiClient.invokeRemote<any>('memory-recall', {
+          query: description,
+          mode: 'hybrid',
+          topics,
+          limit: limit * 2, // Fetch extra for filtering
+          agent: agentParam,
+        }, { timeout: 10000 });
+
+        // Parse results — handle both structured and text content responses
+        let results: any[] = [];
+        if (result?.results) {
+          results = result.results;
+        } else if (result?.content?.[0]?.text) {
+          try {
+            const parsed = JSON.parse(result.content[0].text);
+            results = parsed.results || [];
+          } catch {
+            // Not JSON, skip
+          }
+        }
+
+        console.log(`[MemoryService] KADI recall returned ${results.length} result(s) for "${taskType}"`);
+
+        for (const r of results) {
+          const content = r.content || r.summary || '';
+          const metadata = r.metadata || {};
+
+          // Determine type from content prefix or metadata
+          const type: 'task' | 'feedback' = content.startsWith('[feedback]') ? 'feedback' : 'task';
+
+          memories.push({
+            type,
+            taskId: metadata.taskId || 'unknown',
+            summary: content,
+            relevanceScore: r.score ?? r.importance ?? 0.5,
+            entities: (r.entities || []).map((e: any) => ({
+              name: e.name,
+              type: e.type || 'topic',
+              confidence: e.confidence ?? 1.0,
+            })),
+            timestamp: r.timestamp ? new Date(r.timestamp).getTime() : Date.now(),
+          });
+        }
+      } catch (error: any) {
         console.warn(
-          `[MemoryService] ArcadeDB recall failed, falling back to file storage: ${error}`
+          `[MemoryService] ⚠ KADI recall failed, falling back to file storage: ${error.message || String(error)}`
         );
       }
+    } else {
+      console.log(`[MemoryService] KADI unavailable, using file-only recall for "${taskType}"`);
     }
 
     // Strategy 2: File-based recall (fallback or supplement)
@@ -901,7 +960,7 @@ export class MemoryService {
                 continue;
               }
 
-              // Skip if already found from ArcadeDB
+              // Skip if already found from KĀDI
               if (memories.some(m => m.taskId === entry.taskId)) continue;
 
               // Read full task memory
@@ -937,21 +996,17 @@ export class MemoryService {
     return ok(memories.slice(0, limit));
   }
 
+  /**
+   * Dispose of memory service
+   *
+   * Marks KĀDI as unavailable and performs cleanup.
+   * No persistent connection to close (broker manages connection lifecycle).
+   *
+   * @returns Result indicating success or error
+   */
   async dispose(): Promise<Result<void, MemoryError>> {
-    if (this.dbAdapter && this.isDbAvailable) {
-      const result = await this.dbAdapter.disconnect();
-
-      if (!result.success) {
-        return err({
-          type: 'DATABASE_ERROR',
-          message: `Failed to disconnect: ${result.error.message}`,
-          originalError: result.error,
-        });
-      }
-
-      this.isDbAvailable = false;
-    }
-
+    this.kadiAvailable = false;
+    this.kadiClient = null;
     return ok(undefined);
   }
 }

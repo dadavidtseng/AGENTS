@@ -35,6 +35,10 @@ export interface ArcadeDBClientConfig {
  *
  * Low-level HTTP client for ArcadeDB REST API
  * Handles connection, authentication, and query execution
+ *
+ * @deprecated Use KĀDI memory tools (memory-store, memory-recall, memory-relate) via
+ * KadiClient.invokeRemote() instead. MemoryService no longer uses this adapter directly.
+ * Kept for backward compatibility with external consumers.
  */
 export class ArcadeDBClient {
   private connected: boolean = false;
@@ -218,6 +222,10 @@ export interface VertexResult {
  *
  * High-level adapter for graph database operations
  * Provides vertex/edge operations using Cypher queries
+ *
+ * @deprecated Use KĀDI memory tools (memory-store, memory-recall, memory-relate) via
+ * KadiClient.invokeRemote() instead. MemoryService no longer uses this adapter directly.
+ * Kept for backward compatibility with external consumers.
  */
 export class ArcadeDBAdapter {
   private client: ArcadeDBClient | null = null;

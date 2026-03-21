@@ -39,6 +39,8 @@ import {
 } from './types/event-schemas.js';
 import { logger, MODULE_AGENT } from './utils/logger.js';
 import { timer } from './utils/timer.js';
+import type { MemoryService } from './memory/memory-service.js';
+import { formatMemoryContext } from './memory/memory-service.js';
 
 // ============================================================================
 // Configuration Validation Schema
@@ -148,6 +150,12 @@ export class BaseWorkerAgent {
    * Optional — if null, agent cannot execute tasks requiring LLM.
    */
   protected providerManager: ProviderManager | null = null;
+
+  /**
+   * Memory service for storing task outcomes and recalling past patterns.
+   * Injected via setMemoryService() from the agent entry point.
+   */
+  protected memoryService: MemoryService | null = null;
 
   /**
    * Agent role (artist, designer, programmer)
@@ -650,8 +658,24 @@ export class BaseWorkerAgent {
       const tools = await this.buildToolDefinitionsAsync();
       logger.info(MODULE_AGENT, `🔧 Available tools: ${tools.length} (prefixes: ${this.toolPrefixes.join(', ') || 'none'})`, timer.elapsed('factory'));
 
+      // Step 4.5: Recall relevant past experience (non-blocking, best-effort)
+      let memoryContext = '';
+      if (this.memoryService) {
+        try {
+          const recallResult = await this.memoryService.recallRelevant(
+            this.role, task.description, this.role, 3, ['*'],
+          );
+          if (recallResult.success && recallResult.data.length > 0) {
+            memoryContext = formatMemoryContext(recallResult.data);
+            logger.info(MODULE_AGENT, `Recalled ${recallResult.data.length} past patterns`, timer.elapsed('factory'));
+          }
+        } catch (err: any) {
+          logger.warn(MODULE_AGENT, `Memory recall failed (non-fatal): ${err.message}`, timer.elapsed('factory'));
+        }
+      }
+
       // Step 5: Build initial system prompt
-      const systemPrompt = this.buildTaskSystemPrompt(task, implementationGuide, verificationCriteria);
+      const systemPrompt = this.buildTaskSystemPrompt(task, implementationGuide, verificationCriteria, memoryContext);
 
       // Step 6: Enter tool-calling agent loop
       const messages: Message[] = [
@@ -838,7 +862,8 @@ export class BaseWorkerAgent {
   protected buildTaskSystemPrompt(
     task: TaskAssignedEvent,
     implementationGuide: string,
-    verificationCriteria: string
+    verificationCriteria: string,
+    memoryContext?: string
   ): string {
     const retryContext = task.feedback
       ? `\n⚠️ REVISION REQUIRED (Attempt #${task.retryAttempt || 1})\nPrevious attempt was rejected. Feedback:\n${task.feedback}\nPlease carefully address the feedback above.\n`
@@ -852,6 +877,7 @@ Description: ${task.description}
 Implementation Guide: ${implementationGuide}
 ${verificationCriteria ? `Verification Criteria: ${verificationCriteria}` : ''}
 ${retryContext}
+${memoryContext ? `\n## Past Experience\nThe following are relevant outcomes from past similar tasks. Use these to avoid known mistakes and apply proven patterns:\n${memoryContext}` : ''}
 
 Instructions:
 1. Analyze the task requirements carefully
@@ -1259,6 +1285,26 @@ Important:
 
       logger.info(MODULE_AGENT, `   ✅ Review request published to qa network`, timer.elapsed('factory'));
 
+      // Store task memory (fire-and-forget) for learning from past outcomes
+      if (this.memoryService) {
+        this.memoryService.storeTaskMemory({
+          taskId,
+          questId: questId || '',
+          agentId: this.client.readAgentJson().name || `agent-worker-${this.role}`,
+          agentRole: this.role,
+          taskType: this.role,
+          description: _contentSummary || `Task ${taskId} completed`,
+          outcome: 'success',
+          context: `worktree: ${this.worktreePath}`,
+          result: `commit: ${commitSha}`,
+          entities: [],
+          duration: 0,
+          timestamp: Date.now(),
+        }).catch((err: any) => {
+          logger.warn(MODULE_AGENT, `Failed to store task memory (non-fatal): ${err.message || String(err)}`, timer.elapsed('factory'));
+        });
+      }
+
     } catch (error: any) {
       // Handle publishing failures gracefully - don't throw
       logger.error(MODULE_AGENT, `Failed to publish review request event (non-fatal)`, timer.elapsed('factory'), error);
@@ -1586,6 +1632,18 @@ Important:
    */
   public setProviderManager(pm: ProviderManager): void {
     this.providerManager = pm;
+  }
+
+  /**
+   * Set the MemoryService for task memory storage and recall
+   *
+   * Called by the agent entry point after constructing BaseAgent
+   * (which creates the MemoryService).
+   *
+   * @param ms - MemoryService instance from BaseAgent
+   */
+  public setMemoryService(ms: MemoryService): void {
+    this.memoryService = ms;
   }
 
   /**

@@ -212,7 +212,7 @@ export * from './providers/types.js';
 // Memory Services
 // ============================================================================
 
-export { MemoryService } from './memory/memory-service.js';
+export { MemoryService, formatMemoryContext } from './memory/memory-service.js';
 export { FileStorageAdapter } from './memory/file-storage-adapter.js';
 export { ArcadeDBAdapter, ArcadeDBClient } from './memory/arcadedb-adapter.js';
 export {

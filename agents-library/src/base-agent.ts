@@ -77,16 +77,14 @@ export interface BaseAgentProviderConfig {
 /**
  * Memory configuration for BaseAgent.
  * Controls where conversation context and knowledge are stored.
+ *
+ * Long-term memory is provided by KĀDI memory tools (memory-store, memory-recall,
+ * memory-relate) via the broker — no direct database connection needed.
+ * The BaseAgent automatically passes its KadiClient to MemoryService.
  */
 export interface BaseAgentMemoryConfig {
   /** Path to file-based memory storage directory */
   dataPath: string;
-
-  /** ArcadeDB URL for long-term memory (optional) */
-  arcadedbUrl?: string;
-
-  /** ArcadeDB root password @default 'root' */
-  arcadedbPassword?: string;
 }
 
 /**
@@ -197,12 +195,13 @@ export class BaseAgent {
     }
 
     // Create MemoryService if configured (requires async initialize() later)
+    // KadiClient is passed for KĀDI memory tools (memory-store, memory-recall, memory-relate)
     if (config.memory) {
       this.memoryService = new MemoryService(
         config.memory.dataPath,
-        config.memory.arcadedbUrl,
-        config.memory.arcadedbPassword,
+        this.client,
         this.providerManager,
+        config.agentId,
       );
       logger.info(MODULE_AGENT, '   ✅ MemoryService created (pending initialization)', timer.elapsed(this.timerKey));
     }
