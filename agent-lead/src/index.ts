@@ -10,9 +10,9 @@ import { setupQuestCleanupHandler } from './handlers/quest-cleanup.js';
 
 // Role-based network mapping
 const ROLE_NETWORKS: Record<string, string[]> = {
-  artist: ['producer', 'artist', 'git', 'qa', 'quest', 'file'],
-  designer: ['producer', 'designer', 'git', 'qa', 'quest', 'file'],
-  programmer: ['producer', 'programmer', 'git', 'qa', 'deploy', 'quest', 'file'],
+  artist: ['producer', 'artist', 'git', 'qa', 'quest', 'file', 'global'],
+  designer: ['producer', 'designer', 'git', 'qa', 'quest', 'file', 'global'],
+  programmer: ['producer', 'programmer', 'git', 'qa', 'deploy', 'quest', 'file', 'global'],
 };
 
 const VALID_ROLES = ['artist', 'designer', 'programmer'];
@@ -39,6 +39,10 @@ const baseAgentConfig: BaseAgentConfig = {
   networks,
   // LLM provider for intelligent orchestration (optional — falls back to rule-based if unset)
   ...buildProviderConfig(),
+  // Memory for recalling conflict patterns and merge history
+  memory: {
+    dataPath: process.env.MEMORY_DATA_PATH || './data/memory',
+  },
 };
 
 /** Build provider config from env vars. Model Manager is primary, Anthropic is fallback. */
@@ -164,7 +168,7 @@ async function main(): Promise<void> {
   await setupTaskVerificationHandler(client, role, agentName, baseAgent.providerManager);
 
   // Task 4.14: Subscribe to quest.verification_complete for PR creation
-  await setupPrWorkflowHandler(client, role, agentName, baseAgent.providerManager);
+  await setupPrWorkflowHandler(client, role, agentName, baseAgent.providerManager, baseAgent.memoryService);
 
   // Post-merge cleanup: delete quest/<questId> branches after PR merge
   await setupQuestCleanupHandler(client, role, agentName);

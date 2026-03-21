@@ -14,6 +14,7 @@
 
 import { logger, MODULE_AGENT, timer } from 'agents-library';
 import type { ProviderManager, Message } from 'agents-library';
+import type { MemoryService } from 'agents-library';
 import type { KadiClient } from '@kadi.build/core';
 import { KadiEventSchema } from 'agents-library';
 import { mergeTaskBranch } from './git-operations.js';
@@ -417,6 +418,7 @@ async function handleVerificationComplete(
   agentId: string,
   event: unknown,
   providerManager?: ProviderManager | null,
+  memoryService?: MemoryService,
 ): Promise<PrWorkflowResult | null> {
   const eventData = (event as any)?.data || event;
 
@@ -519,6 +521,24 @@ async function handleVerificationComplete(
 
   // Create staging branch from baseBranch
   await createStagingBranch(client, repoPath, stagingBranch, baseBranch);
+
+  // Recall past merge conflict patterns (best-effort, non-blocking)
+  if (memoryService) {
+    try {
+      const recallResult = await memoryService.recallRelevant(
+        'merge',
+        `PR merge for quest ${payload.questId}`,
+        undefined,
+        3,
+        ['*'],
+      );
+      if (recallResult.success && recallResult.data.length > 0) {
+        logger.info(MODULE_AGENT, `Recalled ${recallResult.data.length} past merge patterns`, timer.elapsed('main'));
+      }
+    } catch (err: any) {
+      logger.warn(MODULE_AGENT, `Memory recall failed (non-fatal): ${err.message}`, timer.elapsed('main'));
+    }
+  }
 
   // Merge each task branch into staging
   for (const branch of taskBranches) {
@@ -652,6 +672,7 @@ export async function setupPrWorkflowHandler(
   role: string,
   agentId: string,
   providerManager?: ProviderManager | null,
+  memoryService?: MemoryService,
 ): Promise<void> {
   logger.info(
     MODULE_AGENT,
@@ -661,7 +682,7 @@ export async function setupPrWorkflowHandler(
 
   await client.subscribe(TOPIC, async (event: unknown) => {
     try {
-      await handleVerificationComplete(client, agentId, event, providerManager);
+      await handleVerificationComplete(client, agentId, event, providerManager, memoryService);
     } catch (err: any) {
       logger.error(
         MODULE_AGENT,

@@ -1,6 +1,6 @@
 {
   "name": "agent-lead",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Orchestration agent - KĀDI agent-lead for task assignment, dependency management, verification, and PR creation",
   "type": "module",
   "main": "dist/index.js",
