@@ -1,7 +1,7 @@
 {
   "$schema": "../role-schema.json",
   "role": "designer",
-  "networks": ["designer", "git", "qa", "file", "quest"],
+  "networks": ["designer", "git", "qa", "file", "quest", "global"],
   "capabilities": [
     "ui-design",
     "ux-design",

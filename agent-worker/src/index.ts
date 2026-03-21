@@ -181,13 +181,14 @@ async function main() {
     ...(roleConfig.memory?.enabled && {
       memory: {
         dataPath,
-        arcadedbUrl: process.env.ARCADEDB_URL,
-        arcadedbPassword: process.env.ARCADEDB_PASSWORD
       }
     })
   };
 
   const baseAgent = new BaseAgent(baseAgentConfig);
+
+  // Step 2.5: Connect BaseAgent to initialize async services (MemoryService KADI probe)
+  await baseAgent.connect();
 
   // Step 3: Create worker agent using factory
   const workerAgent = createWorkerAgent({
@@ -209,6 +210,12 @@ async function main() {
   if (baseAgent.providerManager) {
     workerAgent.setProviderManager(baseAgent.providerManager);
     logger.info(MODULE_AGENT, '   ✅ ProviderManager injected into WorkerAgent', timer.elapsed('main'));
+  }
+
+  // Step 4.5: Inject MemoryService from BaseAgent into WorkerAgent
+  if (baseAgent.memoryService) {
+    workerAgent.setMemoryService(baseAgent.memoryService);
+    logger.info(MODULE_AGENT, '   ✅ MemoryService injected into WorkerAgent', timer.elapsed('main'));
   }
 
   // Step 5: Apply role config (capabilities, tools, temperature, maxTokens)

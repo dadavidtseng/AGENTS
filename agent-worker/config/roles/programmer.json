@@ -1,7 +1,7 @@
 {
   "$schema": "../role-schema.json",
   "role": "programmer",
-  "networks": ["programmer", "git", "qa", "file", "quest"],
+  "networks": ["programmer", "git", "qa", "file", "quest", "global"],
   "capabilities": [
     "code-generation",
     "programming",
