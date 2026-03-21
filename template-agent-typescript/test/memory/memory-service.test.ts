@@ -1,7 +1,9 @@
 /**
  * MemoryService Unit Tests
  *
- * Tests hybrid memory system with mocked dependencies
+ * Tests hybrid memory system with mocked dependencies.
+ * MemoryService now uses KĀDI memory tools (memory-store, memory-recall, memory-relate)
+ * via KadiClient.invokeRemote() instead of direct ArcadeDB connections.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -16,9 +18,15 @@ import {
 import type { ProviderManager } from '../../src/providers/provider-manager.js';
 import { ok } from '../../src/common/result.js';
 
-// Mock fetch globally for ArcadeDB
-const mockFetch = vi.fn();
-global.fetch = mockFetch as any;
+/**
+ * Create a mock KadiClient with invokeRemote that can be controlled per-test.
+ */
+function createMockKadiClient(invokeRemoteImpl?: (...args: any[]) => any) {
+  return {
+    invokeRemote: vi.fn(invokeRemoteImpl ?? (async () => ({ results: [] }))),
+    readAgentJson: vi.fn(() => ({ name: 'test-agent', tools: [] })),
+  } as any;
+}
 
 describe('MemoryService', () => {
   let service: MemoryService;
@@ -55,46 +63,47 @@ describe('MemoryService', () => {
   });
 
   describe('initialization', () => {
-    it('should initialize without ArcadeDB', async () => {
+    it('should initialize without KadiClient', async () => {
       service = new MemoryService(testDir);
 
       const result = await service.initialize();
 
       expect(result.success).toBe(true);
+      expect(service.isKadiAvailable()).toBe(false);
     });
 
-    it('should initialize with ArcadeDB successfully', async () => {
-      // Mock successful connection
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ result: [{ test: 1 }] }),
-      });
+    it('should initialize with KĀDI memory tools available', async () => {
+      const mockClient = createMockKadiClient();
 
-      service = new MemoryService(
-        testDir,
-        'http://localhost:2480/testdb',
-        mockProviderManager
-      );
+      service = new MemoryService(testDir, mockClient, mockProviderManager, 'test-agent');
 
       const result = await service.initialize();
 
       expect(result.success).toBe(true);
-      expect(mockFetch).toHaveBeenCalled();
+      expect(service.isKadiAvailable()).toBe(true);
+      // Should have probed with memory-recall
+      expect(mockClient.invokeRemote).toHaveBeenCalledWith(
+        'memory-recall',
+        expect.objectContaining({ query: '__probe__', limit: 1 }),
+        expect.objectContaining({ timeout: 5000 }),
+      );
     });
 
-    it('should gracefully handle ArcadeDB connection failure', async () => {
-      // Mock connection failure
-      mockFetch.mockRejectedValueOnce(new Error('Connection refused'));
+    it('should gracefully handle KĀDI tools unavailable', async () => {
+      const mockClient = createMockKadiClient(async () => {
+        throw new Error('Connection refused');
+      });
 
       const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-      service = new MemoryService(testDir, 'http://localhost:2480/testdb');
+      service = new MemoryService(testDir, mockClient);
 
       const result = await service.initialize();
 
       expect(result.success).toBe(true); // Still succeeds
+      expect(service.isKadiAvailable()).toBe(false);
       expect(consoleWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('ArcadeDB unavailable')
+        expect.stringContaining('KADI memory tools unavailable')
       );
 
       consoleWarnSpy.mockRestore();
@@ -376,33 +385,16 @@ describe('MemoryService', () => {
   });
 
   describe('archival mechanism', () => {
-    beforeEach(async () => {
-      // Mock successful ArcadeDB connection
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ result: [{ test: 1 }] }),
-      });
+    it('should trigger archival when threshold exceeded and KĀDI available', async () => {
+      const mockClient = createMockKadiClient();
 
       // Mock ProviderManager summarization
       (mockProviderManager.chat as any).mockResolvedValue(
         ok('This is a summary of the conversation')
       );
 
-      service = new MemoryService(
-        testDir,
-        'http://localhost:2480/testdb',
-        mockProviderManager
-      );
+      service = new MemoryService(testDir, mockClient, mockProviderManager, 'test-agent');
       await service.initialize();
-      mockFetch.mockClear();
-    });
-
-    it('should trigger archival when threshold exceeded', async () => {
-      // Mock createVertex for archival
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ result: [{ '@rid': '#10:0' }] }),
-      });
 
       const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
@@ -416,13 +408,16 @@ describe('MemoryService', () => {
         await service.storeMessage('user1', 'channel1', message);
       }
 
-      // Verify archival was triggered
+      // Verify archival was triggered via KĀDI memory-store
       expect(mockProviderManager.chat).toHaveBeenCalled();
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/api/v1/query/'),
+      expect(mockClient.invokeRemote).toHaveBeenCalledWith(
+        'memory-store',
         expect.objectContaining({
-          method: 'POST',
-        })
+          topics: ['archived-conversation'],
+          agent: 'test-agent',
+          skipExtraction: true,
+        }),
+        expect.any(Object),
       );
       expect(consoleLogSpy).toHaveBeenCalledWith(
         expect.stringContaining('Archived conversation')
@@ -438,10 +433,10 @@ describe('MemoryService', () => {
       consoleLogSpy.mockRestore();
     });
 
-    it('should not archive if database unavailable', async () => {
-      // Create service without database
-      const serviceWithoutDb = new MemoryService(testDir);
-      await serviceWithoutDb.initialize();
+    it('should not archive if KĀDI tools unavailable', async () => {
+      // Create service without KadiClient
+      const serviceWithoutKadi = new MemoryService(testDir);
+      await serviceWithoutKadi.initialize();
 
       const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
@@ -452,7 +447,7 @@ describe('MemoryService', () => {
           content: `Message ${i + 1}`,
           timestamp: Date.now() + i,
         };
-        await serviceWithoutDb.storeMessage('user1', 'channel1', message);
+        await serviceWithoutKadi.storeMessage('user1', 'channel1', message);
       }
 
       // Verify warning was logged
@@ -461,97 +456,40 @@ describe('MemoryService', () => {
       );
 
       // Messages should still be stored
-      const result = await serviceWithoutDb.retrieveContext('user1', 'channel1');
+      const result = await serviceWithoutKadi.retrieveContext('user1', 'channel1');
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data).toHaveLength(20);
       }
 
       consoleWarnSpy.mockRestore();
-      await serviceWithoutDb.dispose();
-    });
-
-    it('should handle summarization without provider manager', async () => {
-      // Mock createVertex for archival
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ result: [{ '@rid': '#10:0' }] }),
-      });
-
-      // Create service without provider manager
-      const serviceWithoutProvider = new MemoryService(
-        testDir,
-        'http://localhost:2480/testdb'
-      );
-
-      // Mock connection
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ result: [{ test: 1 }] }),
-      });
-
-      await serviceWithoutProvider.initialize();
-      mockFetch.mockClear();
-
-      // Mock archival
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ result: [{ '@rid': '#10:0' }] }),
-      });
-
-      // Store 20 messages
-      for (let i = 0; i < 20; i++) {
-        const message: ConversationMessage = {
-          role: i % 2 === 0 ? 'user' : 'assistant',
-          content: `Message ${i + 1}`,
-          timestamp: Date.now() + i,
-        };
-        await serviceWithoutProvider.storeMessage('user1', 'channel1', message);
-      }
-
-      // Should still archive with default summary
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/api/v1/query/'),
-        expect.objectContaining({
-          method: 'POST',
-          body: expect.stringContaining('CREATE VERTEX ArchivedConversation'),
-        })
-      );
-
-      await serviceWithoutProvider.dispose();
+      await serviceWithoutKadi.dispose();
     });
   });
 
   describe('long-term search', () => {
-    beforeEach(async () => {
-      // Mock successful connection
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ result: [{ test: 1 }] }),
+    it('should search via KĀDI memory-recall', async () => {
+      const mockClient = createMockKadiClient(async (tool: string, params: any) => {
+        if (tool === 'memory-recall' && params.query !== '__probe__') {
+          return {
+            results: [{
+              content: '[archived-conversation] Discussion about TypeScript features',
+              metadata: {
+                userId: 'user1',
+                channelId: 'channel1',
+                messageCount: 20,
+                startTime: 1000,
+                endTime: 2000,
+              },
+              score: 0.9,
+            }],
+          };
+        }
+        return { results: [] };
       });
 
-      service = new MemoryService(testDir, 'http://localhost:2480/testdb');
+      service = new MemoryService(testDir, mockClient, undefined, 'test-agent');
       await service.initialize();
-      mockFetch.mockClear();
-    });
-
-    it('should search archived conversations', async () => {
-      // Mock search query result
-      const mockArchive = {
-        c: {
-          userId: 'user1',
-          channelId: 'channel1',
-          summary: 'Discussion about TypeScript features',
-          messageCount: 20,
-          startTime: 1000,
-          endTime: 2000,
-        },
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ result: [mockArchive] }),
-      });
 
       const result = await service.searchLongTerm('user1', 'TypeScript');
 
@@ -560,61 +498,160 @@ describe('MemoryService', () => {
         expect(result.data).toHaveLength(1);
         expect(result.data[0].summary).toContain('TypeScript');
       }
-
-      // Verify Cypher query
-      const fetchCall = mockFetch.mock.calls[0];
-      const body = JSON.parse(fetchCall[1].body);
-      expect(body.language).toBe('cypher');
-      expect(body.command).toContain('MATCH (c:ArchivedConversation)');
-      expect(body.params.userId).toBe('user1');
-      expect(body.params.searchTerm).toBe('TypeScript');
     });
 
-    it('should return error if database unavailable', async () => {
-      const serviceWithoutDb = new MemoryService(testDir);
-      await serviceWithoutDb.initialize();
+    it('should return error if KĀDI tools unavailable', async () => {
+      const serviceWithoutKadi = new MemoryService(testDir);
+      await serviceWithoutKadi.initialize();
 
-      const result = await serviceWithoutDb.searchLongTerm('user1', 'test');
+      const result = await serviceWithoutKadi.searchLongTerm('user1', 'test');
 
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.type).toBe('DATABASE_ERROR');
       }
 
-      await serviceWithoutDb.dispose();
+      await serviceWithoutKadi.dispose();
     });
+  });
 
-    it('should respect limit parameter', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ result: [] }),
+  describe('storeTaskMemory', () => {
+    it('should store task memory in file and invoke KĀDI memory-store', async () => {
+      const mockClient = createMockKadiClient();
+
+      service = new MemoryService(testDir, mockClient, undefined, 'test-agent');
+      await service.initialize();
+
+      const result = await service.storeTaskMemory({
+        taskId: 'task-1',
+        questId: 'quest-1',
+        agentId: 'agent-worker-artist',
+        agentRole: 'artist',
+        taskType: 'art',
+        description: 'Create artwork',
+        outcome: 'success',
+        context: 'Art task context',
+        result: 'Artwork created',
+        entities: [{ name: 'artwork', type: 'topic', confidence: 0.9 }],
+        duration: 5000,
+        timestamp: Date.now(),
       });
 
-      await service.searchLongTerm('user1', 'test', 5);
+      expect(result.success).toBe(true);
 
-      const fetchCall = mockFetch.mock.calls[0];
-      const body = JSON.parse(fetchCall[1].body);
-      expect(body.params.limit).toBe(5);
+      // Verify file storage
+      const content = await fs.readFile(
+        join(testDir, 'tasks/quest-1/task-1.json'),
+        'utf-8'
+      );
+      const stored = JSON.parse(content);
+      expect(stored.taskId).toBe('task-1');
+
+      // Verify KĀDI memory-store was called (fire-and-forget)
+      // Allow async fire-and-forget to execute
+      await new Promise(resolve => setTimeout(resolve, 50));
+      expect(mockClient.invokeRemote).toHaveBeenCalledWith(
+        'memory-store',
+        expect.objectContaining({
+          topics: ['art', 'artist'],
+          skipExtraction: true,
+          conversationId: 'quest-1',
+        }),
+        expect.any(Object),
+      );
+    });
+
+    it('should validate required fields', async () => {
+      service = new MemoryService(testDir);
+      await service.initialize();
+
+      const result = await service.storeTaskMemory({
+        taskId: '',
+        questId: 'quest-1',
+        agentId: 'agent-1',
+      } as any);
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('VALIDATION_ERROR');
+      }
+    });
+  });
+
+  describe('recallRelevant', () => {
+    it('should recall from KĀDI when available', async () => {
+      const mockClient = createMockKadiClient(async (tool: string, params: any) => {
+        if (tool === 'memory-recall' && params.query !== '__probe__') {
+          return {
+            results: [{
+              content: '[success] Created artwork for task task-1',
+              metadata: { taskId: 'task-1', taskType: 'art' },
+              score: 0.85,
+              entities: [{ name: 'artwork', type: 'topic' }],
+              timestamp: new Date().toISOString(),
+            }],
+          };
+        }
+        return { results: [] };
+      });
+
+      service = new MemoryService(testDir, mockClient, undefined, 'test-agent');
+      await service.initialize();
+
+      const result = await service.recallRelevant('art', 'Create artwork', 'artist', 3);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.length).toBeGreaterThan(0);
+        expect(result.data[0].summary).toContain('artwork');
+      }
+    });
+
+    it('should fall back to file storage when KĀDI unavailable', async () => {
+      service = new MemoryService(testDir);
+      await service.initialize();
+
+      // Pre-populate file storage with a task memory
+      await service.storeTaskMemory({
+        taskId: 'task-file-1',
+        questId: 'quest-1',
+        agentId: 'agent-1',
+        agentRole: 'artist',
+        taskType: 'art',
+        description: 'File-based task memory',
+        outcome: 'success',
+        context: 'test',
+        result: 'done',
+        entities: [],
+        duration: 1000,
+        timestamp: Date.now(),
+      });
+
+      const result = await service.recallRelevant('art', 'Create artwork', 'artist', 5);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.length).toBeGreaterThan(0);
+        expect(result.data[0].taskId).toBe('task-file-1');
+      }
     });
   });
 
   describe('dispose', () => {
-    it('should disconnect from database', async () => {
-      // Mock connection
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ result: [{ test: 1 }] }),
-      });
-
-      service = new MemoryService(testDir, 'http://localhost:2480/testdb');
+    it('should mark KĀDI as unavailable', async () => {
+      const mockClient = createMockKadiClient();
+      service = new MemoryService(testDir, mockClient, undefined, 'test-agent');
       await service.initialize();
+
+      expect(service.isKadiAvailable()).toBe(true);
 
       const result = await service.dispose();
 
       expect(result.success).toBe(true);
+      expect(service.isKadiAvailable()).toBe(false);
     });
 
-    it('should succeed even without database', async () => {
+    it('should succeed even without KadiClient', async () => {
       service = new MemoryService(testDir);
       await service.initialize();
 

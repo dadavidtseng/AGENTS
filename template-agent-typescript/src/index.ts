@@ -451,8 +451,6 @@ async function main() {
           const modelManagerBaseUrl = process.env.MODEL_MANAGER_BASE_URL;
           const modelManagerApiKey = process.env.MODEL_MANAGER_API_KEY;
           const memoryDataPath = process.env.MEMORY_DATA_PATH || './data/memory';
-          const arcadedbUrl = process.env.ARCADEDB_URL;
-          const arcadedbPassword = process.env.ARCADEDB_ROOT_PASSWORD || 'root';
 
           logger.info(MODULE_AGENT, 'Initializing shared services for bots...', timer.elapsed('main'));
 
@@ -492,9 +490,9 @@ async function main() {
           // Step 5: Create and initialize MemoryService
           const memoryService = new MemoryService(
             memoryDataPath,
-            arcadedbUrl,
-            arcadedbPassword,
-            providerManager
+            client,     // KadiClient for KĀDI memory tools
+            providerManager,
+            process.env.AGENT_NAME || 'template-agent-typescript',
           );
 
           await memoryService.initialize();

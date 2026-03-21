@@ -3,10 +3,10 @@
  *
  * Verifies that the hybrid memory system works correctly:
  * - File storage (FileStorageAdapter)
- * - Database storage (ArcadeDBAdapter)
+ * - KĀDI memory tools via KadiClient (memory-store, memory-recall, memory-relate)
  * - Memory orchestration (MemoryService)
  * - Automatic archival with LLM summarization
- * - Graceful degradation when database unavailable
+ * - Graceful degradation when KĀDI tools unavailable
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -21,9 +21,15 @@ import {
 import type { ProviderManager } from '../../src/providers/provider-manager.js';
 import { ok } from '../../src/common/result.js';
 
-// Mock fetch globally for ArcadeDB
-const mockFetch = vi.fn();
-global.fetch = mockFetch as any;
+/**
+ * Create a mock KadiClient with invokeRemote that can be controlled per-test.
+ */
+function createMockKadiClient(invokeRemoteImpl?: (...args: any[]) => any) {
+  return {
+    invokeRemote: vi.fn(invokeRemoteImpl ?? (async () => ({ results: [] }))),
+    readAgentJson: vi.fn(() => ({ name: 'test-agent', tools: [] })),
+  } as any;
+}
 
 describe('Phase 3: Hybrid Memory System Integration', () => {
   let service: MemoryService;
@@ -71,35 +77,20 @@ describe('Phase 3: Hybrid Memory System Integration', () => {
   });
 
   describe('Complete Hybrid Memory System Flow', () => {
-    it('should initialize with ArcadeDB and handle full memory lifecycle', async () => {
-      // Step 1: Mock successful ArcadeDB connection
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ result: [{ test: 1 }] }),
-      });
+    it('should initialize with KĀDI tools and handle full memory lifecycle', async () => {
+      const mockClient = createMockKadiClient();
 
-      service = new MemoryService(
-        testDir,
-        'http://localhost:2480/testdb',
-        mockProviderManager
-      );
+      service = new MemoryService(testDir, mockClient, mockProviderManager, 'test-agent');
 
       const initResult = await service.initialize();
 
       expect(initResult.success).toBe(true);
+      expect(service.isKadiAvailable()).toBe(true);
       expect(consoleLogSpy).toHaveBeenCalledWith(
-        expect.stringContaining('ArcadeDB connected successfully')
+        expect.stringContaining('KADI memory tools available')
       );
 
       // Step 2: Store 25 messages (exceeds 20 threshold)
-      console.log('\n=== Storing 25 messages to trigger archival ===');
-
-      // Mock archival vertex creation
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ result: [{ '@rid': '#10:0' }] }),
-      });
-
       for (let i = 1; i <= 25; i++) {
         const message: ConversationMessage = {
           role: i % 2 === 1 ? 'user' : 'assistant',
@@ -108,53 +99,44 @@ describe('Phase 3: Hybrid Memory System Integration', () => {
         };
 
         await service.storeMessage('user1', 'channel1', message);
-
-        if (i === 20) {
-          console.log('--- Archival threshold reached at 20 messages ---');
-        }
       }
 
-      // Step 3: Verify archival was triggered
+      // Step 3: Verify archival was triggered via KĀDI memory-store
       expect(mockProviderManager.chat).toHaveBeenCalled();
 
       const summarizationCall = (mockProviderManager.chat as any).mock.calls[0][0];
       expect(summarizationCall[0].content).toContain('Summarize the following conversation');
 
+      // Verify memory-store was called for archival
+      expect(mockClient.invokeRemote).toHaveBeenCalledWith(
+        'memory-store',
+        expect.objectContaining({
+          topics: ['archived-conversation'],
+          agent: 'test-agent',
+          skipExtraction: true,
+        }),
+        expect.any(Object),
+      );
+
       expect(consoleLogSpy).toHaveBeenCalledWith(
         expect.stringContaining('Archived conversation user1/channel1')
       );
 
-      // Step 4: Verify database vertex creation with correct parameters
-      const createVertexCall = mockFetch.mock.calls.find((call) =>
-        call[1]?.body?.includes('CREATE VERTEX ArchivedConversation')
-      );
-
-      expect(createVertexCall).toBeDefined();
-
-      const vertexBody = JSON.parse(createVertexCall![1].body);
-      expect(vertexBody.params.userId).toBe('user1');
-      expect(vertexBody.params.channelId).toBe('channel1');
-      expect(vertexBody.params.messageCount).toBe(20);
-      expect(vertexBody.params.summary).toContain('TypeScript');
-
-      // Step 5: Verify file was trimmed to last 10 messages
+      // Step 4: Verify file was trimmed to last 10 messages
       const contextResult = await service.retrieveContext('user1', 'channel1');
 
       expect(contextResult.success).toBe(true);
       if (contextResult.success) {
-        expect(contextResult.data.length).toBeLessThanOrEqual(15); // 5 remaining + new 5 messages
-        console.log(`File contains ${contextResult.data.length} messages after archival and trim`);
+        expect(contextResult.data.length).toBeLessThanOrEqual(15);
       }
     });
 
     it('should handle preferences and knowledge storage independently', async () => {
-      // Initialize without database (file-only mode)
+      // Initialize without KadiClient (file-only mode)
       service = new MemoryService(testDir);
       await service.initialize();
 
       // Test preference storage
-      console.log('\n=== Testing preference storage ===');
-
       await service.storePreference('user1', 'theme', 'dark');
       await service.storePreference('user1', 'language', 'en');
       await service.storePreference('user1', 'notifications', true);
@@ -167,11 +149,7 @@ describe('Phase 3: Hybrid Memory System Integration', () => {
       expect(langResult.success && langResult.data).toBe('en');
       expect(notifResult.success && notifResult.data).toBe(true);
 
-      console.log('✓ Preferences stored and retrieved successfully');
-
       // Test knowledge storage
-      console.log('\n=== Testing public knowledge storage ===');
-
       const entry1: KnowledgeEntry = {
         id: 'ts-types',
         topic: 'TypeScript Types',
@@ -198,36 +176,26 @@ describe('Phase 3: Hybrid Memory System Integration', () => {
 
       expect(retrievedEntry1.success && retrievedEntry1.data?.topic).toBe('TypeScript Types');
       expect(retrievedEntry2.success && retrievedEntry2.data?.topic).toBe('Node.js Modules');
-
-      console.log('✓ Knowledge entries stored and retrieved successfully');
     });
 
-    it('should demonstrate graceful degradation when database unavailable', async () => {
-      // Step 1: Mock database connection failure
-      mockFetch.mockRejectedValueOnce(new Error('Connection refused'));
+    it('should demonstrate graceful degradation when KĀDI tools unavailable', async () => {
+      // Mock KĀDI client that fails on probe
+      const mockClient = createMockKadiClient(async () => {
+        throw new Error('Connection refused');
+      });
 
-      console.log('\n=== Testing graceful degradation ===');
-
-      service = new MemoryService(
-        testDir,
-        'http://localhost:2480/testdb',
-        mockProviderManager
-      );
+      service = new MemoryService(testDir, mockClient, mockProviderManager, 'test-agent');
 
       const initResult = await service.initialize();
 
       // Should still initialize successfully
       expect(initResult.success).toBe(true);
+      expect(service.isKadiAvailable()).toBe(false);
       expect(consoleWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('ArcadeDB unavailable')
-      );
-      expect(consoleWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Continuing with short-term storage only')
+        expect.stringContaining('KADI memory tools unavailable')
       );
 
-      console.log('✓ Service initialized despite database failure');
-
-      // Step 2: Verify file storage still works
+      // Verify file storage still works
       const message: ConversationMessage = {
         role: 'user',
         content: 'Test message in file-only mode',
@@ -244,9 +212,7 @@ describe('Phase 3: Hybrid Memory System Integration', () => {
         expect(retrieveResult.data[0].content).toBe('Test message in file-only mode');
       }
 
-      console.log('✓ File storage working in degraded mode');
-
-      // Step 3: Store 25 messages to verify archival warning
+      // Store 25 messages to verify archival warning
       for (let i = 1; i <= 25; i++) {
         const msg: ConversationMessage = {
           role: i % 2 === 1 ? 'user' : 'assistant',
@@ -260,13 +226,8 @@ describe('Phase 3: Hybrid Memory System Integration', () => {
       expect(consoleWarnSpy).toHaveBeenCalledWith(
         expect.stringContaining('Cannot archive conversation')
       );
-      expect(consoleWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Database unavailable')
-      );
 
-      console.log('✓ Archival warning logged in degraded mode');
-
-      // Step 4: Verify search returns appropriate error
+      // Verify search returns appropriate error
       const searchResult = await service.searchLongTerm('user1', 'test');
 
       expect(searchResult.success).toBe(false);
@@ -274,8 +235,6 @@ describe('Phase 3: Hybrid Memory System Integration', () => {
         expect(searchResult.error.type).toBe('DATABASE_ERROR');
         expect(searchResult.error.message).toContain('Long-term storage unavailable');
       }
-
-      console.log('✓ Search returns appropriate error in degraded mode');
     });
   });
 
@@ -357,8 +316,6 @@ describe('Phase 3: Hybrid Memory System Integration', () => {
       expect(user1Channel2).toBe(true);
       expect(user1Prefs).toBe(true);
       expect(publicKnowledge).toBe(true);
-
-      console.log('✓ Correct directory structure created');
     });
   });
 
@@ -366,8 +323,6 @@ describe('Phase 3: Hybrid Memory System Integration', () => {
     it('should handle sequential message storage', async () => {
       service = new MemoryService(testDir);
       await service.initialize();
-
-      const startTime = Date.now();
 
       // Store 15 messages sequentially (avoids file write conflicts)
       for (let i = 0; i < 15; i++) {
@@ -377,10 +332,6 @@ describe('Phase 3: Hybrid Memory System Integration', () => {
           timestamp: Date.now() + i,
         });
       }
-
-      const duration = Date.now() - startTime;
-
-      console.log(`✓ Stored 15 messages sequentially in ${duration}ms`);
 
       // Verify all messages stored
       const result = await service.retrieveContext('user1', 'channel1', 20);
@@ -409,8 +360,6 @@ describe('Phase 3: Hybrid Memory System Integration', () => {
       if (result.success) {
         expect(result.data).toHaveLength(1);
       }
-
-      console.log('✓ Special characters in IDs handled correctly');
     });
   });
 });
