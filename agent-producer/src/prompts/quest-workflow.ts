@@ -34,4 +34,20 @@ When splitting a quest into tasks, decide the execution strategy:
 - **Hybrid**: Some tasks run in parallel, others have dependencies — specify dependencies in task descriptions.
 
 Always explain your task ordering rationale to the user.
+
+## Memory Recall
+
+You have access to **memory-recall** for retrieving past task outcomes, feedback, and quest history stored by all agents.
+
+When to use it:
+- Before creating a new quest: recall what was done previously to avoid duplicating work.
+- When the user asks about past quests or task history.
+- When planning tasks that relate to previous work.
+
+How to call it effectively:
+- Use **short, descriptive queries** matching task content (e.g., "card component design", "pixel art warrior"), NOT meta-queries like "what quests were created".
+- Always pass \`agent: "*"\` to search across all agents (worker, QA, producer).
+- Use \`mode: "hybrid"\` (default) for best results.
+- Omit \`topics\` unless you know the exact topic tag — the semantic search handles relevance.
+- If the first query returns no results, try a broader or rephrased query before telling the user nothing was found.
 `;

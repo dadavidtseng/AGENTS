@@ -22,6 +22,7 @@
 
 import type { KadiClient } from '@kadi.build/core';
 import { logger, MODULE_AGENT, timer } from 'agents-library';
+import type { MemoryService } from 'agents-library';
 
 // ============================================================================
 // Types
@@ -490,11 +491,13 @@ async function requestChanges(
  *
  * @param client - KĀDI client instance
  * @param message - Discord message text
+ * @param memoryService - Optional MemoryService for storing feedback
  * @returns Approval result or null if not a task approval command
  */
 export async function handleTaskApproval(
   client: KadiClient,
-  message: string
+  message: string,
+  memoryService?: MemoryService,
 ): Promise<TaskApprovalResult | null> {
   // Parse command
   const command = parseTaskApprovalCommand(message);
@@ -516,16 +519,55 @@ export async function handleTaskApproval(
     // Execute appropriate action
     switch (command.action) {
       case 'approve':
-        return await approveTask(client, task, quest);
+        const approveResult = await approveTask(client, task, quest);
+        // Store approval feedback (fire-and-forget)
+        if (memoryService) {
+          memoryService.storeFeedback({
+            taskId: task.id,
+            questId: quest.questId,
+            agentId: task.assignedAgent || 'unknown',
+            approved: true,
+            score: task.metadata?.verification?.score || 100,
+            reason: 'Approved by human reviewer',
+            timestamp: Date.now(),
+          }).catch(() => {});
+        }
+        return approveResult;
 
       case 'reject':
-        return await rejectTask(client, task);
+        const rejectResult = await rejectTask(client, task);
+        // Store rejection feedback (fire-and-forget)
+        if (memoryService) {
+          memoryService.storeFeedback({
+            taskId: task.id,
+            questId: quest.questId,
+            agentId: task.assignedAgent || 'unknown',
+            approved: false,
+            score: 0,
+            reason: 'Rejected by human reviewer',
+            timestamp: Date.now(),
+          }).catch(() => {});
+        }
+        return rejectResult;
 
       case 'request_changes':
         if (!command.feedback) {
           throw new Error('Feedback is required for requesting changes');
         }
-        return await requestChanges(client, task, command.feedback);
+        const changesResult = await requestChanges(client, task, command.feedback);
+        // Store change request feedback (fire-and-forget)
+        if (memoryService) {
+          memoryService.storeFeedback({
+            taskId: task.id,
+            questId: quest.questId,
+            agentId: task.assignedAgent || 'unknown',
+            approved: false,
+            score: task.metadata?.verification?.score || 50,
+            reason: `Changes requested: ${command.feedback}`,
+            timestamp: Date.now(),
+          }).catch(() => {});
+        }
+        return changesResult;
 
       default:
         throw new Error(`Unknown action: ${command.action}`);

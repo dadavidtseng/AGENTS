@@ -97,8 +97,6 @@ const baseAgentConfig: BaseAgentConfig = {
     },
     memory: {
       dataPath: process.env.MEMORY_DATA_PATH || './data/memory',
-      arcadedbUrl: process.env.ARCADEDB_URL,
-      arcadedbPassword: process.env.ARCADEDB_ROOT_PASSWORD || 'root',
     },
   }),
 };
