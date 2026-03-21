@@ -20,6 +20,8 @@ import {
   TaskReviewRequestedPayloadSchema,
 } from 'agents-library';
 import type { ProviderManager, Message, ChatOptions } from 'agents-library';
+import type { MemoryService } from 'agents-library';
+import { formatMemoryContext } from 'agents-library';
 
 // ============================================================================
 // Types
@@ -80,9 +82,13 @@ async function detectTaskType(
     const questData = JSON.parse(resp.content[0].text);
     const task = (questData.tasks ?? []).find((t: any) => t.taskId === taskId);
 
-    if (!task) return 'code';
+    if (!task) {
+      logger.warn(MODULE_AGENT, `detectTaskType: task ${taskId} not found in quest ${questId} (${(questData.tasks ?? []).length} tasks) — defaulting to 'code'`, timer.elapsed('main'));
+      return 'code';
+    }
 
     const role = (task.role ?? task.assignedTo ?? '').toLowerCase();
+    logger.info(MODULE_AGENT, `detectTaskType: task ${taskId} role="${role}"`, timer.elapsed('main'));
     if (role.includes('artist')) return 'art';
     if (role.includes('builder')) return 'build';
     if (role.includes('designer')) return 'art';
@@ -217,6 +223,7 @@ async function validateCodeWithEval(
   diff: string,
   taskDescription: string,
   taskRequirements: string,
+  pastPatterns?: string,
 ): Promise<ValidationCheck> {
   if (!diff) {
     return { name: 'eval-code-diff', passed: false, score: 0, detail: 'No diff available' };
@@ -231,7 +238,7 @@ async function validateCodeWithEval(
       'eval_code_diff',
       {
         diff: truncatedDiff,
-        context: `Task: ${taskDescription}\n\nRequirements:\n${taskRequirements}`,
+        context: `Task: ${taskDescription}\n\nRequirements:\n${taskRequirements}${pastPatterns ? `\n\nPast QA patterns (use to calibrate review):\n${pastPatterns}` : ''}`,
         criteria: 'correctness,completeness,quality,security,readability',
       },
     );
@@ -562,6 +569,7 @@ async function validateCodeSemantic(
   diff: string,
   taskDescription: string,
   taskRequirements: string,
+  pastPatterns?: string,
 ): Promise<ValidationCheck> {
   if (!diff) {
     return { name: 'semantic', passed: false, score: 0, detail: 'No diff available for review' };
@@ -572,7 +580,7 @@ async function validateCodeSemantic(
   const messages: Message[] = [
     {
       role: 'user',
-      content: `## Task Description\n${taskDescription}\n\n## Requirements\n${taskRequirements}\n\n## Git Diff\n\`\`\`diff\n${truncatedDiff}\n\`\`\`\n\nReview this diff against the task requirements. Respond in JSON only.`,
+      content: `## Task Description\n${taskDescription}\n\n## Requirements\n${taskRequirements}${pastPatterns ? `\n\n## Past QA Patterns\n${pastPatterns}` : ''}\n\n## Git Diff\n\`\`\`diff\n${truncatedDiff}\n\`\`\`\n\nReview this diff against the task requirements. Respond in JSON only.`,
     },
   ];
 
@@ -674,6 +682,7 @@ async function validateCodeTask(
   taskId: string,
   commitHash: string,
   worktreePath: string,
+  pastPatterns?: string,
 ): Promise<ValidationResult> {
   const checks: ValidationCheck[] = [];
 
@@ -688,14 +697,15 @@ async function validateCodeTask(
   // 3. Structured evaluation via ability-eval (preferred)
   let usedAbilityEval = false;
 
-  const codeDiffCheck = await validateCodeWithEval(client, diff, description, requirements);
+  const codeDiffCheck = await validateCodeWithEval(client, diff, description, requirements, pastPatterns);
   if (codeDiffCheck) {
     checks.push(codeDiffCheck);
     usedAbilityEval = true;
   }
 
   const completionCheck = await validateTaskCompletion(
-    client, requirements, `Git diff from commit ${commitHash}`, diff ? diff.slice(0, 4000) : undefined,
+    client, requirements, `Git diff from commit ${commitHash}`,
+    diff ? diff.slice(0, 4000) : (pastPatterns || undefined),
   );
   if (completionCheck) {
     checks.push(completionCheck);
@@ -706,7 +716,7 @@ async function validateCodeTask(
   if (!usedAbilityEval) {
     if (providerManager) {
       const semanticCheck = await validateCodeSemantic(
-        providerManager, diff, description, requirements,
+        providerManager, diff, description, requirements, pastPatterns,
       );
       checks.push(semanticCheck);
     } else {
@@ -760,6 +770,7 @@ async function validateCodeTask(
 export function setupValidationHandler(
   client: KadiClient,
   providerManager?: ProviderManager,
+  memoryService?: MemoryService,
 ): void {
   logger.info(MODULE_AGENT, 'Setting up validation handler', timer.elapsed('main'));
 
@@ -783,13 +794,36 @@ export function setupValidationHandler(
       const taskType = await detectTaskType(client, questId, taskId);
       logger.info(MODULE_AGENT, `Task type: ${taskType}`, timer.elapsed(timerKey));
 
+      // Map task type to originating role for memory recall
+      const taskRole = taskType === 'art' ? 'artist' : taskType === 'build' ? 'programmer' : 'programmer';
+
+      // Recall past QA patterns for this task type (non-blocking, best-effort)
+      let pastPatterns = '';
+      if (memoryService) {
+        try {
+          const recallResult = await memoryService.recallRelevant(
+            taskType,
+            `QA validation for ${taskType} task ${taskId}`,
+            taskRole,
+            3,
+            ['*'],
+          );
+          if (recallResult.success && recallResult.data.length > 0) {
+            pastPatterns = formatMemoryContext(recallResult.data, 1500);
+            logger.info(MODULE_AGENT, `Recalled ${recallResult.data.length} past QA patterns`, timer.elapsed(timerKey));
+          }
+        } catch (err: any) {
+          logger.warn(MODULE_AGENT, `Memory recall failed (non-fatal): ${err.message}`, timer.elapsed(timerKey));
+        }
+      }
+
       // Run validation based on task type
       let result: ValidationResult;
 
       switch (taskType) {
         case 'code':
           result = await validateCodeTask(
-            client, providerManager, questId, taskId, commitHash, worktreePath,
+            client, providerManager, questId, taskId, commitHash, worktreePath, pastPatterns,
           );
           break;
 
@@ -878,7 +912,7 @@ export function setupValidationHandler(
 
         default:
           result = await validateCodeTask(
-            client, providerManager, questId, taskId, commitHash, worktreePath,
+            client, providerManager, questId, taskId, commitHash, worktreePath, pastPatterns,
           );
       }
 

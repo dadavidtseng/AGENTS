@@ -19,6 +19,10 @@ const baseAgentConfig: BaseAgentConfig = {
   networks,
   // LLM provider for semantic code review (optional — falls back to heuristic-only if unset)
   ...buildProviderConfig(),
+  // Memory for recalling past QA patterns
+  memory: {
+    dataPath: process.env.MEMORY_DATA_PATH || './data/memory',
+  },
 };
 
 /** Build provider config from env vars. Model Manager is primary, Anthropic is fallback. */
@@ -71,8 +75,8 @@ async function main(): Promise<void> {
   logger.info(MODULE_AGENT, `Connected to broker at ${brokerUrl}`, timer.elapsed('main'));
 
   // Register validation handler (subscribes to task.review_requested)
-  // Pass providerManager to enable LLM-based semantic review
-  setupValidationHandler(client, baseAgent.providerManager);
+  // Pass providerManager and memoryService to enable LLM-based semantic review + past pattern recall
+  setupValidationHandler(client, baseAgent.providerManager, baseAgent.memoryService);
 
   if (baseAgent.providerManager) {
     const primary = process.env.MODEL_MANAGER_BASE_URL ? 'Model Manager' : 'Anthropic';
