@@ -22,6 +22,12 @@ import {
 import type { ProviderManager, Message, ChatOptions } from 'agents-library';
 import type { MemoryService } from 'agents-library';
 import { formatMemoryContext } from 'agents-library';
+import {
+  analyzeValidationNeeds,
+  validateGameState,
+  validateGameScreenshot,
+  validateGameBuild,
+} from './game-validation.js';
 
 // ============================================================================
 // Types
@@ -80,7 +86,7 @@ async function detectTaskType(
     }>('quest_quest_query_quest', { questId, detail: 'full' });
 
     const questData = JSON.parse(resp.content[0].text);
-    const task = (questData.tasks ?? []).find((t: any) => t.taskId === taskId);
+    const task = (questData.tasks ?? []).find((t: any) => (t.id ?? t.taskId) === taskId);
 
     if (!task) {
       logger.warn(MODULE_AGENT, `detectTaskType: task ${taskId} not found in quest ${questId} (${(questData.tasks ?? []).length} tasks) — defaulting to 'code'`, timer.elapsed('main'));
@@ -160,7 +166,7 @@ async function getTaskDetails(
     }>('quest_quest_query_quest', { questId, detail: 'full' });
 
     const questData = JSON.parse(resp.content[0].text);
-    const task = (questData.tasks ?? []).find((t: any) => t.taskId === taskId);
+    const task = (questData.tasks ?? []).find((t: any) => (t.id ?? t.taskId) === taskId);
 
     return {
       description: task?.description ?? '',
@@ -758,6 +764,45 @@ async function validateCodeTask(
 }
 
 // ============================================================================
+// Game Check Merge
+// ============================================================================
+
+/**
+ * Merge game-specific checks into an existing validation result.
+ * Game checks are weighted at 30% of the final score collectively,
+ * and the original result is weighted at 70%.
+ */
+function mergeGameChecks(
+  original: ValidationResult,
+  gameChecks: ValidationCheck[],
+): ValidationResult {
+  const allChecks = [...original.checks, ...gameChecks];
+
+  // Game checks collectively contribute 30% of final score
+  const gameAvg = gameChecks.reduce((sum, c) => sum + c.score, 0) / gameChecks.length;
+  const mergedScore = Math.round(original.score * 0.7 + gameAvg * 0.3);
+
+  const severity: Severity =
+    mergedScore >= PASS_THRESHOLD ? 'PASS'
+    : mergedScore >= WARN_THRESHOLD ? 'WARN'
+    : 'FAIL';
+
+  const failedChecks = allChecks.filter((c) => !c.passed);
+  const feedback = failedChecks.length > 0
+    ? failedChecks.map((c) => `[${c.name}] ${c.detail}`).join('\n')
+    : 'All checks passed (including game validation)';
+
+  return {
+    taskId: original.taskId,
+    questId: original.questId,
+    score: mergedScore,
+    severity,
+    feedback,
+    checks: allChecks,
+  };
+}
+
+// ============================================================================
 // Event Handler Setup
 // ============================================================================
 
@@ -817,103 +862,81 @@ export function setupValidationHandler(
         }
       }
 
-      // Run validation based on task type
+      // Get task details for content-based analysis
+      const { description: taskDesc, requirements: taskReqs } = await getTaskDetails(client, questId, taskId);
+
+      // Analyze task content to determine which validation checks apply
+      const validationNeeds = analyzeValidationNeeds(taskDesc, taskReqs);
+      logger.info(MODULE_AGENT, `Validation needs: ${JSON.stringify(validationNeeds)}`, timer.elapsed(timerKey));
+
+      // Run content-driven validation pipeline
+      // Base: always run diff-based code validation (works for all task types including design docs)
+      // Layer: add visual/game checks based on content analysis
       let result: ValidationResult;
 
-      switch (taskType) {
-        case 'code':
-          result = await validateCodeTask(
-            client, providerManager, questId, taskId, commitHash, worktreePath, pastPatterns,
-          );
-          break;
-
-        case 'art': {
-          // Art validation: visual pipeline (vision→eval) + text-based completion check
-          const { description: artDesc, requirements: artReqs } = await getTaskDetails(client, questId, taskId);
-          const artChecks: ValidationCheck[] = [];
-
-          // Stage A: Try visual validation pipeline (vision_describe_ui → eval_task_completion)
-          const screenshot = await resolveScreenshot(client, questId, taskId, worktreePath, screenshotUri);
-          if (screenshot) {
-            logger.info(MODULE_AGENT, `Running visual pipeline for art task ${taskId}`, timer.elapsed(timerKey));
-            const visualCheck = await validateVisual(client, screenshot, artReqs || artDesc, artDesc);
-            if (visualCheck) {
-              artChecks.push(visualCheck);
-            }
-          } else {
-            logger.info(MODULE_AGENT, `No screenshot found for task ${taskId} — skipping visual pipeline`, timer.elapsed(timerKey));
-          }
-
-          // Stage B: Text-based task completion check (always attempted)
-          const artCompletion = await validateTaskCompletion(
-            client, artReqs || artDesc, `Art/design deliverables for task ${taskId} (commit: ${commitHash})`,
-          );
-          if (artCompletion) {
-            artChecks.push(artCompletion);
-          }
-
-          // Fallback if no checks succeeded
-          if (artChecks.length === 0) {
-            artChecks.push({
-              name: 'eval-task-completion', passed: true, score: 60,
-              detail: 'ability-eval and ability-vision unavailable — defaulting to pass',
-            });
-          }
-
-          // Weighted scoring: visual (60%) + completion (40%), or just completion if no visual
-          const hasVisual = artChecks.some(c => c.name === 'visual-validation');
-          const artWeights: Record<string, number> = hasVisual
-            ? { 'visual-validation': 0.6, 'eval-task-completion': 0.4 }
-            : { 'eval-task-completion': 1.0 };
-
-          let artTotalW = 0;
-          let artWeightedS = 0;
-          for (const check of artChecks) {
-            const w = artWeights[check.name] ?? 0.2;
-            artWeightedS += check.score * w;
-            artTotalW += w;
-          }
-
-          const artScore = Math.round(artTotalW > 0 ? artWeightedS / artTotalW : 0);
-          const artSev: Severity = artScore >= PASS_THRESHOLD ? 'PASS' : artScore >= WARN_THRESHOLD ? 'WARN' : 'FAIL';
-          const artFailed = artChecks.filter(c => !c.passed);
-          result = {
-            taskId, questId, score: artScore, severity: artSev,
-            feedback: artFailed.length > 0 ? artFailed.map(c => `[${c.name}] ${c.detail}`).join('\n') : 'Art validation passed',
-            checks: artChecks,
-          };
-          break;
+      if (validationNeeds.needsDiffReview) {
+        // Diff-based pipeline: works for code, design docs, specs, etc.
+        result = await validateCodeTask(
+          client, providerManager, questId, taskId, commitHash, worktreePath, pastPatterns,
+        );
+      } else {
+        // No diff needed — start with task completion check as baseline
+        const baseChecks: ValidationCheck[] = [];
+        const completionCheck = await validateTaskCompletion(
+          client, taskReqs || taskDesc, `Deliverables for task ${taskId} (commit: ${commitHash})`,
+        );
+        if (completionCheck) {
+          baseChecks.push(completionCheck);
+        } else {
+          baseChecks.push({ name: 'eval-task-completion', passed: true, score: 60, detail: 'ability-eval unavailable — defaulting to pass' });
         }
 
-        case 'build': {
-          // Build validation: use eval_task_completion to check build deliverables
-          const { description: buildDesc, requirements: buildReqs } = await getTaskDetails(client, questId, taskId);
-          const buildChecks: ValidationCheck[] = [];
+        const baseScore = baseChecks.reduce((sum, c) => sum + c.score, 0) / baseChecks.length;
+        const baseSev: Severity = baseScore >= PASS_THRESHOLD ? 'PASS' : baseScore >= WARN_THRESHOLD ? 'WARN' : 'FAIL';
+        const baseFailed = baseChecks.filter(c => !c.passed);
+        result = {
+          taskId, questId, score: Math.round(baseScore), severity: baseSev,
+          feedback: baseFailed.length > 0 ? baseFailed.map(c => `[${c.name}] ${c.detail}`).join('\n') : 'Validation passed',
+          checks: baseChecks,
+        };
+      }
 
-          const buildCompletion = await validateTaskCompletion(
-            client, buildReqs || buildDesc, `Build deliverables for task ${taskId} (commit: ${commitHash})`,
-          );
-          if (buildCompletion) {
-            buildChecks.push(buildCompletion);
-          } else {
-            buildChecks.push({ name: 'eval-task-completion', passed: true, score: 60, detail: 'ability-eval unavailable — defaulting to pass' });
+      // Art-specific: add visual check if screenshot is available (regardless of task type)
+      if (taskType === 'art' || screenshotUri) {
+        const screenshot = await resolveScreenshot(client, questId, taskId, worktreePath, screenshotUri);
+        if (screenshot) {
+          logger.info(MODULE_AGENT, `Running visual pipeline for task ${taskId}`, timer.elapsed(timerKey));
+          const visualCheck = await validateVisual(client, screenshot, taskReqs || taskDesc, taskDesc);
+          if (visualCheck) {
+            result = mergeGameChecks(result, [visualCheck]);
           }
-
-          const buildScore = buildChecks.reduce((sum, c) => sum + c.score, 0) / buildChecks.length;
-          const buildSeverity: Severity = buildScore >= PASS_THRESHOLD ? 'PASS' : buildScore >= WARN_THRESHOLD ? 'WARN' : 'FAIL';
-          const buildFailed = buildChecks.filter(c => !c.passed);
-          result = {
-            taskId, questId, score: Math.round(buildScore), severity: buildSeverity,
-            feedback: buildFailed.length > 0 ? buildFailed.map(c => `[${c.name}] ${c.detail}`).join('\n') : 'Build validation passed',
-            checks: buildChecks,
-          };
-          break;
         }
+      }
 
-        default:
-          result = await validateCodeTask(
-            client, providerManager, questId, taskId, commitHash, worktreePath, pastPatterns,
-          );
+      // ----------------------------------------------------------------
+      // Content-based game checks (appended to any task type)
+      // ----------------------------------------------------------------
+      const gameChecks: ValidationCheck[] = [];
+
+      if (validationNeeds.needsGameState) {
+        logger.info(MODULE_AGENT, `Running game state validation for task ${taskId}`, timer.elapsed(timerKey));
+        gameChecks.push(await validateGameState(client, taskReqs || taskDesc));
+      }
+
+      if (validationNeeds.needsScreenshot) {
+        logger.info(MODULE_AGENT, `Running game screenshot validation for task ${taskId}`, timer.elapsed(timerKey));
+        gameChecks.push(await validateGameScreenshot(client, taskReqs || taskDesc, taskDesc, questId, taskId));
+      }
+
+      if (validationNeeds.needsBuild) {
+        logger.info(MODULE_AGENT, `Running game build validation for task ${taskId}`, timer.elapsed(timerKey));
+        gameChecks.push(await validateGameBuild(client));
+      }
+
+      // Merge game checks into result if any were run
+      if (gameChecks.length > 0) {
+        result = mergeGameChecks(result, gameChecks);
+        logger.info(MODULE_AGENT, `Merged ${gameChecks.length} game checks — new score=${result.score} severity=${result.severity}`, timer.elapsed(timerKey));
       }
 
       logger.info(
