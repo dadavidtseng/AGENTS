@@ -164,7 +164,7 @@ async function handleTasksReady(
   // Assign and dispatch matching tasks to worker agents
   let assignment: TaskAssignmentResult | undefined;
   if (matching.length > 0) {
-    assignment = await assignAndDispatchTasks(client, questId, matching, agentId, role);
+    assignment = await assignAndDispatchTasks(client, questId, matching, agentId, role, allTasks);
   }
 
   return { questId, totalTasks: allTasks.length, matchingTasks: matching, skippedTasks: skipped, assignment };

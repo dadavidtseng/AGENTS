@@ -202,7 +202,7 @@ async function checkQuestCompletion(
           );
 
           const { assignAndDispatchTasks } = await import('./task-assignment.js');
-          await assignAndDispatchTasks(client, questId, cascadeTasks, agentId, role);
+          await assignAndDispatchTasks(client, questId, cascadeTasks, agentId, role, freshTasks as any);
         } else {
           logger.info(
             MODULE_AGENT,
@@ -410,11 +410,24 @@ async function handleTaskFailed(
   }
 
   const questId = failedEvent.questId;
+  const leadRole = agentId.replace(/^agent-lead-/, '');
+
   logger.info(
     MODULE_AGENT,
     `Received task.failed for [${failedEvent.taskId}]: ${failedEvent.error}`,
     timer.elapsed('main'),
   );
+
+  // Check if this task belongs to our role — skip if not
+  const taskRole = failedEvent.role ?? '';
+  if (taskRole && taskRole !== leadRole) {
+    logger.info(
+      MODULE_AGENT,
+      `Skipping retry for [${failedEvent.taskId}] (task role: ${taskRole}, my role: ${leadRole})`,
+      timer.elapsed('main'),
+    );
+    return;
+  }
 
   // Read retry attempt from the parsed event (now part of TaskFailedEvent schema)
   const retryAttempt = failedEvent.retryAttempt ?? 0;
@@ -536,11 +549,34 @@ async function handleRevisionNeeded(
   }
 
   const { taskId, questId, score, feedback, revisionCount } = payload;
+  const leadRole = agentId.replace(/^agent-lead-/, '');
+
   logger.info(
     MODULE_AGENT,
     `Received task.revision_needed for [${taskId}]: score=${score}, revision=${revisionCount}/${MAX_REVISIONS}`,
     timer.elapsed('main'),
   );
+
+  // Check if this task belongs to our role — skip if not
+  try {
+    const resp = await client.invokeRemote<{
+      content: Array<{ type: string; text: string }>;
+    }>('quest_quest_query_quest', { questId, detail: 'full' });
+    const questData = JSON.parse(resp.content[0].text);
+    const task = (questData.tasks ?? []).find((t: any) => (t.id ?? t.taskId) === taskId);
+    const taskRole = task?.role ?? '';
+
+    if (taskRole && taskRole !== leadRole) {
+      logger.info(
+        MODULE_AGENT,
+        `Skipping revision for [${taskId}] (task role: ${taskRole}, my role: ${leadRole})`,
+        timer.elapsed('main'),
+      );
+      return;
+    }
+  } catch (err: any) {
+    logger.warn(MODULE_AGENT, `Failed to check task role for revision: ${err.message} — proceeding`, timer.elapsed('main'));
+  }
 
   if (revisionCount < MAX_REVISIONS) {
     logger.info(
@@ -549,8 +585,8 @@ async function handleRevisionNeeded(
       timer.elapsed('main'),
     );
 
-    // Derive role from agentId (e.g. "agent-lead-programmer" → "programmer")
-    const role = agentId.replace(/^agent-lead-/, '');
+    // Use this lead's role for re-assignment (already verified task role matches)
+    const role = leadRole;
 
     // Generate targeted fix instructions via LLM (falls back to raw QA feedback)
     const fixInstructions = await generateFixInstructions(
@@ -642,8 +678,19 @@ async function handleCascadeNeeded(
 
     if (tasks.length > 0) {
       logger.info(MODULE_AGENT, `Cascade (via ${TOPIC_CASCADE_NEEDED}): ${tasks.length} task(s) to dispatch`, timer.elapsed('main'));
+      const allTasks = (questData.tasks ?? []).map((t: any) => ({
+        taskId: (t.id ?? t.taskId) as string,
+        name: t.name as string,
+        description: t.description as string,
+        implementationGuide: t.implementationGuide as string | undefined,
+        verificationCriteria: t.verificationCriteria as string | undefined,
+        status: t.status as string,
+        assignedTo: (t.assignedAgent ?? t.assignedTo) as string | undefined,
+        role: t.role as string | undefined,
+        dependencies: t.dependencies as string[] | undefined,
+      }));
       const { assignAndDispatchTasks } = await import('./task-assignment.js');
-      await assignAndDispatchTasks(client, questId, tasks, agentId, role);
+      await assignAndDispatchTasks(client, questId, tasks, agentId, role, allTasks);
     }
   } catch (err: any) {
     logger.warn(MODULE_AGENT, `Cascade (${TOPIC_CASCADE_NEEDED}) failed: ${err.message}`, timer.elapsed('main'));

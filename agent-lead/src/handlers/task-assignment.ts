@@ -88,6 +88,7 @@ async function updateTaskStatus(
 /**
  * Build and publish a task.assigned event for a single task.
  * Publishes to the role-specific network so the correct worker receives it.
+ * Includes predecessor info for cross-worktree file access.
  */
 async function publishTaskAssigned(
   client: KadiClient,
@@ -95,8 +96,37 @@ async function publishTaskAssigned(
   questId: string,
   assignedBy: string,
   leadRole: string,
+  allTasks?: QuestTask[],
 ): Promise<void> {
   const taskRole = task.role ?? task.assignedTo?.replace(/^agent-worker-/, '') ?? leadRole;
+
+  // Build predecessor context from completed dependency tasks
+  const predecessors: Array<{ taskId: string; role: string; branch: string; commitHash?: string }> = [];
+  if (task.dependencies && task.dependencies.length > 0 && allTasks) {
+    for (const depId of task.dependencies) {
+      const depTask = allTasks.find((t) => t.taskId === depId);
+      if (depTask && depTask.status === 'completed') {
+        const depRole = depTask.role ?? depTask.assignedTo?.replace(/^agent-worker-/, '') ?? '';
+        // Worktree branch convention: agent-playground-{role}
+        const branch = depRole ? `agent-playground-${depRole}` : '';
+        if (branch) {
+          predecessors.push({
+            taskId: depId,
+            role: depRole,
+            branch,
+            commitHash: (depTask as any).commitHash ?? undefined,
+          });
+        }
+      }
+    }
+    if (predecessors.length > 0) {
+      logger.info(
+        MODULE_AGENT,
+        `  Task ${task.taskId} has ${predecessors.length} predecessor(s): ${predecessors.map(p => `${p.role}@${p.branch}`).join(', ')}`,
+        timer.elapsed('main'),
+      );
+    }
+  }
 
   const payload: TaskAssignedEvent = {
     taskId: task.taskId,
@@ -106,6 +136,7 @@ async function publishTaskAssigned(
     requirements: task.implementationGuide ?? task.description,
     timestamp: new Date().toISOString(),
     assignedBy,
+    ...(predecessors.length > 0 ? { predecessors } : {}),
   };
 
   await client.publish('task.assigned', payload, {
@@ -138,6 +169,7 @@ export async function assignAndDispatchTasks(
   tasks: QuestTask[],
   agentId: string,
   role: string,
+  allQuestTasks?: QuestTask[],
 ): Promise<TaskAssignmentResult> {
   logger.info(
     MODULE_AGENT,
@@ -269,7 +301,7 @@ export async function assignAndDispatchTasks(
       await updateTaskStatus(client, questId, task.taskId, taskAgent);
 
       // Publish task.assigned event to the role-specific network
-      await publishTaskAssigned(client, task, questId, agentId, role);
+      await publishTaskAssigned(client, task, questId, agentId, role, allQuestTasks ?? tasks);
 
       publishedCount++;
       publishedIds.push(task.taskId);
