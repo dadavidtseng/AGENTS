@@ -106,6 +106,18 @@ export interface TaskAssignedEvent {
 
   /** Retry attempt number (0 = first attempt, 1+ = retry) */
   retryAttempt?: number;
+
+  /** Completed predecessor tasks (for cross-worktree file access via git show) */
+  predecessors?: Array<{
+    /** Predecessor task ID */
+    taskId: string;
+    /** Role of the predecessor worker (e.g. "designer") */
+    role: string;
+    /** Git branch name for the predecessor's worktree */
+    branch: string;
+    /** Commit hash of the predecessor's completed work */
+    commitHash?: string;
+  }>;
 }
 
 /**
@@ -120,7 +132,13 @@ export const TaskAssignedEventSchema = z.object({
   timestamp: z.string().datetime('Invalid ISO 8601 timestamp'),
   assignedBy: z.string().optional(),
   feedback: z.string().optional(),
-  retryAttempt: z.number().optional()
+  retryAttempt: z.number().optional(),
+  predecessors: z.array(z.object({
+    taskId: z.string(),
+    role: z.string(),
+    branch: z.string(),
+    commitHash: z.string().optional(),
+  })).optional(),
 });
 
 // ============================================================================
