@@ -22,7 +22,7 @@ const brokerConfig: Record<string, unknown> = {
   url: process.env.KADI_BROKER_URL || 'ws://localhost:8080/kadi',
 };
 if (process.env.KADI_NETWORK) {
-  brokerConfig.networks = [process.env.KADI_NETWORK];
+  brokerConfig.networks = process.env.KADI_NETWORK.split(',').map(n => n.trim());
 }
 
 const client = new KadiClient({

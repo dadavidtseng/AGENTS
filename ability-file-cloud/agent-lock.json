@@ -1,0 +1,14 @@
+{
+  "lockfileVersion": 1,
+  "metadata": {
+    "kadiVersion": "0.0.7",
+    "generated": "2026-03-22T00:15:46.010Z",
+    "metaHash": "sha256-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source": "agent.json"
+  },
+  "agent": {
+    "name": "ability-file-cloud",
+    "version": "1.0.0"
+  },
+  "abilities": {}
+}
