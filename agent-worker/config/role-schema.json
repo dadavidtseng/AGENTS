@@ -80,7 +80,7 @@
     "tools": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "List of MCP tool prefixes this role can invoke (e.g., 'git_git_', 'ability_file_')"
+      "description": "Tool name prefixes or exact names this role can invoke. If omitted, all broker tools are available. Temporary measure until network-based filtering is implemented."
     },
     "networks": {
       "type": "array",

@@ -26,6 +26,17 @@
   },
   "tools": [
     "git_git_",
-    "ability_file_"
+    "ability_file_",
+    "spawn_cube",
+    "move_cube",
+    "remove_cube",
+    "get_game_state",
+    "capture_screenshot",
+    "create_script",
+    "read_script",
+    "delete_script",
+    "modify_script",
+    "restart_game",
+    "rebuild_game"
   ]
 }
