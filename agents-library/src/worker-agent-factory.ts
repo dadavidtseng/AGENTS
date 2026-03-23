@@ -656,7 +656,7 @@ export class BaseWorkerAgent {
 
       // Step 4: Build tool definitions — local tools + dynamic discovery from broker
       const tools = await this.buildToolDefinitionsAsync();
-      logger.info(MODULE_AGENT, `🔧 Available tools: ${tools.length} (prefixes: ${this.toolPrefixes.join(', ') || 'none'})`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `🔧 Available tools: ${tools.length}`, timer.elapsed('factory'));
 
       // Step 4.5: Recall relevant past experience (non-blocking, best-effort)
       let memoryContext = '';
@@ -869,6 +869,10 @@ export class BaseWorkerAgent {
       ? `\n⚠️ REVISION REQUIRED (Attempt #${task.retryAttempt || 1})\nPrevious attempt was rejected. Feedback:\n${task.feedback}\nPlease carefully address the feedback above.\n`
       : '';
 
+    const predecessorContext = task.predecessors && task.predecessors.length > 0
+      ? `\n## Predecessor Tasks\nThe following tasks were completed before yours. You can read their output files using git_git_show with the branch name:\n${task.predecessors.map(p => `- **${p.role}** task (${p.taskId}): branch \`${p.branch}\`${p.commitHash ? ` commit \`${p.commitHash}\`` : ''}\n  To read a file: git_git_show with path="${this.worktreePath}" and object="${p.branch}:<filename>"`).join('\n')}\n`
+      : '';
+
     return `You are a ${this.role} agent working in the KĀDI multi-agent system.
 Your worktree directory is: ${this.worktreePath}
 
@@ -876,7 +880,7 @@ Task ID: ${task.taskId}
 Description: ${task.description}
 Implementation Guide: ${implementationGuide}
 ${verificationCriteria ? `Verification Criteria: ${verificationCriteria}` : ''}
-${retryContext}
+${retryContext}${predecessorContext}
 ${memoryContext ? `\n## Past Experience\nThe following are relevant outcomes from past similar tasks. Use these to avoid known mistakes and apply proven patterns:\n${memoryContext}` : ''}
 
 Instructions:
@@ -899,9 +903,8 @@ Important:
    * Build tool definitions: local tools + dynamic discovery from KĀDI broker
    *
    * 1. Always includes local tools (write_file, read_file)
-   * 2. Discovers network tools from broker via kadi.ability.list
-   * 3. Filters network tools by toolPrefixes from role config
-   * 4. Converts to OpenAI-compatible ToolDefinition format
+   * 2. Discovers all network tools from broker via kadi.ability.list
+   * 3. Converts to OpenAI-compatible ToolDefinition format
    */
   protected async buildToolDefinitionsAsync(): Promise<ToolDefinition[]> {
     const tools: ToolDefinition[] = [];
@@ -938,8 +941,8 @@ Important:
       }
     });
 
-    // Discover network tools from broker, filtered by toolPrefixes
-    if (this.toolPrefixes.length > 0 && this.client.isConnected()) {
+    // Discover network tools from broker, filtered by toolPrefixes if configured
+    if (this.client.isConnected()) {
       try {
         const response = await this.client.invokeRemote<{ tools: Array<{
           name: string;
@@ -949,25 +952,26 @@ Important:
 
         if (response?.tools && Array.isArray(response.tools)) {
           for (const tool of response.tools) {
-            // Only include tools matching one of the configured prefixes
-            if (this.toolPrefixes.some(prefix => tool.name.startsWith(prefix))) {
-              tools.push({
-                type: 'function',
-                function: {
-                  name: tool.name,
-                  description: tool.description || '',
-                  parameters: (tool.inputSchema as ToolDefinition['function']['parameters']) || {
-                    type: 'object',
-                    properties: {},
-                    required: []
-                  }
-                }
-              });
+            // If toolPrefixes configured, filter by prefix; otherwise include all
+            if (this.toolPrefixes.length > 0 && !this.toolPrefixes.some(prefix => tool.name.startsWith(prefix))) {
+              continue;
             }
+            tools.push({
+              type: 'function',
+              function: {
+                name: tool.name,
+                description: tool.description || '',
+                parameters: (tool.inputSchema as ToolDefinition['function']['parameters']) || {
+                  type: 'object',
+                  properties: {},
+                  required: []
+                }
+              }
+            });
           }
           logger.info(
             MODULE_AGENT,
-            `Discovered ${tools.length - 2} network tools from broker (filtered by prefixes: ${this.toolPrefixes.join(', ')})`,
+            `Discovered ${tools.length - 2} network tools from broker${this.toolPrefixes.length > 0 ? ` (filtered by prefixes: ${this.toolPrefixes.join(', ')})` : ''}`,
             timer.elapsed('factory')
           );
         }
@@ -980,7 +984,7 @@ Important:
         // Fallback: use hardcoded git tools if discovery fails
         this.appendHardcodedGitTools(tools);
       }
-    } else if (this.toolPrefixes.length > 0) {
+    } else {
       // Not connected to broker — use hardcoded fallback
       logger.warn(MODULE_AGENT, 'Not connected to broker — using hardcoded tool definitions', timer.elapsed('factory'));
       this.appendHardcodedGitTools(tools);
@@ -993,7 +997,7 @@ Important:
    * Fallback: append hardcoded git tool definitions when broker discovery fails
    */
   private appendHardcodedGitTools(tools: ToolDefinition[]): void {
-    if (!this.toolPrefixes.some(p => p.startsWith('git_git_'))) return;
+    if (this.toolPrefixes.length > 0 && !this.toolPrefixes.some(p => p.startsWith('git_git_'))) return;
 
     tools.push(
       {
