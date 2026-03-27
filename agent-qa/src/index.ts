@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { BaseAgent, logger, MODULE_AGENT, timer } from 'agents-library';
+import { BaseAgent, loadVaultCredentials, logger, MODULE_AGENT, timer } from 'agents-library';
 import type { BaseAgentConfig } from 'agents-library';
 import { setupValidationHandler } from './handlers/validation.js';
 
@@ -8,29 +8,15 @@ const networks = (process.env.KADI_NETWORK ?? 'qa,eval,vision').split(',').map((
 const brokerUrl = process.env.KADI_BROKER_URL ?? 'ws://localhost:8080/kadi';
 
 // ============================================================================
-// BaseAgent Instance
+// Provider Config Builder
 // ============================================================================
 
-const baseAgentConfig: BaseAgentConfig = {
-  agentId: agentName,
-  agentRole: 'programmer',
-  version: '1.0.0',
-  brokerUrl,
-  networks,
-  // LLM provider for semantic code review (optional — falls back to heuristic-only if unset)
-  ...buildProviderConfig(),
-  // Memory for recalling past QA patterns
-  memory: {
-    dataPath: process.env.MEMORY_DATA_PATH || './data/memory',
-  },
-};
-
-/** Build provider config from env vars. Model Manager is primary, Anthropic is fallback. */
-function buildProviderConfig(): { provider: BaseAgentConfig['provider'] } | Record<string, never> {
-  const modelManagerBaseUrl = process.env.MODEL_MANAGER_BASE_URL;
-  const modelManagerApiKey = process.env.MODEL_MANAGER_API_KEY;
-  const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
-
+/** Build provider config. Model Manager is primary, Anthropic is fallback. */
+function buildProviderConfig(
+  modelManagerBaseUrl?: string,
+  modelManagerApiKey?: string,
+  anthropicApiKey?: string,
+): { provider: BaseAgentConfig['provider'] } | Record<string, never> {
   if (modelManagerBaseUrl && modelManagerApiKey) {
     return {
       provider: {
@@ -57,10 +43,6 @@ function buildProviderConfig(): { provider: BaseAgentConfig['provider'] } | Reco
   return {};
 }
 
-const baseAgent = new BaseAgent(baseAgentConfig);
-/** Convenience alias — used by event handlers registered in later tasks */
-export const client = baseAgent.client;
-
 // ============================================================================
 // Main
 // ============================================================================
@@ -71,6 +53,28 @@ async function main(): Promise<void> {
   logger.info(MODULE_AGENT, `Starting ${agentName}`, timer.elapsed('main'));
   logger.info(MODULE_AGENT, `Networks: ${networks.join(', ')}`, timer.elapsed('main'));
 
+  // Load credentials: env vars take priority over vault
+  const vault = await loadVaultCredentials();
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY || vault.ANTHROPIC_API_KEY;
+  const modelManagerBaseUrl = process.env.MODEL_MANAGER_BASE_URL || vault.MODEL_MANAGER_BASE_URL;
+  const modelManagerApiKey = process.env.MODEL_MANAGER_API_KEY || vault.MODEL_MANAGER_API_KEY;
+
+  // Build BaseAgent config
+  const baseAgentConfig: BaseAgentConfig = {
+    agentId: agentName,
+    agentRole: 'programmer',
+    version: '1.0.0',
+    brokerUrl,
+    networks,
+    ...buildProviderConfig(modelManagerBaseUrl, modelManagerApiKey, anthropicApiKey),
+    memory: {
+      dataPath: process.env.MEMORY_DATA_PATH || './data/memory',
+    },
+  };
+
+  const baseAgent = new BaseAgent(baseAgentConfig);
+  const client = baseAgent.client;
+
   await baseAgent.connect();
   logger.info(MODULE_AGENT, `Connected to broker at ${brokerUrl}`, timer.elapsed('main'));
 
@@ -79,7 +83,7 @@ async function main(): Promise<void> {
   setupValidationHandler(client, baseAgent.providerManager, baseAgent.memoryService);
 
   if (baseAgent.providerManager) {
-    const primary = process.env.MODEL_MANAGER_BASE_URL ? 'Model Manager' : 'Anthropic';
+    const primary = modelManagerBaseUrl ? 'Model Manager' : 'Anthropic';
     logger.info(MODULE_AGENT, `LLM semantic review enabled (primary: ${primary})`, timer.elapsed('main'));
   } else {
     logger.warn(MODULE_AGENT, 'No LLM provider configured — semantic review disabled, using heuristic-only scoring', timer.elapsed('main'));
