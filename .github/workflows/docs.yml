@@ -1,0 +1,95 @@
+name: agents-docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Docs/**'
+      - '**/README.md'
+      - '**/agent.json'
+      - '**/CLAUDE.md'
+      - 'agent-docs/**'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: dadavidtseng/agents-docs
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: agent-docs/package-lock.json
+
+      # ── Step 1: Install ──
+      - name: Install dependencies
+        run: npm ci
+        working-directory: agent-docs
+
+      # ── Step 2: Sync docs from all repos ──
+      - name: Sync documentation
+        run: npx tsx scripts/sync-cli.ts
+        working-directory: agent-docs
+
+      # ── Step 3: LLM-enhanced README generation ──
+      - name: Generate READMEs (LLM-enhanced)
+        env:
+          MODEL_MANAGER_BASE_URL: ${{ secrets.MODEL_MANAGER_BASE_URL }}
+          MODEL_MANAGER_API_KEY: ${{ secrets.MODEL_MANAGER_API_KEY }}
+        run: |
+          if [ -n "$MODEL_MANAGER_BASE_URL" ] && [ -n "$MODEL_MANAGER_API_KEY" ]; then
+            echo "Using LLM-enhanced README generation"
+            npx tsx scripts/readme-gen-llm.ts
+          else
+            echo "::warning::MODEL_MANAGER secrets not set — using template-based generation"
+            npx tsx scripts/readme-gen-cli.ts
+          fi
+        working-directory: agent-docs
+
+      # ── Step 4: Re-sync after README generation ──
+      - name: Re-sync documentation (pick up new READMEs)
+        run: npx tsx scripts/sync-cli.ts
+        working-directory: agent-docs
+
+      # ── Step 5: Commit README changes (if any) ──
+      - name: Commit README updates
+        run: |
+          git config user.name "agent-docs[bot]"
+          git config user.email "agent-docs[bot]@users.noreply.github.com"
+          git add '**/README.md'
+          git diff --cached --quiet || git commit -m "docs: auto-update READMEs via model-manager LLM"
+          git push || true
+
+      # ── Step 6: Build Astro/Starlight ──
+      - name: Build docs site
+        run: npx astro build
+        working-directory: agent-docs
+
+      # ── Step 7: Build and push Docker image to GHCR ──
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: agent-docs
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
