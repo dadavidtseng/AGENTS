@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AGENTS Expert</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #000000;
+      --bg-elevated: #0a0a0a;
+      --bg-card: #111111;
+      --border: #1a1a1a;
+      --border-hover: #333333;
+      --text-primary: #ededed;
+      --text-secondary: #888888;
+      --text-muted: #555555;
+      --blue: #0070f3;
+      --blue-hover: #0060df;
+      --green: #00c853;
+      --red: #ff4444;
+      --yellow: #ffab00;
+      --font-sans: "Sora", ui-sans-serif, system-ui, sans-serif;
+      --font-mono: "JetBrains Mono", ui-monospace, monospace;
+      --radius: 8px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text-primary);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ─────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-elevated);
+    }
+
+    .logo {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    .logo span { color: var(--blue); }
+
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px;
+    }
+
+    .status-dot.connected { background: var(--green); }
+    .status-dot.disconnected { background: var(--red); }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    /* ── Tabs ───────────────────────────────────────── */
+    .tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-elevated);
+      padding: 0 24px;
+    }
+
+    .tab {
+      padding: 10px 20px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+
+    .tab:hover { color: var(--text-primary); }
+    .tab.active { color: var(--text-primary); border-bottom-color: var(--blue); }
+
+    /* ── Main ───────────────────────────────────────── */
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .message {
+      max-width: 800px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .message.user {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+
+    .message.assistant {
+      padding: 16px 0;
+    }
+
+    .message-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .message-content {
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .message-content h2 { font-size: 18px; margin: 16px 0 8px; font-weight: 600; }
+    .message-content h3 { font-size: 15px; margin: 12px 0 6px; font-weight: 600; }
+    .message-content p { margin: 8px 0; }
+    .message-content ul, .message-content ol { margin: 8px 0; padding-left: 24px; }
+    .message-content li { margin: 4px 0; }
+
+    .message-content code {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      background: var(--bg-card);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+
+    .message-content pre {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      overflow-x: auto;
+      margin: 12px 0;
+    }
+
+    .message-content pre code {
+      background: none;
+      border: none;
+      padding: 0;
+    }
+
+    .sources {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .sources span { color: var(--text-secondary); }
+
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+
+    .loading-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--blue);
+      animation: pulse 1.2s infinite;
+    }
+
+    .loading-dot:nth-child(2) { animation-delay: 0.2s; }
+    .loading-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 1; }
+    }
+
+    /* ── Input ──────────────────────────────────────── */
+    .input-area {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-elevated);
+    }
+
+    .input-row {
+      max-width: 800px;
+      margin: 0 auto;
+      display: flex;
+      gap: 8px;
+    }
+
+    .input-row textarea {
+      flex: 1;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      padding: 12px 16px;
+      resize: none;
+      outline: none;
+      min-height: 44px;
+      max-height: 120px;
+      transition: border-color 0.15s;
+    }
+
+    .input-row textarea:focus { border-color: var(--blue); }
+    .input-row textarea::placeholder { color: var(--text-muted); }
+
+    .input-row button {
+      background: var(--blue);
+      color: white;
+      border: none;
+      border-radius: var(--radius);
+      padding: 0 20px;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .input-row button:hover { background: var(--blue-hover); }
+    .input-row button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .model-select {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      padding: 0 12px;
+      outline: none;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">AGENTS <span>Expert</span></div>
+    <div class="header-right">
+      <span><span class="status-dot disconnected" id="statusDot"></span><span id="statusText">Connecting…</span></span>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <div class="tab active" data-mode="ask">Ask</div>
+    <div class="tab" data-mode="tdd">Write TDD</div>
+    <div class="tab" data-mode="example">Examples</div>
+    <div class="tab" data-mode="guide">Guide</div>
+    <div class="tab" data-mode="explain">Explain</div>
+  </div>
+
+  <main>
+    <div class="messages" id="messages">
+      <div class="message assistant">
+        <div class="message-content" style="text-align:center; color:var(--text-muted); padding:40px 0;">
+          Ask me anything about the AGENTS ecosystem, or switch tabs to write a TDD, find examples, or get a guide.
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div class="input-area">
+    <div class="input-row">
+      <select class="model-select" id="modelSelect"></select>
+      <textarea id="input" placeholder="Ask about AGENTS…" rows="1"></textarea>
+      <button id="sendBtn" onclick="send()">Send</button>
+    </div>
+  </div>
+
+  <script>
+    let currentMode = 'ask';
+    let isLoading = false;
+
+    // ── Tabs ──────────────────────────────────────────
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        currentMode = tab.dataset.mode;
+        const placeholders = {
+          ask: 'Ask about AGENTS…',
+          tdd: 'Describe the feature for the TDD…',
+          example: 'What topic do you want examples for?',
+          guide: 'What do you want to build?',
+          explain: 'Which agent or tool to explain?',
+        };
+        document.getElementById('input').placeholder = placeholders[currentMode] || 'Ask…';
+      });
+    });
+
+    // ── Models ────────────────────────────────────────
+    fetch('/api/models').then(r => r.json()).then(data => {
+      const sel = document.getElementById('modelSelect');
+      data.featured.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.label;
+        if (m.id === data.default) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }).catch(() => {});
+
+    // ── Status ────────────────────────────────────────
+    async function checkStatus() {
+      try {
+        const r = await fetch('/api/status');
+        const s = await r.json();
+        const dot = document.getElementById('statusDot');
+        const txt = document.getElementById('statusText');
+        if (s.broker === 'connected') {
+          dot.className = 'status-dot connected';
+          txt.textContent = 'Connected';
+        } else {
+          dot.className = 'status-dot disconnected';
+          txt.textContent = 'Disconnected';
+        }
+      } catch {
+        document.getElementById('statusDot').className = 'status-dot disconnected';
+        document.getElementById('statusText').textContent = 'Offline';
+      }
+    }
+    checkStatus();
+    setInterval(checkStatus, 15000);
+
+    // ── Send ──────────────────────────────────────────
+    async function send() {
+      const input = document.getElementById('input');
+      const text = input.value.trim();
+      if (!text || isLoading) return;
+
+      isLoading = true;
+      document.getElementById('sendBtn').disabled = true;
+      input.value = '';
+
+      const msgs = document.getElementById('messages');
+
+      // User message
+      const userDiv = document.createElement('div');
+      userDiv.className = 'message user';
+      userDiv.innerHTML = `<div class="message-label">${currentMode === 'tdd' ? 'Feature' : 'You'}</div><div class="message-content">${escapeHtml(text)}</div>`;
+      msgs.appendChild(userDiv);
+
+      // Loading
+      const loadDiv = document.createElement('div');
+      loadDiv.className = 'message assistant';
+      loadDiv.innerHTML = '<div class="loading"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div><span>Thinking…</span></div>';
+      msgs.appendChild(loadDiv);
+      msgs.scrollTop = msgs.scrollHeight;
+
+      try {
+        const endpoints = { ask: '/api/ask', tdd: '/api/tdd', example: '/api/example', guide: '/api/guide', explain: '/api/explain' };
+        const bodyKeys = { ask: 'question', tdd: 'feature', example: 'topic', guide: 'goal', explain: 'agent' };
+        const model = document.getElementById('modelSelect').value;
+
+        const r = await fetch(endpoints[currentMode], {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [bodyKeys[currentMode]]: text, model }),
+        });
+        const data = await r.json();
+
+        loadDiv.remove();
+
+        const content = data.answer || data.tdd || data.error || 'No response';
+        const ansDiv = document.createElement('div');
+        ansDiv.className = 'message assistant';
+
+        let html = `<div class="message-label">AGENTS Expert</div><div class="message-content">${renderMarkdown(content)}</div>`;
+        if (data.sources?.length) {
+          html += `<div class="sources">Sources: ${data.sources.map(s => `<span>${s.source}</span>`).join(', ')}</div>`;
+        }
+        ansDiv.innerHTML = html;
+        msgs.appendChild(ansDiv);
+      } catch (err) {
+        loadDiv.remove();
+        const errDiv = document.createElement('div');
+        errDiv.className = 'message assistant';
+        errDiv.innerHTML = `<div class="message-content" style="color:var(--red)">Error: ${err.message}</div>`;
+        msgs.appendChild(errDiv);
+      }
+
+      isLoading = false;
+      document.getElementById('sendBtn').disabled = false;
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+
+    // ── Enter to send ─────────────────────────────────
+    document.getElementById('input').addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    });
+
+    // ── Helpers ───────────────────────────────────────
+    function escapeHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function renderMarkdown(text) {
+      // Minimal markdown: code blocks, inline code, headings, bold, lists
+      let html = escapeHtml(text);
+      // Code blocks
+      html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+      // Inline code
+      html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+      // Headings
+      html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+      html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+      // Bold
+      html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      // Lists
+      html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+      html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+      // Paragraphs
+      html = html.replace(/\n\n/g, '</p><p>');
+      html = '<p>' + html + '</p>';
+      return html;
+    }
+  </script>
+</body>
+</html>
