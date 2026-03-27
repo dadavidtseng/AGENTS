@@ -1,5 +1,5 @@
 /**
- * Local Module Exports
+ * V2 Module Exports
  */
 
 export * from './config.js';

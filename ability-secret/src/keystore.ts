@@ -40,6 +40,7 @@ async function getKeytar(): Promise<Keytar | null> {
   try {
     const mod = await import('keytar');
     const kt: Keytar = mod.default ?? mod;
+    // Probe to verify the OS keychain is actually functional
     await kt.getPassword(SERVICE, '__kadi_probe__');
     cachedKeytar = kt;
     return kt;
@@ -49,6 +50,10 @@ async function getKeytar(): Promise<Keytar | null> {
   }
 }
 
+/**
+ * Execute a keytar operation, wrapping errors as KeystoreError.
+ * Returns null if keytar is unavailable (caller should fall back to file).
+ */
 async function tryKeytar<T>(
   operation: (kt: Keytar) => Promise<T>,
   errorMessage: string
@@ -95,6 +100,11 @@ async function writeKeystoreFile(data: Record<string, string>): Promise<void> {
 
 // ── Public API ──────────────────────────────────────────────────────
 
+/**
+ * Get master key from keystore.
+ * @param vaultPath - Path to vault file (used as key identifier)
+ * @returns The master key or null if not found
+ */
 export async function getMasterKey(vaultPath: string): Promise<string | null> {
   const result = await tryKeytar(
     (kt) => kt.getPassword(SERVICE, vaultPath),
@@ -106,6 +116,11 @@ export async function getMasterKey(vaultPath: string): Promise<string | null> {
   return store[vaultPath] ?? null;
 }
 
+/**
+ * Store master key in keystore.
+ * @param vaultPath - Path to vault file (used as key identifier)
+ * @param masterKey - Base64-encoded master key
+ */
 export async function setMasterKey(vaultPath: string, masterKey: string): Promise<void> {
   const result = await tryKeytar(
     (kt) => kt.setPassword(SERVICE, vaultPath, masterKey),
@@ -118,6 +133,10 @@ export async function setMasterKey(vaultPath: string, masterKey: string): Promis
   await writeKeystoreFile(store);
 }
 
+/**
+ * Delete master key from keystore.
+ * @param vaultPath - Path to vault file
+ */
 export async function deleteMasterKey(vaultPath: string): Promise<void> {
   const result = await tryKeytar(
     (kt) => kt.deletePassword(SERVICE, vaultPath),
@@ -130,7 +149,51 @@ export async function deleteMasterKey(vaultPath: string): Promise<void> {
   await writeKeystoreFile(store);
 }
 
+/**
+ * Check if master key exists in keystore.
+ * @param vaultPath - Path to vault file
+ */
 export async function hasMasterKey(vaultPath: string): Promise<boolean> {
   const key = await getMasterKey(vaultPath);
   return key !== null;
+}
+
+/**
+ * List all master keys from keystore.
+ * Returns an array of { path, key } entries.
+ *
+ * For keytar: uses findCredentials to list all entries for the service.
+ * For file fallback: reads all entries from keystore.json.
+ */
+export async function listMasterKeys(): Promise<Array<{ path: string; key: string }>> {
+  const result = await tryKeytar(
+    (kt) => kt.findCredentials(SERVICE),
+    'Failed to list OS keychain entries'
+  );
+  if (result) {
+    return result.value.map((c: { account: string; password: string }) => ({
+      path: c.account,
+      key: c.password,
+    }));
+  }
+
+  // File-based fallback
+  const store = await readKeystoreFile();
+  return Object.entries(store).map(([p, key]) => ({ path: p, key }));
+}
+
+/**
+ * Copy a master key from one path to another.
+ * Used when a project is moved and the keychain entry needs to be updated.
+ *
+ * @param fromPath - Source path (old location)
+ * @param toPath - Destination path (new location)
+ * @throws KeystoreError if source key doesn't exist
+ */
+export async function copyMasterKey(fromPath: string, toPath: string): Promise<void> {
+  const key = await getMasterKey(fromPath);
+  if (!key) {
+    throw new KeystoreError(`No master key found at path: ${fromPath}`);
+  }
+  await setMasterKey(toPath, key);
 }

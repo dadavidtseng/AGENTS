@@ -1,8 +1,8 @@
 /**
- * Identity types for ability-secret.
+ * Identity types for secret-ability.
  *
  * The Identity interface represents an Ed25519 keypair used for:
- * - Authenticating with KĀDI brokers
+ * - Authenticating with KADI brokers
  * - Encrypting secrets for own storage (E2E)
  * - Decrypting secrets shared by other agents
  *

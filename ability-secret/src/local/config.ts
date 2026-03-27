@@ -33,6 +33,7 @@ const vaultEntrySchema = z
   })
   .refine(
     (v) => {
+      // kadi vaults require broker and network
       if (v.type === 'kadi') {
         return Boolean(v.broker && v.network);
       }
@@ -61,6 +62,9 @@ export type Config = z.infer<typeof configSchema>;
 /**
  * Read and parse a TOML config file.
  * Returns empty config if file doesn't exist.
+ * Validates the structure with Zod schema.
+ *
+ * @throws Error if config file has invalid structure
  */
 export async function readConfig(configPath: string): Promise<Config> {
   const resolved = path.resolve(configPath);
@@ -69,6 +73,7 @@ export async function readConfig(configPath: string): Promise<Config> {
     const content = await fs.readFile(resolved, 'utf-8');
     const parsed = parse(content);
 
+    // Validate with Zod schema
     const result = configSchema.safeParse(parsed);
     if (!result.success) {
       const issues = result.error.issues
@@ -96,26 +101,37 @@ export async function writeConfig(configPath: string, config: Config): Promise<v
 
   await fs.mkdir(dir, { recursive: true });
 
+  // Build TOML content with proper structure
   const tomlObj: Record<string, unknown> = {};
+
+  // Add [vaults] section
   if (Object.keys(config.vaults).length > 0) {
     tomlObj['vaults'] = config.vaults;
   }
+
+  // Add [secrets.<vault>] sections
   if (Object.keys(config.secrets).length > 0) {
     tomlObj['secrets'] = config.secrets;
   }
 
   const content = stringify(tomlObj);
 
+  // Write atomically (temp file + rename)
   const tempPath = `${resolved}.tmp`;
   await fs.writeFile(tempPath, content, 'utf-8');
   try {
     await fs.rename(tempPath, resolved);
   } catch (err) {
+    // Clean up temp file if rename fails (e.g., cross-filesystem)
     await fs.unlink(tempPath).catch(() => {});
     throw err;
   }
 }
 
+/**
+ * Get a vault entry from config.
+ * Throws if vault doesn't exist.
+ */
 export function getVault(config: Config, vaultName: string): VaultEntry {
   const vault = config.vaults[vaultName];
   if (!vault) {
@@ -125,33 +141,55 @@ export function getVault(config: Config, vaultName: string): VaultEntry {
   return vault;
 }
 
+/**
+ * Check if a vault exists in config.
+ */
 export function hasVault(config: Config, vaultName: string): boolean {
   return vaultName in config.vaults;
 }
 
+/**
+ * Add a vault to config.
+ * Throws if vault already exists or if kadi vault is missing required fields.
+ */
 export function createVault(config: Config, name: string, entry: VaultEntry): void {
   if (hasVault(config, name)) {
     throw new Error(`Vault '${name}' already exists`);
   }
+
+  // Validate kadi vaults have required fields (schema validates structure, but explicit check for clarity)
   if (entry.type === 'kadi' && (!entry.broker || !entry.network)) {
     throw new Error('Kadi vault requires broker URL and network name');
   }
+
   config.vaults[name] = entry;
   config.secrets[name] = {};
 }
 
+/**
+ * Remove a vault from config.
+ * Also removes its secrets section.
+ */
 export function destroyVault(config: Config, name: string): void {
   if (!hasVault(config, name)) {
     throw new Error(`Vault '${name}' not found`);
   }
+
   delete config.vaults[name];
   delete config.secrets[name];
 }
 
+/**
+ * Get secrets section for a vault.
+ * Returns empty object if section doesn't exist.
+ */
 export function getSecretsSection(config: Config, vaultName: string): Record<string, unknown> {
   return config.secrets[vaultName] ?? {};
 }
 
+/**
+ * Set a secret in a vault's secrets section.
+ */
 export function setSecret(config: Config, vaultName: string, key: string, value: unknown): void {
   if (!config.secrets[vaultName]) {
     config.secrets[vaultName] = {};
@@ -159,6 +197,9 @@ export function setSecret(config: Config, vaultName: string, key: string, value:
   config.secrets[vaultName][key] = value;
 }
 
+/**
+ * Delete a secret from a vault's secrets section.
+ */
 export function deleteSecret(config: Config, vaultName: string, key: string): boolean {
   const section = config.secrets[vaultName];
   if (!section || !(key in section)) {
@@ -168,11 +209,17 @@ export function deleteSecret(config: Config, vaultName: string, key: string): bo
   return true;
 }
 
+/**
+ * Check if a secret exists in a vault's secrets section.
+ */
 export function hasSecret(config: Config, vaultName: string, key: string): boolean {
   const section = config.secrets[vaultName];
   return section ? key in section : false;
 }
 
+/**
+ * List all secret keys in a vault's secrets section.
+ */
 export function listSecrets(config: Config, vaultName: string): string[] {
   const section = config.secrets[vaultName];
   return section ? Object.keys(section) : [];

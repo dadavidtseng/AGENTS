@@ -1,10 +1,13 @@
 {
-  "name": "ability-secret",
-  "version": "0.7.0",
-  "entrypoint": "src/index.ts",
+  "name": "secret-ability",
+  "version": "0.9.3",
+  "type": "ability",
+    "repo": "https://gitlab.com/humin-game-lab/agent-abilities/secret-ability.git",
+  "lib": "https://gitlab.com/humin-game-lab/agent-abilities/secret-ability/-/archive/v0.9.3/secret-ability-v0.9.3.zip",
+  "entrypoint": "dist/index.js",
+  "description": "Encrypted secrets for KADI - Age encryption with OS keychain",
   "scripts": {
-    "start": "npx tsx src/index.ts stdio",
-    "serve": "npx tsx src/index.ts stdio",
-    "serve:broker": "npx tsx src/index.ts broker"
+    "setup": "npm install && npm run build",
+    "start": "node dist/index.js"
   }
 }

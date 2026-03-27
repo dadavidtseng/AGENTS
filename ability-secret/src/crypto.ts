@@ -30,9 +30,11 @@ interface EncryptionKeyPair {
  * - PKCS8 DER: 48 bytes total, raw seed at offset 16 (32 bytes)
  */
 function deriveEncryptionKeyPair(identity: Identity): EncryptionKeyPair {
+  // Extract raw 32-byte Ed25519 public key from SPKI DER (offset 12)
   const pubDer = Buffer.from(identity.publicKey, 'base64');
   const rawPublicKey = new Uint8Array(pubDer.subarray(12));
 
+  // Extract raw 32-byte seed from PKCS8 DER (offset 16)
   const rawSeed = new Uint8Array(identity.privateKey.subarray(16, 48));
 
   // Reconstruct full 64-byte NaCl secret key: seed || publicKey
@@ -53,6 +55,7 @@ function deriveEncryptionKeyPair(identity: Identity): EncryptionKeyPair {
 
 /**
  * Encrypt a value using own identity's X25519 public key.
+ * Used when storing secrets in own namespace on the service.
  * Returns base64-encoded ciphertext.
  */
 export function encrypt(value: string, identity: Identity): string {
@@ -64,7 +67,8 @@ export function encrypt(value: string, identity: Identity): string {
 
 /**
  * Encrypt a value FOR a target agent's public key.
- * Only the target agent can decrypt.
+ * Only the target agent (holder of matching private key) can decrypt.
+ * Used when sharing secrets with other agents.
  *
  * @param targetPublicKeyBase64 - Recipient's Ed25519 public key in base64 SPKI DER format
  */
@@ -84,6 +88,7 @@ export function encryptFor(value: string, targetPublicKeyBase64: string): string
 
 /**
  * Decrypt a value using own identity's X25519 keypair.
+ * Used for retrieving own secrets and shared secrets (encrypted for our key).
  * Takes base64-encoded ciphertext, returns plaintext string.
  */
 export function decrypt(encrypted: string, identity: Identity): string {
