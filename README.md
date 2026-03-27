@@ -1,5 +1,5 @@
 # agents-core
-> Core runtime and tools for the AGENTS multi-agent orchestration platform (kadi-monorepo package)
+> Core runtime and tools for the AGENTS multi-agent orchestration platform
 
 Overview
 --------
