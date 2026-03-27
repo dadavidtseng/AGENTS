@@ -34,7 +34,15 @@
         "app": {
           "image": "agent-producer:0.1.0",
           "expose": [
-            { "port": 3000, "as": 3000, "to": [{ "global": true }] }
+            {
+              "port": 3000,
+              "as": 3000,
+              "to": [
+                {
+                  "global": true
+                }
+              ]
+            }
           ],
           "env": [
             "KADI_BROKER_URL=ws://localhost:8080/kadi",
@@ -59,7 +67,7 @@
     }
   },
   "abilities": {
-    "secret-ability": "^0.7.0"
+    "secret-ability": "^0.9.4"
   },
   "brokers": {
     "default": "ws://localhost:8080/kadi"

@@ -31,8 +31,11 @@
  */
 
 import 'dotenv/config';
-import {BaseAgent, logger, MODULE_AGENT, timer} from 'agents-library';
+import {BaseAgent, loadVaultCredentials, loadConfig, logger, MODULE_AGENT, timer} from 'agents-library';
 import type {BaseAgentConfig} from 'agents-library';
+
+// Load config.toml (walk-up discovery) — env vars from .env take precedence
+loadConfig();
 
 import {registerAllTools, injectOrchestrator} from './tools/index.js';
 
@@ -60,7 +63,13 @@ const remoteBrokerNetworks = (process.env.KADI_NETWORK_2 || 'global').split(',')
  * Whether LLM-dependent features (bots, orchestrator, task handlers) are enabled.
  * Requires a valid ANTHROPIC_API_KEY in environment.
  */
-const llmEnabled = !!(process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'YOUR_ANTHROPIC_API_KEY_HERE');
+// Load credentials: env vars take priority over vault
+const _vault = await loadVaultCredentials();
+const _anthropicApiKey = process.env.ANTHROPIC_API_KEY || _vault.ANTHROPIC_API_KEY;
+const _modelManagerBaseUrl = process.env.MODEL_MANAGER_BASE_URL || _vault.MODEL_MANAGER_BASE_URL;
+const _modelManagerApiKey = process.env.MODEL_MANAGER_API_KEY || _vault.MODEL_MANAGER_API_KEY;
+
+const llmEnabled = !!(_anthropicApiKey && _anthropicApiKey !== 'YOUR_ANTHROPIC_API_KEY_HERE');
 
 // ============================================================================
 // BaseAgent Instance
@@ -86,11 +95,13 @@ const baseAgentConfig: BaseAgentConfig = {
   }),
   ...(llmEnabled && {
     provider: {
-      anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
-      modelManagerBaseUrl: process.env.MODEL_MANAGER_BASE_URL,
-      modelManagerApiKey: process.env.MODEL_MANAGER_API_KEY,
-      primaryProvider: 'model-manager',
-      fallbackProvider: process.env.MODEL_MANAGER_BASE_URL ? 'anthropic' : undefined,
+      anthropicApiKey: _anthropicApiKey!,
+      ...(_modelManagerBaseUrl && _modelManagerApiKey && {
+        modelManagerBaseUrl: _modelManagerBaseUrl,
+        modelManagerApiKey: _modelManagerApiKey,
+      }),
+      primaryProvider: (_modelManagerBaseUrl && _modelManagerApiKey) ? 'model-manager' : 'anthropic',
+      fallbackProvider: (_modelManagerBaseUrl && _modelManagerApiKey) ? 'anthropic' : undefined,
       retryAttempts: 3,
       retryDelayMs: 1000,
       healthCheckIntervalMs: 60000,
