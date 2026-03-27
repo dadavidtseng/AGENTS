@@ -1,0 +1,18 @@
+{
+  "name": "ability-docs-memory",
+  "version": "0.0.1",
+  "description": "Documentation search engine built on graph-ability — crawls, chunks, indexes, and searches documentation with 4-signal hybrid recall including structural navigation",
+  "type": "ability",
+  "entrypoint": "dist/index.js",
+  "abilities": {
+    "graph-ability": "^0.0.7",
+    "secret-ability": "^0.9.0"
+  },
+  "brokers": {
+    "local": "ws://localhost:8080/kadi"
+  },
+  "scripts": {
+    "setup": "npm install && npm run build",
+    "start": "node dist/index.js broker"
+  }
+}

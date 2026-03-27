@@ -1,0 +1,28 @@
+# ability-docs-memory configuration
+# Discovered by walk-up search from CWD by both graph-ability and docs-memory.
+
+graph:
+  database: agents_memory
+  embedding_model: text-embedding-3-small
+  extraction_model: gpt-5-nano
+  chat_model: gpt-5-mini
+  default_agent: default
+  embedding_transport: broker
+  chat_transport: broker
+
+docs:
+  database: agents_memory
+  default_collection: agents-docs
+  embedding_model: text-embedding-3-small
+  extraction_model: gpt-5-nano
+  max_tokens: 500
+  base_url: http://localhost:3333
+  domain: localhost
+  embedding_transport: broker
+  chat_transport: broker
+
+arcadedb:
+  host: 7nea74a8v1f7l9116ni38e75kg.ingress.rtgroup.com
+  port: 80
+  username: root
+  password: playwithdata
