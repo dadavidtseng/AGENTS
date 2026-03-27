@@ -142,3 +142,48 @@ Safety and notes
 - Production deploy exposes the HTTP API port and expects ARCADE_USERNAME/ARCADE_PASSWORD to be provided by the deploy secret vault or env injection.
 
 If you need examples of tool payloads (query bodies, import file formats, or backup/restore parameter shapes) or help extending a specific tool implementation, tell me which tool and I will provide sample request/response examples.
+
+## Quick Start
+
+```bash
+cd arcadedb-ability
+npm install
+kadi install
+kadi run start
+```
+
+## Tools
+
+<!-- TODO: Add Tools content -->
+
+## Configuration
+
+### agent.json
+
+| Field | Value |
+|-------|-------|
+| **Version** | 0.1.1 |
+| **Type** | ability |
+| **Entrypoint** | `dist/index.js` |
+
+### Abilities
+
+- `secret-ability` ^0.9.0
+
+### Brokers
+
+- **default**: `wss://broker.dadavidtseng.info/kadi`
+- **local**: `ws://localhost:8080/kadi`
+- **remote**: `wss://broker.dadavidtseng.info/kadi`
+
+## Architecture
+
+<!-- TODO: Add Architecture content -->
+
+## Development
+
+```bash
+npm install
+npm run build
+kadi run start
+```

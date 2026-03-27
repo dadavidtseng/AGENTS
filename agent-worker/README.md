@@ -149,3 +149,44 @@ Contact / Contribution
 ----------------------
 Follow repository contribution and code style guidelines: use TypeScript, run lint and tests before PR. For changes to agent behavior, update config/roles/{role}.json and the RoleLoader, then run npm run setup to compile.
 
+## Quick Start
+
+```bash
+cd agent-worker
+npm install
+kadi install
+kadi run start
+```
+
+## Tools
+
+<!-- TODO: Add Tools content -->
+
+## Configuration
+
+### agent.json
+
+| Field | Value |
+|-------|-------|
+| **Version** | 0.1.0 |
+| **Type** | N/A |
+
+### Abilities
+
+- `secret-ability` ^0.9.3
+
+### Brokers
+
+- **default**: `ws://localhost:8080/kadi`
+
+## Architecture
+
+<!-- TODO: Add Architecture content -->
+
+## Development
+
+```bash
+npm install
+npm run build
+kadi run start
+```

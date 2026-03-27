@@ -156,3 +156,45 @@ References in source:
 - Tool schemas referenced in src/index.ts: plan-task.js, list-tasks.js, task-status.js, assign-task.js
 
 If you need example tool implementations, a deployment manifest for Akash, or a walkthrough for enabling LLM features (Anthropic + Model Manager), tell me which part you want expanded and I will add targeted instructions.
+
+## Quick Start
+
+```bash
+cd agent-producer
+npm install
+kadi install
+kadi run start
+```
+
+## Tools
+
+<!-- TODO: Add Tools content -->
+
+## Configuration
+
+### agent.json
+
+| Field | Value |
+|-------|-------|
+| **Version** | 0.1.0 |
+| **Type** | N/A |
+
+### Abilities
+
+- `secret-ability` ^0.9.4
+
+### Brokers
+
+- **default**: `ws://localhost:8080/kadi`
+
+## Architecture
+
+<!-- TODO: Add Architecture content -->
+
+## Development
+
+```bash
+npm install
+npm run build
+kadi run start
+```

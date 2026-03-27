@@ -166,3 +166,42 @@ License and publishing
 - This README omits license and publishing instructions. Add a LICENSE file and update agent.json/package.json if you plan to publish the ability to a registry.
 
 If you need sample index.ts scaffolding, tests, or help wiring secret-ability into handlers, I can generate an example implementation to match this README.
+
+## Quick Start
+
+```bash
+cd ability-eval
+npm install
+kadi install
+kadi run start
+```
+
+## Tools
+
+<!-- TODO: Add Tools content -->
+
+## Configuration
+
+### agent.json
+
+| Field | Value |
+|-------|-------|
+| **Version** | 0.1.0 |
+| **Type** | N/A |
+| **Entrypoint** | `index.ts` |
+
+### Abilities
+
+- `secret-ability` ^0.9.4
+
+## Architecture
+
+<!-- TODO: Add Architecture content -->
+
+## Development
+
+```bash
+npm install
+npm run build
+kadi run start
+```

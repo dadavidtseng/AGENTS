@@ -134,3 +134,42 @@ Notes and best practices
 - Use the `abilities` block in agent.json to declare and pin other kadi abilities this package relies on (e.g., secret-ability).
 
 If you need additional examples of request/response payloads, transport adapters, or model client implementations, consult the source index.ts and the @kadi.build/core documentation in your environment.
+
+## Quick Start
+
+```bash
+cd ability-vision
+npm install
+kadi install
+kadi run start
+```
+
+## Tools
+
+<!-- TODO: Add Tools content -->
+
+## Configuration
+
+### agent.json
+
+| Field | Value |
+|-------|-------|
+| **Version** | 1.0.0 |
+| **Type** | N/A |
+| **Entrypoint** | `index.ts` |
+
+### Abilities
+
+- `secret-ability` ^0.9.4
+
+## Architecture
+
+<!-- TODO: Add Architecture content -->
+
+## Development
+
+```bash
+npm install
+npm run build
+kadi run start
+```

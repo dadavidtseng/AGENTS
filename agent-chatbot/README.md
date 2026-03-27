@@ -183,3 +183,45 @@ Contact / Further Work
 ======================
 - See source files under src/ and ./platforms for platform-specific behavior and to extend toolsets or event handling.
 - For changes to tool contracts, update the corresponding register*Tools file and document new tool names and inputs in the Tools section above.
+
+## Quick Start
+
+```bash
+cd agent-chatbot
+npm install
+kadi install
+kadi run start
+```
+
+## Tools
+
+<!-- TODO: Add Tools content -->
+
+## Configuration
+
+### agent.json
+
+| Field | Value |
+|-------|-------|
+| **Version** | 0.1.0 |
+| **Type** | N/A |
+
+### Abilities
+
+- `secret-ability` ^0.7.0
+
+### Brokers
+
+- **default**: `ws://localhost:8080/kadi`
+
+## Architecture
+
+<!-- TODO: Add Architecture content -->
+
+## Development
+
+```bash
+npm install
+npm run build
+kadi run start
+```

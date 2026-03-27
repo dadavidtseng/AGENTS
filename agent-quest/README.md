@@ -179,3 +179,41 @@ Notes and tips
 License and contact
 -------------------
 Refer to the repository root for license and maintainer contact information. If you need to integrate with a specific Kadi broker endpoint, update brokers.default in agent.json before running kadi install.
+
+## Quick Start
+
+```bash
+cd agent-quest
+npm install
+kadi install
+kadi run start
+```
+
+## Tools
+
+<!-- TODO: Add Tools content -->
+
+## Configuration
+
+### agent.json
+
+| Field | Value |
+|-------|-------|
+| **Version** | 0.1.0 |
+| **Type** | N/A |
+
+### Brokers
+
+- **default**: `ws://localhost:8080/kadi`
+
+## Architecture
+
+<!-- TODO: Add Architecture content -->
+
+## Development
+
+```bash
+npm install
+npm run build
+kadi run start
+```

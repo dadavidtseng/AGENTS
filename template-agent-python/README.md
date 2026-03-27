@@ -283,3 +283,11 @@ This project is part of ProtogameJS3D research thesis.
 ---
 
 **Built with KĀDI protocol** 🚀
+
+## Quick Start
+
+<!-- TODO: Add Quick Start content -->
+
+## Configuration
+
+<!-- TODO: Add Configuration content -->

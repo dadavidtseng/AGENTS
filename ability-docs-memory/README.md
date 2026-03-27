@@ -139,3 +139,47 @@ Notes
 - See `src/index.ts` for broker resolution logic, client creation, and ability/tool registration sequence.
 
 If you need examples of payloads for `docs-search`, `docs-reindex`, or other tools, or a sample docs config file (`docs.yml`/`docs.json`) tuned for your documentation site, tell me which target documentation source and I will provide an example config and example tool invocation.
+
+## Quick Start
+
+```bash
+cd ability-docs-memory
+npm install
+kadi install
+kadi run start
+```
+
+## Tools
+
+<!-- TODO: Add Tools content -->
+
+## Configuration
+
+### agent.json
+
+| Field | Value |
+|-------|-------|
+| **Version** | 0.0.1 |
+| **Type** | ability |
+| **Entrypoint** | `dist/index.js` |
+
+### Abilities
+
+- `graph-ability` ^0.0.7
+- `secret-ability` ^0.9.0
+
+### Brokers
+
+- **local**: `ws://localhost:8080/kadi`
+
+## Architecture
+
+<!-- TODO: Add Architecture content -->
+
+## Development
+
+```bash
+npm install
+npm run build
+kadi run start
+```

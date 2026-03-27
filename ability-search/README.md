@@ -144,3 +144,47 @@ Contributing
 - Register new external ability interactions centrally (lib/config.js, lib/schema.js) to keep startup validation consistent.
 
 If you need more examples (tool inputs/outputs, config.yml sample, or CI/build helpers) say which area you want and I will add concrete examples and snippets.
+
+## Quick Start
+
+```bash
+cd search-ability
+npm install
+kadi install
+kadi run start
+```
+
+## Tools
+
+<!-- TODO: Add Tools content -->
+
+## Configuration
+
+### agent.json
+
+| Field | Value |
+|-------|-------|
+| **Version** | 0.1.1 |
+| **Type** | N/A |
+| **Entrypoint** | `dist/index.js` |
+
+### Abilities
+
+- `secret-ability` ^0.9.0
+
+### Brokers
+
+- **default**: `wss://broker.kadi.build/kadi`
+- **local**: `ws://localhost:8080/kadi`
+
+## Architecture
+
+<!-- TODO: Add Architecture content -->
+
+## Development
+
+```bash
+npm install
+npm run build
+kadi run start
+```

@@ -521,3 +521,25 @@ MIT © KADI Framework
 ---
 
 **Built with ❤️ by the KADI team**
+
+## Tools
+
+<!-- TODO: Add Tools content -->
+
+## Configuration
+
+### agent.json
+
+| Field | Value |
+|-------|-------|
+| **Version** | 0.2.0 |
+| **Type** | N/A |
+| **Entrypoint** | `index.js` |
+
+## Development
+
+```bash
+npm install
+npm run build
+kadi run start
+```

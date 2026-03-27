@@ -145,3 +145,38 @@ License
 - Check your repository root for a LICENSE file. If none exists, coordinate with your organization to add an appropriate license.
 
 This README provides the essential information to run, configure, and extend the ability-file-local kadi-ability. For implementation details, see index.ts and the helper modules in the repository.
+
+## Quick Start
+
+```bash
+cd ability-file-local
+npm install
+kadi install
+kadi run start
+```
+
+## Tools
+
+<!-- TODO: Add Tools content -->
+
+## Configuration
+
+### agent.json
+
+| Field | Value |
+|-------|-------|
+| **Version** | 1.0.0 |
+| **Type** | N/A |
+| **Entrypoint** | `index.ts` |
+
+## Architecture
+
+<!-- TODO: Add Architecture content -->
+
+## Development
+
+```bash
+npm install
+npm run build
+kadi run start
+```

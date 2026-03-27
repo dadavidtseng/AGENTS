@@ -176,3 +176,38 @@ Notes
 - The code uses the built output dist/index.js as the published entrypoint; ensure you run the build step prior to running the start script.
 
 If you need an example of invoking a specific tool or a recommended config file for a particular remote provider, tell me which provider (S3/Git/HTTP) and I’ll add a concrete example.
+
+## Quick Start
+
+```bash
+cd secret-ability
+npm install
+kadi install
+kadi run start
+```
+
+## Tools
+
+<!-- TODO: Add Tools content -->
+
+## Configuration
+
+### agent.json
+
+| Field | Value |
+|-------|-------|
+| **Version** | 0.9.3 |
+| **Type** | ability |
+| **Entrypoint** | `dist/index.js` |
+
+## Architecture
+
+<!-- TODO: Add Architecture content -->
+
+## Development
+
+```bash
+npm install
+npm run build
+kadi run start
+```

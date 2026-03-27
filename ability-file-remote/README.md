@@ -154,3 +154,38 @@ Notes and constraints
 License and support
 - See the repository root for license and contribution guidelines.
 - For issues related to Kadi integration, consult the Kadi documentation and the @kadi.build/core package.
+
+## Quick Start
+
+```bash
+cd ability-file-remote
+npm install
+kadi install
+kadi run start
+```
+
+## Tools
+
+<!-- TODO: Add Tools content -->
+
+## Configuration
+
+### agent.json
+
+| Field | Value |
+|-------|-------|
+| **Version** | 1.0.0 |
+| **Type** | N/A |
+| **Entrypoint** | `index.ts` |
+
+## Architecture
+
+<!-- TODO: Add Architecture content -->
+
+## Development
+
+```bash
+npm install
+npm run build
+kadi run start
+```

@@ -151,3 +151,45 @@ Helpful notes:
   - brokers.default: ws://localhost:8080/kadi
 
 If you need to adapt provider credentials or add new handlers, implement them under src/handlers and wire them into src/index.ts using the same pattern as setupTaskReceptionHandler, setupTaskVerificationHandler, setupPrWorkflowHandler, and setupQuestCleanupHandler.
+
+## Quick Start
+
+```bash
+cd agent-lead
+npm install
+kadi install
+kadi run start
+```
+
+## Tools
+
+<!-- TODO: Add Tools content -->
+
+## Configuration
+
+### agent.json
+
+| Field | Value |
+|-------|-------|
+| **Version** | 0.2.0 |
+| **Type** | N/A |
+
+### Abilities
+
+- `secret-ability` ^0.9.3
+
+### Brokers
+
+- **default**: `ws://localhost:8080/kadi`
+
+## Architecture
+
+<!-- TODO: Add Architecture content -->
+
+## Development
+
+```bash
+npm install
+npm run build
+kadi run start
+```
