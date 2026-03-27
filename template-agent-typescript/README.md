@@ -998,3 +998,33 @@ Built on the **KĀDI (Knowledge Agent Development Infrastructure)** protocol, en
 ---
 
 **Ready to enhance your agent?** See the deployment guide to get started! 🚀
+
+## Quick Start
+
+```bash
+cd template-agent-typescript
+npm install
+kadi install
+kadi run start
+```
+
+## Configuration
+
+### agent.json
+
+| Field | Value |
+|-------|-------|
+| **Version** | 1.0.0 |
+| **Type** | N/A |
+
+### Abilities
+
+- `ability-file-management` 1.0.0
+
+## Development
+
+```bash
+npm install
+npm run build
+kadi run start
+```

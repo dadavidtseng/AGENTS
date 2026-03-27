@@ -120,3 +120,12 @@ Built to replace mcp-shrimp-task-manager with:
 ## License
 
 MIT
+
+## Configuration
+
+### agent.json
+
+| Field | Value |
+|-------|-------|
+| **Version** | 0.1.0 |
+| **Type** | N/A |

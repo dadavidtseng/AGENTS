@@ -445,3 +445,29 @@ This project is licensed under the Apache 2.0 License. See the [LICENSE](./LICEN
 <div align="center">
   <p>A Git MCP server for AI agent integration</p>
 </div>
+
+## Quick Start
+
+```bash
+cd mcp-server-git
+npm install
+kadi install
+kadi run start
+```
+
+## Configuration
+
+### agent.json
+
+| Field | Value |
+|-------|-------|
+| **Version** | 0.1.0 |
+| **Type** | N/A |
+
+## Development
+
+```bash
+npm install
+npm run build
+kadi run start
+```
