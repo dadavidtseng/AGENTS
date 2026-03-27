@@ -25,6 +25,7 @@ import {
   BaseAgent,
   type BaseAgentConfig,
   createWorkerAgent,
+  loadVaultCredentials,
   logger,
   MODULE_AGENT,
   timer
@@ -109,17 +110,20 @@ async function main() {
 
   // Validate required environment variables
   const brokerUrl = process.env.KADI_BROKER_URL;
-  const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
-  const modelManagerBaseUrl = process.env.MODEL_MANAGER_BASE_URL;
-  const modelManagerApiKey = process.env.MODEL_MANAGER_API_KEY;
   const dataPath = process.env.DATA_PATH || './data';
+
+  // Load credentials: env vars take priority over vault
+  const vault = await loadVaultCredentials();
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY || vault.ANTHROPIC_API_KEY;
+  const modelManagerBaseUrl = process.env.MODEL_MANAGER_BASE_URL || vault.MODEL_MANAGER_BASE_URL;
+  const modelManagerApiKey = process.env.MODEL_MANAGER_API_KEY || vault.MODEL_MANAGER_API_KEY;
 
   if (!brokerUrl) {
     logger.error(MODULE_AGENT, 'KADI_BROKER_URL environment variable is required', timer.elapsed('main'));
     process.exit(1);
   }
   if (!anthropicApiKey) {
-    logger.error(MODULE_AGENT, 'ANTHROPIC_API_KEY environment variable is required', timer.elapsed('main'));
+    logger.error(MODULE_AGENT, 'ANTHROPIC_API_KEY is required (set in .env or vault)', timer.elapsed('main'));
     process.exit(1);
   }
 
