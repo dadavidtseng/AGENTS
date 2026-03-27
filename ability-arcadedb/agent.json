@@ -8,8 +8,9 @@
     "secret-ability": "^0.9.0"
   },
   "brokers": {
-    "default": "ws://localhost:8080/kadi",
-    "local": "ws://localhost:8080/kadi"
+    "default": "wss://broker.dadavidtseng.info/kadi",
+    "local": "ws://localhost:8080/kadi",
+    "remote": "wss://broker.dadavidtseng.info/kadi"
   },
   "scripts": {
     "preflight": "echo 'Setting up ArcadeDB ability...'",
@@ -18,7 +19,7 @@
   },
   "build": {
     "default": {
-      "image": "arcadedb-ability:0.1.3",
+      "image": "arcadedb-ability:0.1.4",
       "stages": [
         {
           "name": "arcadedb-src",
@@ -48,7 +49,8 @@
         "kadi install kadi-run",
         "kadi install kadi-secret",
         "kadi install",
-        "chmod +x scripts/start-arcadedb.sh"
+        "chmod +x scripts/start-arcadedb.sh",
+        "sed -i 's/\\r$//' scripts/start-arcadedb.sh"
       ],
       "cmd": ["sh", "-c", ". ./scripts/start-arcadedb.sh && kadi run start"]
     }
@@ -59,7 +61,7 @@
       "engine": "docker",
       "services": {
         "agent": {
-          "image": "arcadedb-ability:0.1.3",
+          "image": "arcadedb-ability:0.1.4",
           "command": [
             "sh",
             "-c",
@@ -81,13 +83,19 @@
       "target": "akash",
       "network": "mainnet",
       "deposit": "10",
+      "depositDenom": "uact",
       "services": {
         "agent": {
-          "image": "arcadedb-ability:0.1.3",
+          "image": "docker.io/dadavidtseng/arcadedb-ability:0.1.4",
           "command": [
             "sh",
             "-c",
-            "kadi secret receive --vault arcadedb && . ./scripts/start-arcadedb.sh && kadi run start"
+            ". ./scripts/start-arcadedb.sh && kadi run start"
+          ],
+          "env": [
+            "BROKER_URL=wss://broker.dadavidtseng.info/kadi",
+            "ARCADE_USERNAME=root",
+            "ARCADE_PASSWORD=playwithdata"
           ],
           "expose": [
             { "port": 2480, "as": 80, "to": [{ "global": true }] }
@@ -99,7 +107,7 @@
           },
           "pricing": {
             "amount": "500",
-            "denom": "uakt"
+            "denom": "uact"
           }
         }
       },
