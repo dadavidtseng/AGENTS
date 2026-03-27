@@ -15,13 +15,41 @@ import { KadiClient, z } from '@kadi.build/core';
 dotenv.config();
 
 // ============================================================================
+// Vault Credential Loading
+// ============================================================================
+
+/** Load model-manager credentials from vault via loadNative (graceful degradation) */
+async function loadVaultCredentials(): Promise<{ baseUrl?: string; apiKey?: string }> {
+  try {
+    const tmpClient = new KadiClient({ name: 'vault-loader', version: '1.0.0' });
+    const secrets = await tmpClient.loadNative('secret-ability');
+    const urlResult: any = await secrets.invoke('get', {
+      vault: 'model-manager', key: 'MODEL_MANAGER_BASE_URL',
+    }).catch(() => null);
+    const keyResult: any = await secrets.invoke('get', {
+      vault: 'model-manager', key: 'MODEL_MANAGER_API_KEY',
+    }).catch(() => null);
+    await secrets.disconnect();
+    const loaded = [urlResult?.value, keyResult?.value].filter(Boolean).length;
+    if (loaded > 0) console.log(`[vault] Loaded ${loaded}/2 credentials from "model-manager" vault`);
+    return {
+      baseUrl: urlResult?.value ?? undefined,
+      apiKey: keyResult?.value ?? undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+// ============================================================================
 // Configuration
 // ============================================================================
 
+const _vault = await loadVaultCredentials();
 const MODEL_MANAGER_BASE_URL = (
-  process.env.MODEL_MANAGER_BASE_URL || 'http://localhost:3000'
+  process.env.MODEL_MANAGER_BASE_URL || _vault.baseUrl || 'http://localhost:3000'
 ).replace(/\/$/, '');
-const MODEL_MANAGER_API_KEY = process.env.MODEL_MANAGER_API_KEY || '';
+const MODEL_MANAGER_API_KEY = process.env.MODEL_MANAGER_API_KEY || _vault.apiKey || '';
 const EVAL_MODEL = process.env.EVAL_MODEL || 'gpt-4o';
 const MAX_TOKENS = parseInt(process.env.EVAL_MAX_TOKENS || '4096', 10);
 const TIMEOUT_MS = parseInt(process.env.EVAL_TIMEOUT_MS || '120000', 10);

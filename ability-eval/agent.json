@@ -10,5 +10,8 @@
     "serve": "npx tsx index.ts stdio",
     "serve:broker": "npx tsx index.ts broker",
     "clean": "rm -rf node_modules package-lock.json"
+  },
+  "abilities": {
+    "secret-ability": "^0.9.4"
   }
 }
