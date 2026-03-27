@@ -115,7 +115,6 @@ dist/
 build/
 *.tsbuildinfo
 *.tgz
-package-lock.json
 yarn.lock
 pnpm-lock.yaml
 .cache/
