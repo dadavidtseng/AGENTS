@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { BaseAgent, logger, MODULE_AGENT, timer } from 'agents-library';
+import { BaseAgent, loadVaultCredentials, logger, MODULE_AGENT, timer } from 'agents-library';
 import type { BaseAgentConfig, AgentRole } from 'agents-library';
 import type { KadiClient } from '@kadi.build/core';
 import { setupTaskReceptionHandler } from './handlers/task-reception.js';
@@ -26,60 +26,6 @@ if (!VALID_ROLES.includes(role)) {
 const agentName = `agent-lead-${role}`;
 const networks = ROLE_NETWORKS[role];
 const brokerUrl = process.env.KADI_BROKER_URL ?? 'ws://localhost:8080/kadi';
-
-// ============================================================================
-// BaseAgent Instance
-// ============================================================================
-
-const baseAgentConfig: BaseAgentConfig = {
-  agentId: agentName,
-  agentRole: role as AgentRole,
-  version: '1.0.0',
-  brokerUrl,
-  networks,
-  // LLM provider for intelligent orchestration (optional — falls back to rule-based if unset)
-  ...buildProviderConfig(),
-  // Memory for recalling conflict patterns and merge history
-  memory: {
-    dataPath: process.env.MEMORY_DATA_PATH || './data/memory',
-  },
-};
-
-/** Build provider config from env vars. Model Manager is primary, Anthropic is fallback. */
-function buildProviderConfig(): { provider: BaseAgentConfig['provider'] } | Record<string, never> {
-  const modelManagerBaseUrl = process.env.MODEL_MANAGER_BASE_URL;
-  const modelManagerApiKey = process.env.MODEL_MANAGER_API_KEY;
-  const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
-
-  if (modelManagerBaseUrl && modelManagerApiKey) {
-    return {
-      provider: {
-        modelManagerBaseUrl,
-        modelManagerApiKey,
-        primaryProvider: 'model-manager',
-        ...(anthropicApiKey && {
-          anthropicApiKey,
-          fallbackProvider: 'anthropic',
-        }),
-      },
-    };
-  }
-
-  if (anthropicApiKey) {
-    return {
-      provider: {
-        anthropicApiKey,
-        primaryProvider: 'anthropic',
-      },
-    };
-  }
-
-  return {};
-}
-
-const baseAgent = new BaseAgent(baseAgentConfig);
-/** Convenience alias — used by event handlers registered in later tasks */
-export const client = baseAgent.client;
 
 // ============================================================================
 // Agent Registration & Heartbeat
@@ -147,6 +93,43 @@ async function unregisterAgent(kadiClient: KadiClient, agentId: string): Promise
 }
 
 // ============================================================================
+// Provider Config Builder
+// ============================================================================
+
+/** Build provider config. Model Manager is primary, Anthropic is fallback. */
+function buildProviderConfig(
+  modelManagerBaseUrl?: string,
+  modelManagerApiKey?: string,
+  anthropicApiKey?: string,
+): { provider: BaseAgentConfig['provider'] } | Record<string, never> {
+
+  if (modelManagerBaseUrl && modelManagerApiKey) {
+    return {
+      provider: {
+        modelManagerBaseUrl,
+        modelManagerApiKey,
+        primaryProvider: 'model-manager',
+        ...(anthropicApiKey && {
+          anthropicApiKey,
+          fallbackProvider: 'anthropic',
+        }),
+      },
+    };
+  }
+
+  if (anthropicApiKey) {
+    return {
+      provider: {
+        anthropicApiKey,
+        primaryProvider: 'anthropic',
+      },
+    };
+  }
+
+  return {};
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
@@ -156,10 +139,30 @@ async function main(): Promise<void> {
   logger.info(MODULE_AGENT, `Starting ${agentName}`, timer.elapsed('main'));
   logger.info(MODULE_AGENT, `Networks: ${networks.join(', ')}`, timer.elapsed('main'));
 
+  // Load credentials: env vars take priority over vault
+  const vault = await loadVaultCredentials();
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY || vault.ANTHROPIC_API_KEY;
+  const modelManagerBaseUrl = process.env.MODEL_MANAGER_BASE_URL || vault.MODEL_MANAGER_BASE_URL;
+  const modelManagerApiKey = process.env.MODEL_MANAGER_API_KEY || vault.MODEL_MANAGER_API_KEY;
+
+  // Build BaseAgent config
+  const baseAgentConfig: BaseAgentConfig = {
+    agentId: agentName,
+    agentRole: role as AgentRole,
+    version: '1.0.0',
+    brokerUrl,
+    networks,
+    ...buildProviderConfig(modelManagerBaseUrl, modelManagerApiKey, anthropicApiKey),
+    memory: {
+      dataPath: process.env.MEMORY_DATA_PATH || './data/memory',
+    },
+  };
+
+  const baseAgent = new BaseAgent(baseAgentConfig);
+  const client = baseAgent.client;
+
   await baseAgent.connect();
   logger.info(MODULE_AGENT, `Connected to broker at ${brokerUrl}`, timer.elapsed('main'));
-
-  // TODO: Register event handlers (task 4.10+)
 
   // Task 4.10 + 4.11: Subscribe to quest.tasks_ready and dispatch tasks to workers
   await setupTaskReceptionHandler(client, role, agentName);
@@ -178,7 +181,7 @@ async function main(): Promise<void> {
   const heartbeatInterval = startHeartbeat(client, agentName);
 
   if (baseAgent.providerManager) {
-    const primary = process.env.MODEL_MANAGER_BASE_URL ? 'Model Manager' : 'Anthropic';
+    const primary = modelManagerBaseUrl ? 'Model Manager' : 'Anthropic';
     logger.info(MODULE_AGENT, `LLM orchestration enabled (primary: ${primary})`, timer.elapsed('main'));
   } else {
     logger.warn(MODULE_AGENT, 'No LLM provider configured — using rule-based orchestration only', timer.elapsed('main'));

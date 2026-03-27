@@ -32,7 +32,7 @@
     }
   },
   "abilities": {
-    "secret-ability": "^0.7.0"
+    "secret-ability": "^0.9.3"
   },
   "brokers": {
     "default": "ws://localhost:8080/kadi"
