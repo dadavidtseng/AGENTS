@@ -237,6 +237,7 @@ docs/_build/
 .claude/
 .serena/
 .spec-workflow/
+.play-wright/
 
 # ====================================================================================================
 # NuGet (DaemonEngine dependencies)
