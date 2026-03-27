@@ -1,0 +1,39 @@
+{
+  "name": "ability-backup",
+  "version": "0.1.0",
+  "description": "KADI ability — backup/restore orchestrator for ArcadeDB via broker tools. Supports co-located and distributed topologies.",
+  "type": "ability",
+  "entrypoint": "dist/index.js",
+  "abilities": {
+    "secret-ability": "^0.9.3"
+  },
+  "brokers": {
+    "local": "ws://localhost:8080/kadi"
+  },
+  "scripts": {
+    "setup": "npm install && npm run build",
+    "start": "node dist/index.js",
+    "dev": "npx tsx src/index.ts"
+  },
+  "deploy": {
+    "local": {
+      "target": "local",
+      "engine": "docker",
+      "services": {
+        "backup": {
+          "image": "ability-backup:latest",
+          "command": ["sh", "-c", "kadi secret receive --vault backup && kadi run"],
+          "env": ["NODE_ENV=production", "DASHBOARD_PORT=80"],
+          "expose": [
+            { "port": 80, "as": 8090 }
+          ]
+        }
+      },
+      "secrets": {
+        "vault": "backup",
+        "required": ["KADI_TUNNEL_TOKEN", "DASHBOARD_USERNAME", "DASHBOARD_PASSWORD"],
+        "delivery": "broker"
+      }
+    }
+  }
+}
