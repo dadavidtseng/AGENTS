@@ -24,7 +24,7 @@
     "@kadi.build/core": "^0.9.0",
     "@slack/bolt": "^4.1.0",
     "@slack/web-api": "^7.11.0",
-    "agents-library": "^0.1.0",
+    "agents-library": "file:../agents-library",
     "discord.js": "^14.16.3",
     "dotenv": "^16.4.7",
     "zod": "^3.24.1"
