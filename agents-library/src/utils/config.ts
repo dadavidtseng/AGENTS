@@ -56,7 +56,7 @@ export interface LoadConfigResult {
 /**
  * Walk up from `startDir` to filesystem root looking for config.toml.
  */
-function findConfigFile(startDir: string): string | null {
+export function findConfigFile(startDir: string): string | null {
   let dir = resolve(startDir);
 
   while (true) {
@@ -79,7 +79,7 @@ function findConfigFile(startDir: string): string | null {
 
 type TomlValue = string | number | boolean | string[] | Record<string, unknown>;
 
-function parseSimpleToml(content: string): Record<string, unknown> {
+export function parseSimpleToml(content: string): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   let currentSection = '';
 

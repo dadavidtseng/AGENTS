@@ -32,7 +32,7 @@ import { ProviderManager } from './providers/provider-manager.js';
 import { AnthropicProvider } from './providers/anthropic-provider.js';
 import { ModelManagerProvider } from './providers/model-manager-provider.js';
 import { MemoryService } from './memory/memory-service.js';
-import { logger, MODULE_AGENT } from './utils/logger.js';
+import { logger } from './utils/logger.js';
 import { timer } from './utils/timer.js';
 import type { LLMProvider, ProviderConfig } from './providers/types.js';
 
@@ -162,12 +162,16 @@ export class BaseAgent {
   /** Timer key for this agent's lifetime tracking */
   private readonly timerKey: string;
 
+  /** Module tag for logging (uses agentId instead of generic 'template-agent') */
+  private readonly tag: string;
+
   constructor(config: BaseAgentConfig) {
     this.config = config;
+    this.tag = config.agentId;
     this.timerKey = `base-agent-${config.agentId}`;
     timer.start(this.timerKey);
 
-    logger.info(MODULE_AGENT, `Initializing BaseAgent: ${config.agentId} (role: ${config.agentRole})`, timer.elapsed(this.timerKey));
+    logger.info(this.tag, `Initializing BaseAgent: ${config.agentId} (role: ${config.agentRole})`, timer.elapsed(this.timerKey));
 
     // Build brokers map: 'default' + any additional brokers
     const brokers: Record<string, { url: string; networks?: string[] }> = {
@@ -176,7 +180,7 @@ export class BaseAgent {
     if (config.additionalBrokers) {
       for (const [name, entry] of Object.entries(config.additionalBrokers)) {
         brokers[name] = { url: entry.url, networks: entry.networks };
-        logger.info(MODULE_AGENT, `   Broker '${name}': ${entry.url} [${entry.networks.join(', ')}]`, timer.elapsed(this.timerKey));
+        logger.debug(this.tag, `   Broker '${name}': ${entry.url} [${entry.networks.join(', ')}]`, timer.elapsed(this.timerKey));
       }
     }
 
@@ -191,7 +195,7 @@ export class BaseAgent {
     // Create ProviderManager if configured
     if (config.provider) {
       this.providerManager = this.createProviderManager(config.provider);
-      logger.info(MODULE_AGENT, '   ✅ ProviderManager created', timer.elapsed(this.timerKey));
+      logger.debug(this.tag, '   ✅ ProviderManager created', timer.elapsed(this.timerKey));
     }
 
     // Create MemoryService if configured (requires async initialize() later)
@@ -203,10 +207,10 @@ export class BaseAgent {
         this.providerManager,
         config.agentId,
       );
-      logger.info(MODULE_AGENT, '   ✅ MemoryService created (pending initialization)', timer.elapsed(this.timerKey));
+      logger.debug(this.tag, '   ✅ MemoryService created (pending initialization)', timer.elapsed(this.timerKey));
     }
 
-    logger.info(MODULE_AGENT, `   BaseAgent initialized for ${config.agentId}`, timer.elapsed(this.timerKey));
+    logger.debug(this.tag, `   BaseAgent initialized for ${config.agentId}`, timer.elapsed(this.timerKey));
   }
 
   /**
@@ -217,15 +221,15 @@ export class BaseAgent {
    */
   async connect(): Promise<void> {
     const brokerCount = 1 + Object.keys(this.config.additionalBrokers || {}).length;
-    logger.info(MODULE_AGENT, `Connecting ${this.config.agentId} to ${brokerCount} broker(s)...`, timer.elapsed(this.timerKey));
-    logger.info(MODULE_AGENT, `   Broker 'default': ${this.config.brokerUrl} [${this.config.networks.join(', ')}]`, timer.elapsed(this.timerKey));
+    logger.debug(this.tag, `Connecting ${this.config.agentId} to ${brokerCount} broker(s)...`, timer.elapsed(this.timerKey));
+    logger.debug(this.tag, `   Broker 'default': ${this.config.brokerUrl} [${this.config.networks.join(', ')}]`, timer.elapsed(this.timerKey));
 
     try {
       await this.client.connect();
       this.connected = true;
-      logger.info(MODULE_AGENT, `   ✅ Connected to ${brokerCount} broker(s)`, timer.elapsed(this.timerKey));
+      logger.info(this.tag, `Connected to ${brokerCount} broker(s)`, timer.elapsed(this.timerKey));
     } catch (error: any) {
-      logger.error(MODULE_AGENT, `Failed to connect to broker: ${error.message || String(error)}`, timer.elapsed(this.timerKey), error);
+      logger.error(this.tag, `Failed to connect to broker: ${error.message || String(error)}`, timer.elapsed(this.timerKey), error);
       throw error;
     }
 
@@ -233,10 +237,10 @@ export class BaseAgent {
     if (this.memoryService) {
       try {
         await this.memoryService.initialize();
-        logger.info(MODULE_AGENT, '   ✅ MemoryService initialized', timer.elapsed(this.timerKey));
+        logger.info(this.tag, '   ✅ MemoryService initialized', timer.elapsed(this.timerKey));
       } catch (error: any) {
         // Memory initialization failure is non-fatal — agent can still operate
-        logger.error(MODULE_AGENT, `MemoryService initialization failed (non-fatal): ${error.message || String(error)}`, timer.elapsed(this.timerKey), error);
+        logger.error(this.tag, `MemoryService initialization failed (non-fatal): ${error.message || String(error)}`, timer.elapsed(this.timerKey), error);
       }
     }
   }
@@ -252,12 +256,12 @@ export class BaseAgent {
    */
   registerShutdownHandlers(onBeforeShutdown?: () => Promise<void>): void {
     if (this.shutdownHandlersRegistered) {
-      logger.info(MODULE_AGENT, 'Shutdown handlers already registered, skipping', timer.elapsed(this.timerKey));
+      logger.info(this.tag, 'Shutdown handlers already registered, skipping', timer.elapsed(this.timerKey));
       return;
     }
 
     const shutdownHandler = async (signal: string) => {
-      logger.info(MODULE_AGENT, `${signal} received, shutting down ${this.config.agentId}...`, timer.elapsed(this.timerKey));
+      logger.info(this.tag, `${signal} received, shutting down ${this.config.agentId}...`, timer.elapsed(this.timerKey));
 
       try {
         // Step 1: Agent-specific cleanup
@@ -268,10 +272,10 @@ export class BaseAgent {
         // Step 2: Shutdown base services
         await this.shutdown();
 
-        logger.info(MODULE_AGENT, 'Graceful shutdown complete', timer.elapsed(this.timerKey));
+        logger.info(this.tag, 'Graceful shutdown complete', timer.elapsed(this.timerKey));
         process.exit(0);
       } catch (error: any) {
-        logger.error(MODULE_AGENT, `Error during shutdown: ${error.message || String(error)}`, timer.elapsed(this.timerKey), error);
+        logger.error(this.tag, `Error during shutdown: ${error.message || String(error)}`, timer.elapsed(this.timerKey), error);
         process.exit(1);
       }
     };
@@ -280,7 +284,7 @@ export class BaseAgent {
     process.on('SIGINT', () => shutdownHandler('SIGINT'));
     this.shutdownHandlersRegistered = true;
 
-    logger.info(MODULE_AGENT, 'Shutdown handlers registered (SIGTERM, SIGINT)', timer.elapsed(this.timerKey));
+    logger.info(this.tag, 'Shutdown handlers registered (SIGTERM, SIGINT)', timer.elapsed(this.timerKey));
   }
 
   /**
@@ -290,15 +294,15 @@ export class BaseAgent {
    * via registered signal handlers.
    */
   async shutdown(): Promise<void> {
-    logger.info(MODULE_AGENT, `Shutting down ${this.config.agentId}...`, timer.elapsed(this.timerKey));
+    logger.info(this.tag, `Shutting down ${this.config.agentId}...`, timer.elapsed(this.timerKey));
 
     // Dispose ProviderManager (stops health checks)
     if (this.providerManager) {
       try {
         this.providerManager.dispose();
-        logger.info(MODULE_AGENT, '   ProviderManager disposed', timer.elapsed(this.timerKey));
+        logger.info(this.tag, '   ProviderManager disposed', timer.elapsed(this.timerKey));
       } catch (error: any) {
-        logger.error(MODULE_AGENT, `Error disposing ProviderManager: ${error.message}`, timer.elapsed(this.timerKey));
+        logger.error(this.tag, `Error disposing ProviderManager: ${error.message}`, timer.elapsed(this.timerKey));
       }
     }
 
@@ -306,9 +310,9 @@ export class BaseAgent {
     if (this.memoryService) {
       try {
         this.memoryService.dispose();
-        logger.info(MODULE_AGENT, '   MemoryService disposed', timer.elapsed(this.timerKey));
+        logger.info(this.tag, '   MemoryService disposed', timer.elapsed(this.timerKey));
       } catch (error: any) {
-        logger.error(MODULE_AGENT, `Error disposing MemoryService: ${error.message}`, timer.elapsed(this.timerKey));
+        logger.error(this.tag, `Error disposing MemoryService: ${error.message}`, timer.elapsed(this.timerKey));
       }
     }
 
@@ -317,9 +321,9 @@ export class BaseAgent {
       try {
         await this.client.disconnect();
         this.connected = false;
-        logger.info(MODULE_AGENT, '   Disconnected from broker', timer.elapsed(this.timerKey));
+        logger.info(this.tag, '   Disconnected from broker', timer.elapsed(this.timerKey));
       } catch (error: any) {
-        logger.error(MODULE_AGENT, `Error disconnecting from broker: ${error.message}`, timer.elapsed(this.timerKey));
+        logger.error(this.tag, `Error disconnecting from broker: ${error.message}`, timer.elapsed(this.timerKey));
       }
     }
   }
@@ -385,7 +389,7 @@ export class BaseAgent {
       healthCheckIntervalMs: providerConfig.healthCheckIntervalMs ?? 60000,
     };
 
-    logger.info(MODULE_AGENT, `   Creating ProviderManager: primary=${primaryProvider}, fallback=${fallbackProvider || 'none'}, providers=${providers.length}`, timer.elapsed(this.timerKey));
+    logger.debug(this.tag, `   Creating ProviderManager: primary=${primaryProvider}, fallback=${fallbackProvider || 'none'}, providers=${providers.length}`, timer.elapsed(this.timerKey));
 
     return new ProviderManager(providers, config);
   }

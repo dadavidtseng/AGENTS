@@ -1,41 +1,32 @@
 /**
  * Shared vault credential loader for KĀDI agents.
  *
- * Loads shared credentials (MODEL_MANAGER_BASE_URL, MODEL_MANAGER_API_KEY,
- * ANTHROPIC_API_KEY) from a `secrets.toml` vault via ability-secret's
- * `get` tool (in-process, no broker connection required).
+ * Loads credentials from one or more vaults specified in config.toml:
+ *   [secrets]
+ *   VAULTS = ["anthropic", "model-manager"]
+ *   KEYS = ["ANTHROPIC_API_KEY", "MODEL_MANAGER_BASE_URL", "MODEL_MANAGER_API_KEY"]
  *
- * Follows the same pattern as ability-memory/src/lib/config.ts:loadFromVault().
- * ability-secret v0.9+ has walk-up directory discovery, so it automatically
- * finds secrets.toml in parent directories.
- *
- * Resolution order (implemented by each agent's caller):
- *   process.env  >  vault  >  (no credentials)
- *
- * Prerequisites:
- *   - Agent's agent.json must declare: "abilities": { "secret-ability": "^0.9.0" }
- *   - Run `kadi update secret-ability` to install v0.9+ with walk-up discovery
+ * Falls back to the hardcoded defaults if config.toml is missing or
+ * has no [secrets] section.
  *
  * @module utils/vault
  */
 
+import { readConfig } from './read-config.js';
+
 // ── Constants ────────────────────────────────────────────────────────
 
-const VAULT_NAME = 'model-manager';
-const VAULT_KEYS = [
+const DEFAULT_VAULTS = ['model-manager'];
+const DEFAULT_KEYS = [
   'MODEL_MANAGER_BASE_URL',
   'MODEL_MANAGER_API_KEY',
   'ANTHROPIC_API_KEY',
-] as const;
+];
 const TAG = '[vault]';
 
 // ── Types ────────────────────────────────────────────────────────────
 
-export type VaultCredentials = {
-  MODEL_MANAGER_BASE_URL?: string;
-  MODEL_MANAGER_API_KEY?: string;
-  ANTHROPIC_API_KEY?: string;
-};
+export type VaultCredentials = Record<string, string>;
 
 /** @deprecated Use VaultCredentials instead */
 export type ModelManagerCredentials = VaultCredentials;
@@ -43,11 +34,10 @@ export type ModelManagerCredentials = VaultCredentials;
 // ── Public API ───────────────────────────────────────────────────────
 
 /**
- * Load shared credentials from the nearest `secrets.toml` vault.
+ * Load credentials from configured vaults.
  *
- * Uses `loadNative('secret-ability')` — same pattern as
- * ability-memory/src/lib/config.ts:loadFromVault(). ability-secret v0.9+
- * walks up directories automatically to find secrets.toml.
+ * Reads [secrets] VAULTS and KEYS from config.toml.
+ * For each key, tries each vault in order until found.
  *
  * Returns empty object if vault or secret-ability is unavailable
  * (graceful degradation).
@@ -55,23 +45,35 @@ export type ModelManagerCredentials = VaultCredentials;
 export async function loadVaultCredentials(): Promise<VaultCredentials> {
   const credentials: VaultCredentials = {};
 
+  // Resolve vault names and keys from config.toml
+  let vaultNames: string[];
+  let vaultKeys: string[];
+  try {
+    const cfg = readConfig();
+    vaultNames = cfg.has('secrets.VAULTS') ? cfg.strings('secrets.VAULTS') : DEFAULT_VAULTS;
+    vaultKeys = cfg.has('secrets.KEYS') ? cfg.strings('secrets.KEYS') : DEFAULT_KEYS;
+  } catch {
+    vaultNames = DEFAULT_VAULTS;
+    vaultKeys = DEFAULT_KEYS;
+  }
+
   try {
     const { KadiClient } = await import('@kadi.build/core');
     const tmpClient = new KadiClient({ name: 'vault-loader', version: '1.0.0' });
     const secrets = await tmpClient.loadNative('secret-ability');
 
-    // Same pattern as ability-memory — no configPath, let walk-up discovery find it
-    for (const key of VAULT_KEYS) {
-      try {
-        const result: any = await secrets.invoke('get', {
-          vault: VAULT_NAME,
-          key,
-        });
-        if (result?.value) {
-          credentials[key as keyof VaultCredentials] = result.value;
+    // For each key, try each vault in order until found
+    for (const key of vaultKeys) {
+      for (const vault of vaultNames) {
+        try {
+          const result: any = await secrets.invoke('get', { vault, key });
+          if (result?.value) {
+            credentials[key] = result.value;
+            break; // Found — skip remaining vaults for this key
+          }
+        } catch {
+          // Key not in this vault — try next
         }
-      } catch {
-        // Key not present in vault — skip silently
       }
     }
 
@@ -80,7 +82,7 @@ export async function loadVaultCredentials(): Promise<VaultCredentials> {
     const loaded = Object.keys(credentials).length;
     if (loaded > 0) {
       console.log(
-        `${TAG} Loaded ${loaded}/${VAULT_KEYS.length} credentials from "${VAULT_NAME}" vault`,
+        `${TAG} Loaded ${loaded}/${vaultKeys.length} credentials from vaults: ${vaultNames.join(', ')}`,
       );
     }
   } catch (err: any) {

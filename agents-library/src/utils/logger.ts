@@ -21,15 +21,36 @@
  * @module logger
  */
 
+// ── Log level filtering ──────────────────────────────────────────────
+
+const LEVELS: Record<string, number> = { debug: 0, info: 1, warn: 2, error: 3 };
+let currentLevel = LEVELS.info;
+
+/**
+ * Set the minimum log level. Messages below this level are suppressed.
+ * Hierarchy: debug < info < warn < error
+ */
+export function setLogLevel(level: string): void {
+  currentLevel = LEVELS[level.toLowerCase()] ?? LEVELS.info;
+}
+
 /**
  * Module name constants for structured logging
  * All use kebab-case for consistency with KĀDI naming conventions
  */
-export const MODULE_AGENT = 'template-agent' as const;
+export let MODULE_AGENT = 'template-agent' as string;
 export const MODULE_SLACK_BOT = 'slack-bot' as const;
 export const MODULE_DISCORD_BOT = 'discord-bot' as const;
 export const MODULE_TASK_HANDLER = 'task-handler' as const;
 export const MODULE_TOOLS = 'tools' as const;
+
+/**
+ * Set the MODULE_AGENT tag to the agent's ID.
+ * Call once at startup so all files importing MODULE_AGENT get the right name.
+ */
+export function setAgentTag(name: string): void {
+  MODULE_AGENT = name;
+}
 
 /**
  * ANSI Color Codes for Terminal Output
@@ -132,6 +153,7 @@ class Logger {
      * @param data - Optional data to log (will be logged on separate line)
      */
     info(module: string, message: string, elapsedTime: string, data?: any): void {
+        if (currentLevel > LEVELS.info) return;
         console.log(this.formatMessage(module, 'Info', message, elapsedTime, COLORS.CYAN));
         if (data) {
             console.log(data);
@@ -149,6 +171,7 @@ class Logger {
      * @param data - Optional data to log
      */
     warn(module: string, message: string, elapsedTime: string, data?: any): void {
+        if (currentLevel > LEVELS.warn) return;
         console.warn(this.formatMessage(module, 'Warning', message, elapsedTime, COLORS.YELLOW));
         if (data) {
             console.warn(data);
@@ -167,6 +190,7 @@ class Logger {
      * @param data - Optional additional data to log
      */
     error(module: string, message: string, elapsedTime: string, error?: Error | string, data?: any): void {
+        if (currentLevel > LEVELS.error) return;
         console.error(this.formatMessage(module, 'Error', message, elapsedTime, COLORS.RED));
 
         if (error instanceof Error) {
@@ -195,6 +219,7 @@ class Logger {
      * @param data - Optional data to log
      */
     debug(module: string, message: string, elapsedTime: string, data?: any): void {
+        if (currentLevel > LEVELS.debug) return;
         console.log(this.formatMessage(module, 'Debug', message, elapsedTime, COLORS.GRAY));
         if (data) {
             console.log(data);
