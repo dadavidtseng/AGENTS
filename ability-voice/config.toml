@@ -1,0 +1,18 @@
+# Ability Voice Configuration
+
+[broker.local]
+URL = "ws://localhost:8080/kadi"
+NETWORKS = ["voice"]
+MODE = "native"
+
+[whisper]
+MODEL = "base"
+
+[piper]
+VOICE = "en_US-lessac-medium"
+
+[wake]
+WORD = "hey kadi"
+VAD_AGGRESSIVENESS = 3
+SILENCE_TIMEOUT_MS = 1500
+MAX_RECORDING_SECONDS = 30

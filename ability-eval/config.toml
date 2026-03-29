@@ -1,0 +1,10 @@
+# Ability Eval Configuration
+
+[broker.local]
+URL = "ws://localhost:8080/kadi"
+NETWORKS = ["eval"]
+MODE = "native"
+
+[model]
+EVAL_MODEL = "claude-sonnet-4-20250514"
+MAX_TOKENS = 4096

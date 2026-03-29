@@ -1,0 +1,17 @@
+# Agent Quest Configuration
+# Secrets go in secrets.toml (encrypted vault)
+
+[server]
+PORT = 8888
+CORS_ORIGINS = "http://localhost:5173"
+
+[broker.local]
+URL = "ws://localhost:8080/kadi"
+NETWORKS = ["quest", "global"]
+
+[broker.remote]
+URL = "wss://broker.dadavidtseng.info/kadi"
+NETWORKS = ["global"]
+
+[data]
+QUEST_DATA_PATH = "/mnt/c/GitHub/mcp-server-quest/.quest-data"

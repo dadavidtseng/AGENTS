@@ -1,0 +1,16 @@
+# Agent Shadow Worker Configuration
+# Secrets go in secrets.toml (encrypted vault)
+
+[broker.local]
+URL = "ws://localhost:8080/kadi"
+NETWORKS = ["git", "qa", "file"]
+
+[broker.remote]
+URL = "wss://broker.dadavidtseng.info/kadi"
+NETWORKS = ["global"]
+
+[worktree]
+WORKER_PATH = "C:/GitHub/agent-playground-artist"
+SHADOW_PATH = "C:/GitHub/shadow-agent-playground-artist"
+WORKER_BRANCH = "agent-playground-artist"
+SHADOW_BRANCH = "shadow-agent-playground-artist"

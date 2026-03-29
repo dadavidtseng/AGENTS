@@ -1,0 +1,19 @@
+# Agent Worker Configuration
+# Secrets go in secrets.toml (encrypted vault)
+
+[broker.local]
+URL = "ws://localhost:8080/kadi"
+NETWORKS = ["programmer", "git", "qa", "file", "utility", "quest", "global"]
+
+[broker.remote]
+URL = "wss://broker.dadavidtseng.info/kadi"
+NETWORKS = ["global"]
+
+[agent]
+ROLE = "programmer"
+
+[model]
+MANAGER_BASE_URL = ""
+
+[data]
+PATH = "./data"

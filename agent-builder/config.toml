@@ -1,0 +1,21 @@
+# Agent Builder Configuration
+
+[broker.local]
+URL = "ws://localhost:8080/kadi"
+NETWORKS = ["utility", "deploy", "git", "file"]
+
+[broker.remote]
+URL = "wss://broker.dadavidtseng.info/kadi"
+NETWORKS = ["utility"]
+
+[build]
+MSBUILD_PATH = "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe"
+SOLUTION_PATH = "C:/GitHub/DaemonAgent/DaemonAgent.sln"
+CONFIGURATION = "Debug"
+PLATFORM = "x64"
+
+[game]
+EXE_PATH = "C:/GitHub/DaemonAgent/Run/DaemonAgent_Debug_x64.exe"
+WORKING_DIR = "C:/GitHub/DaemonAgent/Run"
+READY_TIMEOUT_MS = 30000
+KILL_TIMEOUT_MS = 5000

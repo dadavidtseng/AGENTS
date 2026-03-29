@@ -1,0 +1,11 @@
+# Ability File Remote Configuration
+
+[broker.local]
+URL = "ws://localhost:8080/kadi"
+NETWORKS = ["file"]
+MODE = "native"
+
+[tunnel]
+SERVICE = "kadi"
+FALLBACK_SERVICES = ["ssh", "frpc"]
+AUTO_FALLBACK = true

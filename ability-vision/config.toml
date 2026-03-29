@@ -1,0 +1,12 @@
+# Ability Vision Configuration
+# Secrets go in secrets.toml (encrypted vault)
+
+[broker.local]
+URL = "ws://localhost:8080/kadi"
+NETWORKS = ["vision"]
+MODE = "native"
+
+[model]
+MANAGER_BASE_URL = ""
+VISION_MODEL = "claude-sonnet-4-20250514"
+MAX_TOKENS = 4096

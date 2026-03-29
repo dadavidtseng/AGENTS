@@ -1,0 +1,35 @@
+# Ability Tunnel Configuration
+# Secrets go in secrets.toml (encrypted vault)
+
+[broker.local]
+URL = "ws://localhost:8080/kadi"
+NETWORKS = ["infra"]
+MODE = "native"
+
+[tunnel]
+DEFAULT_PORT = 3000
+DEFAULT_MODE = "kadi"
+TIMEOUT_MS = 30000
+MAX_CONCURRENT = 5
+AUTO_RECONNECT = true
+MAX_RECONNECT_ATTEMPTS = 3
+RECONNECT_DELAY_MS = 5000
+
+[tunnel.kadi]
+SERVER = "tunnel.kadi.build"
+SSH_PORT = 2222
+DOMAIN = ""
+TRANSPORT = "wss"
+WSS_HOST = ""
+AGENT_ID = ""
+CONTROL_API_URL = ""
+
+[tunnel.ssh]
+HOST = ""
+PORT = 22
+USER = ""
+KEY_PATH = ""
+
+[tunnel.frpc]
+SERVER_ADDR = ""
+SERVER_PORT = 7000

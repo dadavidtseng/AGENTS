@@ -1,0 +1,16 @@
+# Agent Lead Configuration
+# Secrets go in secrets.toml (encrypted vault)
+
+[broker.local]
+URL = "ws://localhost:8080/kadi"
+NETWORKS = ["producer", "programmer", "git", "qa", "quest", "file", "global"]
+
+[broker.remote]
+URL = "wss://broker.dadavidtseng.info/kadi"
+NETWORKS = ["global"]
+
+[agent]
+ROLE = "programmer"
+
+[repo]
+PATH = "/mnt/c/GitHub/agent-playground"

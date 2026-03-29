@@ -1,0 +1,27 @@
+# Agent Chatbot Configuration
+# Secrets go in secrets.toml (encrypted vault)
+
+[broker.local]
+URL = "wss://broker.dadavidtseng.info/kadi"
+NETWORKS = ["text"]
+
+[broker.remote]
+URL = "wss://broker.dadavidtseng.info/kadi"
+NETWORKS = ["text"]
+
+[bot.discord]
+ENABLED = true
+USER_ID = "1438685741751210025"
+GUILD_ID = ""
+
+[bot.slack]
+ENABLED = true
+USER_ID = "U09SCDV78AK"
+HTTP_PORT = 3700
+
+[logging]
+LEVEL = "info"
+
+[secrets]
+VAULTS = ["chatbot"]
+KEYS = ["DISCORD_TOKEN", "SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET"]
