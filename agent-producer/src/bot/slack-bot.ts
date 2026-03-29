@@ -19,7 +19,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import type { KadiClient } from '@kadi.build/core';
-import { BaseBot, logger, MODULE_SLACK_BOT, timer } from 'agents-library';
+import { BaseBot, logger, MODULE_SLACK_BOT, timer, readConfig } from 'agents-library';
 import type { Message, ProviderError } from 'agents-library';
 import type { MemoryError } from 'agents-library';
 import { SlackMentionEventSchema } from '../types/slack-events.js';
@@ -298,8 +298,10 @@ export class SlackBot extends BaseBot {
       ];
 
       // Step 3: Detect model from message using regex /\[([^\]]+)\]/
+      const _cfg = readConfig();
+      const defaultModel = _cfg.string('provider.model-manager.MODEL');
       const modelMatch = mention.text.match(/\[([^\]]+)\]/);
-      const detectedModel = modelMatch ? modelMatch[1] : 'gpt-5-mini';
+      const detectedModel = modelMatch ? modelMatch[1] : defaultModel;
 
       logger.info(MODULE_SLACK_BOT, `Model: ${detectedModel}${modelMatch ? ' (from message)' : ' (default)'}`, timer.elapsed('main'));
 
@@ -308,8 +310,7 @@ export class SlackBot extends BaseBot {
       const openaiTools = this.convertToolsToOpenAIFormat(anthropicTools);
 
       // Log tool count for debugging
-      logger.info(MODULE_SLACK_BOT, `Tools being sent to LLM (${openaiTools.length} total)`, timer.elapsed('main'));
-      logger.info(MODULE_SLACK_BOT, `Passing ${openaiTools.length} tools to LLM`, timer.elapsed('main'));
+      logger.debug(MODULE_SLACK_BOT, `Tools being sent to LLM (${openaiTools.length} total)`, timer.elapsed('main'));
 
       // Step 5: Tool calling loop - keep calling until we get a final text response
       let maxIterations = 15;
@@ -320,12 +321,12 @@ export class SlackBot extends BaseBot {
       while (iteration < maxIterations && !finalResponse) {
         iteration++;
 
-        logger.info(MODULE_SLACK_BOT, `=== Iteration ${iteration} ===`, timer.elapsed('main'));
-        logger.info(MODULE_SLACK_BOT, `Sending ${messages.length} messages to LLM with model: ${detectedModel || 'default'}${toolsExecuted ? ' (tools disabled - already executed)' : ''}`, timer.elapsed('main'));
+        logger.debug(MODULE_SLACK_BOT, `=== Iteration ${iteration} ===`, timer.elapsed('main'));
+        logger.debug(MODULE_SLACK_BOT, `Sending ${messages.length} messages to LLM with model: ${detectedModel || 'default'}${toolsExecuted ? ' (tools disabled - already executed)' : ''}`, timer.elapsed('main'));
 
         // Log message roles for debugging
         const msgSummary = messages.map(m => `${m.role}${m.tool_call_id ? `(tool:${m.tool_call_id.substring(0,8)})` : ''}`).join(', ');
-        logger.info(MODULE_SLACK_BOT, `Message roles: [${msgSummary}]`, timer.elapsed('main'));
+        logger.debug(MODULE_SLACK_BOT, `Message roles: [${msgSummary}]`, timer.elapsed('main'));
 
         // Generate response using ProviderManager
         // IMPORTANT: Use non-streaming when tools are present (streaming doesn't support tool calls)
@@ -335,7 +336,7 @@ export class SlackBot extends BaseBot {
 
         if (hasTools) {
           // Non-streaming mode for tool calls
-          logger.info(MODULE_SLACK_BOT, `Using NON-STREAMING mode (tools present)`, timer.elapsed('main'));
+          logger.debug(MODULE_SLACK_BOT, `Using NON-STREAMING mode (tools present)`, timer.elapsed('main'));
 
           const result = await this.providerManager.chat(messages, {
             model: detectedModel,
@@ -361,10 +362,10 @@ export class SlackBot extends BaseBot {
           }
 
           botResponse = result.data;
-          logger.info(MODULE_SLACK_BOT, `Non-streaming response complete (${botResponse.length} chars)`, timer.elapsed('main'));
+          logger.debug(MODULE_SLACK_BOT, `Non-streaming response complete (${botResponse.length} chars)`, timer.elapsed('main'));
         } else {
           // Streaming mode for final text responses
-          logger.info(MODULE_SLACK_BOT, `Using STREAMING mode (no tools)`, timer.elapsed('main'));
+          logger.debug(MODULE_SLACK_BOT, `Using STREAMING mode (no tools)`, timer.elapsed('main'));
 
           const streamResult = await this.providerManager.streamChat(messages, {
             model: detectedModel,
@@ -392,7 +393,7 @@ export class SlackBot extends BaseBot {
             for await (const chunk of streamResult.data) {
               botResponse += chunk;
             }
-            logger.info(MODULE_SLACK_BOT, `Streamed response complete (${botResponse.length} chars)`, timer.elapsed('main'));
+            logger.debug(MODULE_SLACK_BOT, `Streamed response complete (${botResponse.length} chars)`, timer.elapsed('main'));
           } catch (streamError: any) {
             logger.error(MODULE_SLACK_BOT, `Stream error: ${streamError.message}`, timer.elapsed('main'));
             await this.sendSlackReply(mention.channel, mention.thread_ts, 'Sorry, the response stream was interrupted.');
@@ -418,8 +419,8 @@ export class SlackBot extends BaseBot {
           for (const toolCall of toolCallData.toolCalls) {
             const toolResult = await this.executeToolCall(toolCall, mention);
 
-            logger.info(MODULE_SLACK_BOT, `Tool ${toolCall.function.name} result: ${toolResult.substring(0, 200)}...`, timer.elapsed('main'));
-            logger.info(MODULE_SLACK_BOT, `Tool call ID: ${toolCall.id}`, timer.elapsed('main'));
+            logger.debug(MODULE_SLACK_BOT, `Tool ${toolCall.function.name} result: ${toolResult.substring(0, 200)}...`, timer.elapsed('main'));
+            logger.debug(MODULE_SLACK_BOT, `Tool call ID: ${toolCall.id}`, timer.elapsed('main'));
 
             // Check if tool result indicates task completion
             const isTaskComplete = this.checkToolResultForCompletion(toolResult);
@@ -456,19 +457,19 @@ export class SlackBot extends BaseBot {
             });
           }
 
-          logger.info(MODULE_SLACK_BOT, `Messages array now has ${messages.length} messages, continuing to iteration ${iteration + 1}`, timer.elapsed('main'));
+          logger.debug(MODULE_SLACK_BOT, `Messages array now has ${messages.length} messages, continuing to iteration ${iteration + 1}`, timer.elapsed('main'));
 
           // Continue loop - tools will be disabled in next iteration if toolsExecuted is true
           continue;
         }
 
         // No tool calls - this is the final text response
-        logger.info(MODULE_SLACK_BOT, `Received final text response (no tool calls), breaking loop`, timer.elapsed('main'));
+        logger.debug(MODULE_SLACK_BOT, `Received final text response (no tool calls), breaking loop`, timer.elapsed('main'));
         finalResponse = botResponse;
         break;
       }
 
-      logger.info(MODULE_SLACK_BOT, `Completed iteration ${iteration}, maxIterations: ${maxIterations}, finalResponse: ${finalResponse ? 'YES' : 'NO'}`, timer.elapsed('main'));
+      logger.debug(MODULE_SLACK_BOT, `Completed iteration ${iteration}, maxIterations: ${maxIterations}, finalResponse: ${finalResponse ? 'YES' : 'NO'}`, timer.elapsed('main'));
 
       // Check if we got a final response
       if (!finalResponse) {

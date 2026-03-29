@@ -13,15 +13,16 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { KadiClient } from '@kadi.build/core';
 import type { Message, ProviderError } from 'agents-library';
-import { logger, MODULE_AGENT, timer } from 'agents-library';
+import { logger, MODULE_AGENT, timer, readConfig } from 'agents-library';
 import { QUEST_WORKFLOW_SYSTEM_PROMPT } from '../prompts/quest-workflow.js';
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-/** Default model used when no model is specified */
-const DEFAULT_MODEL = 'gpt-5-mini';
+/** Default model resolved from config.toml [provider.model-manager] MODEL */
+const _cfg = readConfig();
+const DEFAULT_MODEL = _cfg.string('provider.model-manager.MODEL');
 
 // ============================================================================
 // Types

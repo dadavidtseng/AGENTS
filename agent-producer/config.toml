@@ -3,24 +3,45 @@
 # Secrets go in secrets.toml (encrypted vault)
 # .env is optional override only (not committed)
 
-[broker]
-url = "ws://localhost:8080/kadi"
-networks = ["producer", "quest", "text", "vision", "file", "global"]
+[agent]
+ID = "agent-producer"
+ROLE = "producer"
+VERSION = "0.3.0"
+
+[logging]
+LEVEL = "debug"
+
+[broker.local]
+URL = "ws://localhost:8080/kadi"
+NETWORKS = ["global", "text"]
 
 [broker.remote]
-url = "wss://broker.dadavidtseng.info/kadi"
-networks = ["global"]
+URL = "wss://broker.dadavidtseng.info/kadi"
+NETWORKS = ["global", "text"]
 
 [bot]
-tool_timeout_ms = 10000
+TOOL_TIMEOUT_MS = 10000
 
 [bot.slack]
-enabled = true
-user_id = "U09SCDV78AK"
+ENABLED = true
+USER_ID = "U09SCDV78AK"
 
 [bot.discord]
-enabled = true
-user_id = "1438685741751210025"
+ENABLED = true
+USER_ID = "1438685741751210025"
 
 [memory]
-data_path = "./data/memory"
+DATA_PATH = "./data/memory"
+
+[secrets]
+VAULTS = ["anthropic", "model-manager"]
+
+[provider]
+PRIMARY = "model-manager"
+FALLBACK = "anthropic"
+
+[provider.model-manager]
+MODEL = "gpt-5-mini"
+
+[provider.anthropic]
+MODEL = "claude-haiku-4-5-20251001"

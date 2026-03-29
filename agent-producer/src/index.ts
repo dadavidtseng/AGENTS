@@ -31,302 +31,235 @@
  */
 
 import 'dotenv/config';
-import {BaseAgent, loadVaultCredentials, loadConfig, logger, MODULE_AGENT, timer} from 'agents-library';
+import {BaseAgent, loadVaultCredentials, readConfig, setLogLevel, setAgentTag, logger, timer} from 'agents-library';
 import type {BaseAgentConfig} from 'agents-library';
-
-// Load config.toml (walk-up discovery) — env vars from .env take precedence
-loadConfig();
-
 import {registerAllTools, injectOrchestrator} from './tools/index.js';
+import {subscribeToTaskRejections} from './tools/task-execution.js';
+
+const cfg = readConfig();
 
 // ============================================================================
-// Tool Schemas (Imported from tool modules)
+// Agent identity + logging
 // ============================================================================
 
-// planTaskInputSchema, planTaskOutputSchema - imported from ./tools/plan-task.js
-// listActiveTasksInputSchema, listActiveTasksOutputSchema - imported from ./tools/list-tasks.js
-// getTaskStatusInputSchema, getTaskStatusOutputSchema - imported from ./tools/task-status.js
-// assignTaskInputSchema, assignTaskOutputSchema - imported from ./tools/assign-task.js
+const agentId = cfg.string('agent.ID');
+const agentRole = cfg.string('agent.ROLE');
+const agentVersion = cfg.string('agent.VERSION');
+const logLevel = cfg.has('logging.LEVEL') ? cfg.string('logging.LEVEL') : 'info';
+setLogLevel(logLevel);
+setAgentTag(agentId);
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
-const brokerUrl = process.env.KADI_BROKER_URL || 'ws://localhost:8080';
-const networks = (process.env.KADI_NETWORK || 'producer,quest,text').split(',');
+// Primary broker (local)
+const brokerUrl = process.env.KADI_BROKER_URL_LOCAL ?? cfg.string('broker.local.URL');
+const networks = process.env.KADI_NETWORK_LOCAL?.split(',') ?? cfg.strings('broker.local.NETWORKS');
 
-// Optional second broker for multi-broker connectivity
-const remoteBrokerUrl = process.env.KADI_BROKER_URL_2;
-const remoteBrokerNetworks = (process.env.KADI_NETWORK_2 || 'global').split(',');
+// Remote broker
+const remoteBrokerUrl = process.env.KADI_BROKER_URL_REMOTE ?? cfg.string('broker.remote.URL');
+const remoteBrokerNetworks = process.env.KADI_NETWORK_REMOTE?.split(',') ?? cfg.strings('broker.remote.NETWORKS');
 
-/**
- * Whether LLM-dependent features (bots, orchestrator, task handlers) are enabled.
- * Requires a valid ANTHROPIC_API_KEY in environment.
- */
-// Load credentials: env vars take priority over vault
-const _vault = await loadVaultCredentials();
-const _anthropicApiKey = process.env.ANTHROPIC_API_KEY || _vault.ANTHROPIC_API_KEY;
-const _modelManagerBaseUrl = process.env.MODEL_MANAGER_BASE_URL || _vault.MODEL_MANAGER_BASE_URL;
-const _modelManagerApiKey = process.env.MODEL_MANAGER_API_KEY || _vault.MODEL_MANAGER_API_KEY;
+// Credentials: env vars take priority over vault
+const vault = await loadVaultCredentials();
+const anthropicApiKey = process.env.ANTHROPIC_API_KEY || vault.ANTHROPIC_API_KEY;
+const modelManagerBaseUrl = process.env.MODEL_MANAGER_BASE_URL || vault.MODEL_MANAGER_BASE_URL;
+const modelManagerApiKey = process.env.MODEL_MANAGER_API_KEY || vault.MODEL_MANAGER_API_KEY;
 
-const llmEnabled = !!(_anthropicApiKey && _anthropicApiKey !== 'YOUR_ANTHROPIC_API_KEY_HERE');
+const llmEnabled = !!(anthropicApiKey && anthropicApiKey !== 'YOUR_ANTHROPIC_API_KEY_HERE');
 
 // ============================================================================
 // BaseAgent Instance
 // ============================================================================
 
-/**
- * BaseAgent provides shared infrastructure:
- * - KadiClient for broker communication
- * - ProviderManager for LLM access (if configured)
- * - MemoryService for persistent memory (if configured)
- * - Graceful shutdown handling (SIGTERM/SIGINT)
- */
 const baseAgentConfig: BaseAgentConfig = {
-  agentId: 'agent-producer',
-  agentRole: 'producer',
-  version: '1.0.0',
+  agentId,
+  agentRole,
+  version: agentVersion,
   brokerUrl,
   networks,
-  ...(remoteBrokerUrl && {
-    additionalBrokers: {
-      remote: { url: remoteBrokerUrl, networks: remoteBrokerNetworks },
-    },
-  }),
+  additionalBrokers: {
+    remote: { url: remoteBrokerUrl, networks: remoteBrokerNetworks },
+  },
   ...(llmEnabled && {
     provider: {
-      anthropicApiKey: _anthropicApiKey!,
-      ...(_modelManagerBaseUrl && _modelManagerApiKey && {
-        modelManagerBaseUrl: _modelManagerBaseUrl,
-        modelManagerApiKey: _modelManagerApiKey,
+      anthropicApiKey: anthropicApiKey!,
+      ...(modelManagerBaseUrl && modelManagerApiKey && {
+        modelManagerBaseUrl,
+        modelManagerApiKey,
       }),
-      primaryProvider: (_modelManagerBaseUrl && _modelManagerApiKey) ? 'model-manager' : 'anthropic',
-      fallbackProvider: (_modelManagerBaseUrl && _modelManagerApiKey) ? 'anthropic' : undefined,
+      primaryProvider: cfg.string('provider.PRIMARY'),
+      fallbackProvider: cfg.has('provider.FALLBACK') ? cfg.string('provider.FALLBACK') : undefined,
       retryAttempts: 3,
       retryDelayMs: 1000,
       healthCheckIntervalMs: 60000,
     },
     memory: {
-      dataPath: process.env.MEMORY_DATA_PATH || './data/memory',
+      dataPath: process.env.MEMORY_DATA_PATH ?? cfg.string('memory.DATA_PATH'),
     },
   }),
 };
 
 const baseAgent = new BaseAgent(baseAgentConfig);
-
-/** Convenience alias — used by tool registrations and event handlers */
 const client = baseAgent.client;
 
 // ============================================================================
 // Channel Context Tracking
 // ============================================================================
 
-/**
- * Maps task IDs to their originating channel context
- * Used to send notifications back to the channel where the task was assigned
- */
+/** Maps task IDs to their originating channel context for reply routing */
 export const taskChannelMap = new Map<string, {
     type: 'slack' | 'discord' | 'desktop';
     channelId?: string;
     userId?: string;
-    threadTs?: string; // Slack thread timestamp for replying in thread
+    threadTs?: string;
 }>();
 
 // ============================================================================
-// Custom Tool Registry
+// Tool Registration
 // ============================================================================
-//
-// Tools are registered via the src/tools/ directory and toolRegistry.
-// See registerAllTools(client) call below.
-//
-// For more information on adding custom tools, see src/tools/index.ts
-//
-// Build broker networks map for per-tool scoping
+
 const brokerNetworksMap: Record<string, string[]> = {
   default: networks,
+  remote: remoteBrokerNetworks,
 };
-if (remoteBrokerUrl) {
-  brokerNetworksMap.remote = remoteBrokerNetworks;
-}
 registerAllTools(client, brokerNetworksMap);
 
-// Task rejection subscription is set up in main() after broker connection
-import { subscribeToTaskRejections } from './tools/task-execution.js';
-
-
-
 // ============================================================================
-// Bot Instance Tracking
+// Bot Instances (initialized in main after broker connection)
 // ============================================================================
 
-/**
- * Track bot instances for graceful shutdown
- * These are initialized after broker connection in main()
- */
 let slackBot: any = null;
 let discordBot: any = null;
 
-// gracefulShutdown is now handled by BaseAgent.registerShutdownHandlers()
-
-// ============================================================================
-// Main Application Entry Point
-// ============================================================================
-
 /**
- * Main application entry point
- * Connects to KĀDI broker and starts serving tools
+ * Resolve a boolean toggle from env var (string) with config.toml fallback.
+ * Env var presence takes priority; if absent, reads from config.toml.
  */
-async function main() {
-    // Start main timer for application lifetime tracking
+function envBoolOrConfig(envVar: string | undefined, configKey: string): boolean {
+    if (envVar !== undefined) return envVar === 'true';
+    return cfg.bool(configKey);
+}
+
+/** Gracefully stop a bot instance, swallowing errors. */
+async function stopBot(bot: any, name: string): Promise<void> {
+    if (!bot) return;
+    logger.info(agentId, `Stopping ${name} bot...`, timer.elapsed('main'));
+    try {
+        if (typeof bot.stop === 'function') await bot.stop();
+    } catch (error) {
+        logger.error(agentId, `Error stopping ${name} bot`, '+0ms', error as Error | string);
+    }
+}
+
+// ============================================================================
+// Main
+// ============================================================================
+
+async function main(): Promise<void> {
     timer.start('main');
 
     try {
-        logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('main'));
-        logger.warn(MODULE_AGENT, 'Starting Agent Producer', timer.elapsed('main'));
-        logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('main'));
-        logger.info(MODULE_AGENT, `Broker URL: ${brokerUrl}`, timer.elapsed('main'));
-        logger.info(MODULE_AGENT, `Networks: ${networks.join(', ')}`, timer.elapsed('main'));
-        logger.info(MODULE_AGENT, `LLM features: ${llmEnabled ? 'enabled' : 'disabled'}`, timer.elapsed('main'));
-        logger.info(MODULE_AGENT, '', timer.elapsed('main'));
+        // Startup summary
+        const primaryProvider = cfg.string('provider.PRIMARY');
+        const primaryModel = cfg.string(`provider.${primaryProvider}.MODEL`);
+        const fallbackProvider = cfg.has('provider.FALLBACK') ? cfg.string('provider.FALLBACK') : undefined;
+        const fallbackModel = fallbackProvider ? cfg.string(`provider.${fallbackProvider}.MODEL`) : undefined;
 
-        // Dynamically list all registered tools
+        logger.info(agentId, `Starting ${agentId} v${agentVersion} (role: ${agentRole})`, timer.elapsed('main'));
+        logger.info(agentId, `Broker: local=${brokerUrl}, remote=${remoteBrokerUrl}`, timer.elapsed('main'));
+        logger.info(agentId, `Networks: ${networks.join(', ')}`, timer.elapsed('main'));
+        logger.info(agentId, `LLM: ${llmEnabled ? `${primaryProvider}/${primaryModel}${fallbackProvider ? ` (fallback: ${fallbackProvider}/${fallbackModel})` : ''}` : 'disabled'}`, timer.elapsed('main'));
+
+        // Log registered tools (summary at info, detail at debug)
         const registeredTools = client.readAgentJson().tools;
-        logger.info(MODULE_AGENT, `Available Tools: ${registeredTools.length} registered`, timer.elapsed('main'));
-
-        if (registeredTools.length > 0) {
-            logger.info(MODULE_AGENT, '  Local Tools:', timer.elapsed('main'));
-            for (const tool of registeredTools) {
-                const description = tool.description || 'No description';
-                logger.info(MODULE_AGENT, `    • ${tool.name} - ${description}`, timer.elapsed('main'));
-            }
-            logger.info(MODULE_AGENT, '', timer.elapsed('main'));
+        logger.info(agentId, `Tools: ${registeredTools.length} registered`, timer.elapsed('main'));
+        for (const tool of registeredTools) {
+            logger.debug(agentId, `  ${tool.name} - ${tool.description || 'No description'}`, timer.elapsed('main'));
         }
 
-        // ----------------------------------------------------------------
         // Step 1: Register shutdown handlers (before connect)
-        // ----------------------------------------------------------------
         baseAgent.registerShutdownHandlers(async () => {
-            // Agent-specific cleanup: stop bots before broker disconnect
-            if (slackBot) {
-                logger.info(MODULE_AGENT, 'Stopping Slack bot...', timer.elapsed('main'));
-                try {
-                    if (typeof slackBot.stop === 'function') await slackBot.stop();
-                } catch (error) {
-                    logger.error(MODULE_AGENT, 'Error stopping Slack bot', "+0ms", error as Error | string);
-                }
-            }
-            if (discordBot) {
-                logger.info(MODULE_AGENT, 'Stopping Discord bot...', timer.elapsed('main'));
-                try {
-                    if (typeof discordBot.stop === 'function') await discordBot.stop();
-                } catch (error) {
-                    logger.error(MODULE_AGENT, 'Error stopping Discord bot', "+0ms", error as Error | string);
-                }
-            }
+            await stopBot(slackBot, 'Slack');
+            await stopBot(discordBot, 'Discord');
         });
 
-        // ----------------------------------------------------------------
-        // Step 2: Connect to broker (non-blocking)
-        // ----------------------------------------------------------------
-        logger.info(MODULE_AGENT, 'Connecting to broker...', timer.elapsed('main'));
+        // Step 2: Connect to broker
         await baseAgent.connect();
-        logger.info(MODULE_AGENT, '✅ Connected to broker', timer.elapsed('main'));
 
-        // ----------------------------------------------------------------
         // Step 3: Initialize LLM-dependent services
-        // ----------------------------------------------------------------
         if (llmEnabled && baseAgent.providerManager) {
-            // Create LlmOrchestrator and inject into tool handlers
             const { LlmOrchestrator } = await import('./services/llm-orchestrator.js');
             const orchestrator = new LlmOrchestrator(baseAgent.providerManager, client);
             injectOrchestrator(orchestrator);
-            logger.info(MODULE_AGENT, '   ✅ LlmOrchestrator created and injected', timer.elapsed('main'));
+            logger.info(agentId, 'LlmOrchestrator created and injected', timer.elapsed('main'));
 
-            // Setup task failure event handler
             try {
                 const { setupTaskFailureHandler } = await import('./handlers/task-failure.js');
                 await setupTaskFailureHandler(client);
-                logger.info(MODULE_AGENT, 'Task failure event handler registered successfully', timer.elapsed('main'));
+                logger.info(agentId, 'Task failure event handler registered', timer.elapsed('main'));
             } catch (error) {
-                logger.error(MODULE_AGENT, 'Failed to setup task failure event handler', "+0ms", error as Error | string);
+                logger.error(agentId, 'Failed to setup task failure event handler', '+0ms', error as Error | string);
             }
 
-            // Start Slack Bot if enabled
-            const shouldEnableSlackBot = (process.env.ENABLE_SLACK_BOT === 'true' || process.env.ENABLE_SLACK_BOT === undefined);
-            if (shouldEnableSlackBot) {
-                logger.info(MODULE_AGENT, 'Starting Slack bot...', timer.elapsed('main'));
+            // Start bots if enabled
+            if (envBoolOrConfig(process.env.ENABLE_SLACK_BOT, 'bot.slack.ENABLED')) {
                 const { SlackBot } = await import('./bot/slack-bot.js');
                 slackBot = new SlackBot({
                     client,
-                    anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
-                    botUserId: process.env.SLACK_BOT_USER_ID!,
+                    anthropicApiKey: anthropicApiKey!,
+                    botUserId: process.env.SLACK_BOT_USER_ID ?? cfg.string('bot.slack.USER_ID'),
                     providerManager: baseAgent.providerManager,
                     memoryService: baseAgent.memoryService!,
                 });
                 slackBot.start();
-                logger.info(MODULE_AGENT, 'Slack bot started (subscribed to Slack mention events)', timer.elapsed('main'));
+                logger.info(agentId, 'Slack bot started', timer.elapsed('main'));
             }
 
-            // Start Discord Bot if enabled
-            const shouldEnableDiscordBot = (process.env.ENABLE_DISCORD_BOT === 'true' || process.env.ENABLE_DISCORD_BOT === undefined);
-            if (shouldEnableDiscordBot) {
-                logger.info(MODULE_AGENT, 'Starting Discord bot...', timer.elapsed('main'));
+            if (envBoolOrConfig(process.env.ENABLE_DISCORD_BOT, 'bot.discord.ENABLED')) {
                 const { DiscordBot } = await import('./bot/discord-bot.js');
                 discordBot = new DiscordBot({
                     client,
-                    anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
-                    botUserId: process.env.DISCORD_BOT_USER_ID!,
+                    anthropicApiKey: anthropicApiKey!,
+                    botUserId: process.env.DISCORD_BOT_USER_ID ?? cfg.string('bot.discord.USER_ID'),
                     providerManager: baseAgent.providerManager,
                     memoryService: baseAgent.memoryService!,
                 });
                 discordBot.start();
-                logger.info(MODULE_AGENT, 'Discord bot started (subscribed to Discord mention events)', timer.elapsed('main'));
+                logger.info(agentId, 'Discord bot started', timer.elapsed('main'));
             }
         } else {
-            logger.info(MODULE_AGENT, 'LLM features disabled (configure ANTHROPIC_API_KEY to enable)', timer.elapsed('main'));
-            logger.info(MODULE_AGENT, '', timer.elapsed('main'));
+            logger.info(agentId, 'LLM features disabled (configure ANTHROPIC_API_KEY to enable)', timer.elapsed('main'));
         }
 
-        // ----------------------------------------------------------------
-        // Step 4: Setup event subscriptions (always active, no LLM needed)
-        // ----------------------------------------------------------------
-
-        // Task rejection handler
+        // Step 4: Event subscriptions (always active, no LLM needed)
         try {
             await subscribeToTaskRejections(client);
-            logger.info(MODULE_AGENT, 'Task rejection event handler registered', timer.elapsed('main'));
+            logger.info(agentId, 'Task rejection event handler registered', timer.elapsed('main'));
         } catch (error) {
-            logger.error(MODULE_AGENT, 'Failed to setup task rejection handler', "+0ms", error as Error | string);
+            logger.error(agentId, 'Failed to setup task rejection handler', '+0ms', error as Error | string);
         }
 
-        // Task completion notifier → replaced by status-relay (v2 events)
         try {
             const { setupStatusRelay } = await import('./handlers/status-relay.js');
             await setupStatusRelay(client);
-            logger.info(MODULE_AGENT, 'Status relay subscriptions registered', timer.elapsed('main'));
+            logger.info(agentId, 'Status relay subscriptions registered', timer.elapsed('main'));
         } catch (error) {
-            logger.error(MODULE_AGENT, 'Failed to setup status relay', "+0ms", error as Error | string);
+            logger.error(agentId, 'Failed to setup status relay', '+0ms', error as Error | string);
         }
 
-        // ----------------------------------------------------------------
         // Ready
-        // ----------------------------------------------------------------
-        logger.info(MODULE_AGENT, '', timer.elapsed('main'));
-        logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('main'));
-        logger.info(MODULE_AGENT, '✅ Agent Producer ready and listening for events', timer.elapsed('main'));
-        logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('main'));
+        logger.info(agentId, `Ready (${timer.elapsed('main')})`, timer.elapsed('main'));
 
     } catch (error: any) {
-        logger.error(MODULE_AGENT, 'Fatal error', "+0ms", error);
-        if (error.stack) {
-            logger.error(MODULE_AGENT, 'Stack trace', "+0ms", error.stack);
-        }
+        logger.error(agentId, 'Fatal error', '+0ms', error);
+        if (error.stack) logger.error(agentId, 'Stack trace', '+0ms', error.stack);
         process.exit(1);
     }
 }
 
-// Start the application
 main().catch((error) => {
-    logger.error(MODULE_AGENT, 'Fatal error', "+0ms", error);
+    logger.error(agentId, 'Fatal error', '+0ms', error);
     process.exit(1);
 });
