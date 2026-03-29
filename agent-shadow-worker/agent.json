@@ -32,6 +32,7 @@
     }
   },
   "brokers": {
-    "default": "ws://localhost:8080/kadi"
+    "local": "ws://localhost:8080/kadi",
+    "remote": "wss://broker.dadavidtseng.info/kadi"
   }
 }

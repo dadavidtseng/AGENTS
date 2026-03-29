@@ -57,12 +57,16 @@ function resolveBrokerUrl(): string {
 
   const agent = loadAgentJson();
   const brokers = agent.brokers ?? {};
-  const defaultBroker = brokers.default;
-  if (typeof defaultBroker === 'string') return defaultBroker;
-  if (defaultBroker?.url) return defaultBroker.url;
+
+  // Prefer remote → default (legacy) → local
+  for (const key of ['remote', 'default', 'local']) {
+    const entry = brokers[key];
+    if (typeof entry === 'string') return entry;
+    if (entry?.url) return entry.url;
+  }
 
   throw new Error(
-    'No broker URL found. Set BROKER_URL env var or add brokers.default to agent.json.',
+    'No broker URL found. Set BROKER_URL env var or add brokers.remote to agent.json.',
   );
 }
 

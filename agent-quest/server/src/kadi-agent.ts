@@ -48,9 +48,9 @@ export interface ToolCallResult {
 function parseBrokerConfig(): BaseAgentConfig {
   const brokers: Record<string, { url: string; networks: string[] }> = {};
   
-  // Primary broker (default)
+  // Primary broker (local)
   const defaultUrl = process.env.KADI_BROKER_URL ?? 'ws://localhost:8080/kadi';
-  brokers.default = { url: defaultUrl, networks: ['quest', 'global'] };
+  brokers.local = { url: defaultUrl, networks: ['quest', 'global'] };
   
   // Additional brokers (KADI_BROKER_URL_PRODUCER, KADI_BROKER_URL_REMOTE, etc.)
   console.log('[kadi-agent] Scanning environment for additional brokers...');

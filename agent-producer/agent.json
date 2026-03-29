@@ -1,6 +1,6 @@
 {
   "name": "agent-producer",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "scripts": {
     "preflight": "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules')){console.error('Dependencies not installed. Run: npm install');process.exit(1)}console.log('✓ Dependencies OK')\"",
     "setup": "npx tsc",
@@ -45,7 +45,7 @@
             }
           ],
           "env": [
-            "KADI_BROKER_URL=ws://localhost:8080/kadi",
+            "KADI_BROKER_URL=wss://broker.dadavidtseng.info/kadi",
             "KADI_BROKER_URL_2=ws://kadi.build:8080/kadi",
             "NODE_ENV=production"
           ],
@@ -70,6 +70,7 @@
     "secret-ability": "^0.9.4"
   },
   "brokers": {
-    "default": "ws://localhost:8080/kadi"
+    "local": "ws://localhost:8080/kadi",
+    "remote": "wss://broker.dadavidtseng.info/kadi"
   }
 }
