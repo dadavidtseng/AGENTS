@@ -58,6 +58,9 @@ interface DiscordBotConfig extends BaseBotConfig {
 // ============================================================================
 
 export class DiscordBot extends BaseBot {
+    private mentionQueue: DiscordMention[] = [];
+    private processingQueue = false;
+
     constructor(config: DiscordBotConfig) {
         super(config);
 
@@ -93,6 +96,28 @@ export class DiscordBot extends BaseBot {
      */
     stop(): void {
         logger.info(MODULE_DISCORD_BOT, 'Discord bot stopped', timer.elapsed('main'));
+    }
+
+    /**
+     * Enqueue a mention for sequential processing (one at a time per bot)
+     */
+    private enqueue(mention: DiscordMention): void {
+        this.mentionQueue.push(mention);
+        logger.debug(MODULE_DISCORD_BOT, `Queued mention from @${mention.user} (queue: ${this.mentionQueue.length})`, timer.elapsed('main'));
+        if (!this.processingQueue) this.drainQueue();
+    }
+
+    private async drainQueue(): Promise<void> {
+        this.processingQueue = true;
+        while (this.mentionQueue.length > 0) {
+            const mention = this.mentionQueue.shift()!;
+            try {
+                await this.handleMention(mention);
+            } catch (error) {
+                logger.error(MODULE_DISCORD_BOT, `Queue: Error handling mention {mentionId: ${mention.id}}`, timer.elapsed('main'), error as Error);
+            }
+        }
+        this.processingQueue = false;
     }
 
     /**
@@ -144,10 +169,8 @@ export class DiscordBot extends BaseBot {
                     ...(mention.attachments && { attachments: mention.attachments }),
                 };
 
-                // Process mention using existing logic (non-blocking to prevent event queue backup)
-                this.handleMention(discordMention).catch(error => {
-                    logger.error(MODULE_DISCORD_BOT, `Subscriber: Error handling mention {mentionId: ${discordMention.id}}`, timer.elapsed('main'), error);
-                });
+                // Enqueue for sequential processing
+                this.enqueue(discordMention);
             });
 
             logger.info(MODULE_DISCORD_BOT, `Subscriber: Subscription registered successfully {topic: ${topic}}`, timer.elapsed('main'));
@@ -334,6 +357,7 @@ export class DiscordBot extends BaseBot {
       let iteration = 0;
       let finalResponse: string | null = null;
       let toolsExecuted = false; // Track if tools have been executed
+      let discordMessageSent = false; // Track if LLM already sent a Discord message via tool
 
       while (iteration < maxIterations && !finalResponse) {
         iteration++;
@@ -439,6 +463,14 @@ export class DiscordBot extends BaseBot {
             logger.debug(MODULE_DISCORD_BOT, `Tool ${toolCall.function.name} result: ${toolResult.substring(0, 200)}...`, timer.elapsed('main'));
             logger.debug(MODULE_DISCORD_BOT, `Tool call ID: ${toolCall.id}`, timer.elapsed('main'));
 
+            // Track if LLM already sent a Discord message via tool
+            if (toolCall.function.name === 'discord_send_message' || toolCall.function.name === 'discord_send_reply') {
+              try {
+                const parsed = JSON.parse(toolResult);
+                if (parsed.success) discordMessageSent = true;
+              } catch { /* ignore */ }
+            }
+
             // Check if tool result indicates task completion
             const isTaskComplete = this.checkToolResultForCompletion(toolResult);
             if (isTaskComplete) {
@@ -514,11 +546,26 @@ export class DiscordBot extends BaseBot {
         timestamp: Date.now(),
       });
 
-      // Step 7: Send response to channel (PRESERVE: Discord-specific reply)
-      logger.info(MODULE_DISCORD_BOT, `Sending final response (${botResponse.length} chars) to Discord...`, timer.elapsed('main'));
-      await this.sendDiscordReply(mention.channel, mention.id, botResponse);
+      // Step 7: Send response to channel (skip if LLM already sent via tool)
+      if (discordMessageSent) {
+        logger.info(MODULE_DISCORD_BOT, `Skipping final response (LLM already sent via discord tool)`, timer.elapsed('main'));
+      } else {
+        logger.info(MODULE_DISCORD_BOT, `Sending final response (${botResponse.length} chars) to Discord...`, timer.elapsed('main'));
+        await this.sendDiscordReply(mention.channel, mention.id, botResponse);
+      }
 
       logger.info(MODULE_DISCORD_BOT, `Replied to @${mention.user}`, timer.elapsed('main'));
+
+      // React ✅ on the original mention to signal completion
+      try {
+        await this.client.invokeRemote('discord_add_reaction', {
+          channel: mention.channel,
+          message_id: mention.id,
+          emoji: '✅',
+        });
+      } catch {
+        logger.debug(MODULE_DISCORD_BOT, 'Failed to add ✅ reaction', timer.elapsed('main'));
+      }
 
       // Record success for circuit breaker
       this.recordSuccess();

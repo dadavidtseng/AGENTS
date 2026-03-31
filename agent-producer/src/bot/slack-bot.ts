@@ -61,6 +61,9 @@ interface SlackBotConfig {
 // ============================================================================
 
 export class SlackBot extends BaseBot {
+  private mentionQueue: SlackMention[] = [];
+  private processingQueue = false;
+
   constructor(config: SlackBotConfig) {
     super(config);
 
@@ -101,6 +104,28 @@ export class SlackBot extends BaseBot {
   stop(): void {
     // Unsubscribe from events if needed
     logger.info(MODULE_SLACK_BOT, 'Slack bot stopped', timer.elapsed('main'));
+  }
+
+  /**
+   * Enqueue a mention for sequential processing (one at a time per bot)
+   */
+  private enqueue(mention: SlackMention): void {
+    this.mentionQueue.push(mention);
+    logger.debug(MODULE_SLACK_BOT, `Queued mention from @${mention.user} (queue: ${this.mentionQueue.length})`, timer.elapsed('main'));
+    if (!this.processingQueue) this.drainQueue();
+  }
+
+  private async drainQueue(): Promise<void> {
+    this.processingQueue = true;
+    while (this.mentionQueue.length > 0) {
+      const mention = this.mentionQueue.shift()!;
+      try {
+        await this.handleMention(mention);
+      } catch (error) {
+        logger.error(MODULE_SLACK_BOT, `Queue: Error handling mention from @${mention.user}`, timer.elapsed('main'), error as Error);
+      }
+    }
+    this.processingQueue = false;
   }
 
   /**
@@ -219,10 +244,8 @@ export class SlackBot extends BaseBot {
 
         logger.info(MODULE_SLACK_BOT, `Subscriber: Event received {mentionId: ${mention.id}, user: ${mention.user}, channel: ${mention.channel}, textPreview: \"${textPreview}\", timestamp: ${mention.timestamp}}`, timer.elapsed('main'));
 
-        // Process mention using handleMention (non-blocking to prevent event queue backup)
-        this.handleMention(mention).catch(error => {
-          logger.error(MODULE_SLACK_BOT, `Subscriber: Error handling mention {mentionId: ${mention.id}}`, timer.elapsed('main'), error);
-        });
+        // Enqueue for sequential processing
+        this.enqueue(mention);
       });
 
       logger.info(MODULE_SLACK_BOT, `Subscriber: Subscription registered successfully {topic: ${topic}}`, timer.elapsed('main'));
@@ -317,6 +340,7 @@ export class SlackBot extends BaseBot {
       let iteration = 0;
       let finalResponse: string | null = null;
       let toolsExecuted = false; // Track if tools have been executed
+      let slackMessageSent = false; // Track if LLM already sent a Slack message via tool
 
       while (iteration < maxIterations && !finalResponse) {
         iteration++;
@@ -422,6 +446,14 @@ export class SlackBot extends BaseBot {
             logger.debug(MODULE_SLACK_BOT, `Tool ${toolCall.function.name} result: ${toolResult.substring(0, 200)}...`, timer.elapsed('main'));
             logger.debug(MODULE_SLACK_BOT, `Tool call ID: ${toolCall.id}`, timer.elapsed('main'));
 
+            // Track if LLM already sent a Slack message via tool
+            if (toolCall.function.name === 'slack_send_message' || toolCall.function.name === 'slack_send_reply') {
+              try {
+                const parsed = JSON.parse(toolResult);
+                if (parsed.success) slackMessageSent = true;
+              } catch { /* ignore */ }
+            }
+
             // Check if tool result indicates task completion
             const isTaskComplete = this.checkToolResultForCompletion(toolResult);
             if (isTaskComplete) {
@@ -495,11 +527,26 @@ export class SlackBot extends BaseBot {
         timestamp: Date.now(),
       });
 
-      // Step 7: Send response to channel (PRESERVE: Slack-specific reply with thread_ts)
-      logger.info(MODULE_SLACK_BOT, `Sending final response (${botResponse.length} chars) to Slack...`, timer.elapsed('main'));
-      await this.sendSlackReply(mention.channel, mention.thread_ts, botResponse);
+      // Step 7: Send response to channel (skip if LLM already sent via tool)
+      if (slackMessageSent) {
+        logger.info(MODULE_SLACK_BOT, `Skipping final response (LLM already sent via slack tool)`, timer.elapsed('main'));
+      } else {
+        logger.info(MODULE_SLACK_BOT, `Sending final response (${botResponse.length} chars) to Slack...`, timer.elapsed('main'));
+        await this.sendSlackReply(mention.channel, mention.thread_ts, botResponse);
+      }
 
       logger.info(MODULE_SLACK_BOT, `Replied to @${mention.user}`, timer.elapsed('main'));
+
+      // React ✅ on the original mention to signal completion
+      try {
+        await this.client.invokeRemote('slack_add_reaction', {
+          channel: mention.channel,
+          timestamp: mention.ts,
+          emoji: 'white_check_mark',
+        });
+      } catch {
+        logger.debug(MODULE_SLACK_BOT, 'Failed to add ✅ reaction', timer.elapsed('main'));
+      }
 
       // Record success for circuit breaker
       this.recordSuccess();

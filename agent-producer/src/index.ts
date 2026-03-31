@@ -53,13 +53,28 @@ setAgentTag(agentId);
 // Configuration
 // ============================================================================
 
-// Primary broker (local)
-const brokerUrl = process.env.KADI_BROKER_URL_LOCAL ?? cfg.string('broker.local.URL');
-const networks = process.env.KADI_NETWORK_LOCAL?.split(',') ?? cfg.strings('broker.local.NETWORKS');
+// Broker resolution: at least one of local/remote required
+const hasLocal = cfg.has('broker.local.URL');
+const hasRemote = cfg.has('broker.remote.URL');
+if (!hasLocal && !hasRemote) {
+  throw new Error('At least one broker required: set [broker.local] or [broker.remote] in config.toml');
+}
 
-// Remote broker
-const remoteBrokerUrl = process.env.KADI_BROKER_URL_REMOTE ?? cfg.string('broker.remote.URL');
-const remoteBrokerNetworks = process.env.KADI_NETWORK_REMOTE?.split(',') ?? cfg.strings('broker.remote.NETWORKS');
+// Primary broker = first available (local preferred for dev, remote for deployment)
+const brokerUrl = hasLocal
+  ? (process.env.KADI_BROKER_URL_LOCAL ?? cfg.string('broker.local.URL'))
+  : (process.env.KADI_BROKER_URL_REMOTE ?? cfg.string('broker.remote.URL'));
+const networks = hasLocal
+  ? (process.env.KADI_NETWORK_LOCAL?.split(',') ?? cfg.strings('broker.local.NETWORKS'))
+  : (process.env.KADI_NETWORK_REMOTE?.split(',') ?? cfg.strings('broker.remote.NETWORKS'));
+
+// Additional broker (if both exist, the non-primary becomes additional)
+const additionalBrokerUrl = hasLocal && hasRemote
+  ? (process.env.KADI_BROKER_URL_REMOTE ?? cfg.string('broker.remote.URL'))
+  : undefined;
+const additionalBrokerNetworks = hasLocal && hasRemote
+  ? (process.env.KADI_NETWORK_REMOTE?.split(',') ?? cfg.strings('broker.remote.NETWORKS'))
+  : undefined;
 
 // Credentials: env vars take priority over vault
 const vault = await loadVaultCredentials();
@@ -79,9 +94,11 @@ const baseAgentConfig: BaseAgentConfig = {
   version: agentVersion,
   brokerUrl,
   networks,
-  additionalBrokers: {
-    remote: { url: remoteBrokerUrl, networks: remoteBrokerNetworks },
-  },
+  ...(additionalBrokerUrl && {
+    additionalBrokers: {
+      remote: { url: additionalBrokerUrl, networks: additionalBrokerNetworks! },
+    },
+  }),
   ...(llmEnabled && {
     provider: {
       anthropicApiKey: anthropicApiKey!,
@@ -122,7 +139,7 @@ export const taskChannelMap = new Map<string, {
 
 const brokerNetworksMap: Record<string, string[]> = {
   default: networks,
-  remote: remoteBrokerNetworks,
+  ...(additionalBrokerNetworks && { remote: additionalBrokerNetworks }),
 };
 registerAllTools(client, brokerNetworksMap);
 
@@ -168,7 +185,11 @@ async function main(): Promise<void> {
         const fallbackModel = fallbackProvider ? cfg.string(`provider.${fallbackProvider}.MODEL`) : undefined;
 
         logger.info(agentId, `Starting ${agentId} v${agentVersion} (role: ${agentRole})`, timer.elapsed('main'));
-        logger.info(agentId, `Broker: local=${brokerUrl}, remote=${remoteBrokerUrl}`, timer.elapsed('main'));
+        const brokerSummary = [
+          hasLocal ? `local=${process.env.KADI_BROKER_URL_LOCAL ?? cfg.string('broker.local.URL')}` : null,
+          hasRemote ? `remote=${process.env.KADI_BROKER_URL_REMOTE ?? cfg.string('broker.remote.URL')}` : null,
+        ].filter(Boolean).join(', ');
+        logger.info(agentId, `Broker: ${brokerSummary}`, timer.elapsed('main'));
         logger.info(agentId, `Networks: ${networks.join(', ')}`, timer.elapsed('main'));
         logger.info(agentId, `LLM: ${llmEnabled ? `${primaryProvider}/${primaryModel}${fallbackProvider ? ` (fallback: ${fallbackProvider}/${fallbackModel})` : ''}` : 'disabled'}`, timer.elapsed('main'));
 

@@ -11,13 +11,13 @@ VERSION = "0.3.0"
 [logging]
 LEVEL = "debug"
 
-[broker.local]
-URL = "ws://localhost:8080/kadi"
-NETWORKS = ["global", "text"]
+#[broker.local]
+#URL = "ws://localhost:8080/kadi"
+#NETWORKS = ["chatbot"]
 
 [broker.remote]
 URL = "wss://broker.dadavidtseng.info/kadi"
-NETWORKS = ["global", "text"]
+NETWORKS = ["chatbot"]
 
 [bot]
 TOOL_TIMEOUT_MS = 10000

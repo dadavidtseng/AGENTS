@@ -19,7 +19,7 @@ export const listToolsInputSchema = z.object({});
  * Output schema for list_tools utility (structured format)
  */
 export const listToolsOutputSchema = z.object({
-  status: z.enum(['complete', 'partial', 'error']).describe('Task completion status'),
+  status: z.enum(['info', 'complete', 'partial', 'error']).describe('Result status: info for queries, complete for task-completing actions'),
   result: z.object({
     tools: z.array(z.object({
       name: z.string().describe('Tool name'),
@@ -67,7 +67,7 @@ export function registerListToolsTool(client: KadiClient): void {
    */
   client.registerTool({
     name: 'list_tools',
-    description: 'List all available tools in human-readable format. This is a one-time operation that completes immediately. Do not retry on success.',
+    description: 'List all available tools in human-readable format. This is an informational query — it does NOT complete the user\'s task. After listing tools, continue to fulfill the user\'s actual request using the appropriate tool.',
     input: listToolsInputSchema,
     output: listToolsOutputSchema
   }, async (): Promise<ListToolsOutput> => {
@@ -133,7 +133,7 @@ export function registerListToolsTool(client: KadiClient): void {
       logger.info(MODULE_AGENT, `Listed ${allTools.length} tools (${localTools.length} local + ${uniqueNetworkTools.length} network)`, timer.elapsed('main'));
 
       return {
-        status: 'complete',
+        status: 'info',
         result: {
           tools: allTools,
           count: toolCount
@@ -157,7 +157,7 @@ export function registerListToolsTool(client: KadiClient): void {
       const details = tools.map(t => `• *${t.name}*: ${t.description}`).join('\n');
 
       return {
-        status: 'complete',
+        status: 'info',
         result: {
           tools: tools,
           count: {
