@@ -16,11 +16,11 @@
 
 import { Router, type Request, type Response } from 'express';
 import crypto from 'crypto';
-import { client } from '../kadi-agent.js';
+import { client, secrets } from '../kadi-agent.js';
 
 export const webhookRoutes = Router();
 
-const WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET || '';
+const WEBHOOK_SECRET = secrets['GITHUB_WEBHOOK_SECRET'] ?? '';
 
 // ---------------------------------------------------------------------------
 // Signature verification (HMAC-SHA256)

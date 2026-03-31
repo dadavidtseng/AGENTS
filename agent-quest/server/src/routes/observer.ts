@@ -17,7 +17,7 @@
 
 import { Router, type Request, type Response } from 'express';
 import { Readable } from 'stream';
-import { getBrokerUrls } from '../kadi-agent.js';
+import { getBrokerUrls, secrets } from '../kadi-agent.js';
 
 export const observerRoutes = Router();
 
@@ -49,7 +49,7 @@ function getAllBrokerBases(): Array<{ name: string; httpBase: string }> {
  */
 observerRoutes.get('/', async (req: Request, res: Response) => {
   const brokers = getAllBrokerBases();
-  const password = process.env.OBSERVER_PASSWORD ?? '';
+  const password = secrets['OBSERVER_PASSWORD'] ?? '';
 
   // Prepare upstream requests
   const abortControllers = brokers.map(() => new AbortController());

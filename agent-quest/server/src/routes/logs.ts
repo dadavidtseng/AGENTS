@@ -15,6 +15,7 @@
  */
 
 import { Router, type Request, type Response } from 'express';
+import { cfg, secrets, getBrokerUrls } from '../kadi-agent.js';
 
 export const logRoutes = Router();
 
@@ -101,7 +102,8 @@ const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
 let observerSubscribed = false;
 
 function getBrokerHttpBase(): string {
-  const wsUrl = process.env.KADI_BROKER_URL ?? 'ws://localhost:8080/mcp';
+  const brokers = getBrokerUrls();
+  const wsUrl = brokers[0]?.url ?? 'ws://localhost:8080/kadi';
   return wsUrl
     .replace(/^wss:/, 'https:')
     .replace(/^ws:/, 'http:')
@@ -121,7 +123,7 @@ export function startLogCapture(): void {
 async function connectObserver(): Promise<void> {
   const brokerBase = getBrokerHttpBase();
   const observerUrl = `${brokerBase}/api/admin/observer`;
-  const password = process.env.OBSERVER_PASSWORD ?? '';
+  const password = secrets['OBSERVER_PASSWORD'] ?? '';
 
   try {
     const headers: Record<string, string> = {};

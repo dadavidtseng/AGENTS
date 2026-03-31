@@ -1,6 +1,6 @@
 {
   "name": "agent-quest",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "scripts": {
     "preflight": "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules')){console.error('Dependencies not installed. Run: npm install');process.exit(1)}console.log('✓ Dependencies OK')\"",
     "setup": "npm run install:all && npm run build",
@@ -34,5 +34,11 @@
     "local": "ws://localhost:8080/kadi",
     "remote": "wss://broker.dadavidtseng.info/kadi"
   },
-  "networks": ["quest", "global"]
+  "networks": [
+    "quest",
+    "global"
+  ],
+  "abilities": {
+    "secret-ability": "^0.9.4"
+  }
 }
