@@ -1,16 +1,47 @@
 # Agent Lead Configuration
-# Secrets go in secrets.toml (encrypted vault)
+
+[agent]
+ID = "agent-lead"
+VERSION = "1.0.0"
+ROLE = "programmer"
+
+[logging]
+LEVEL = "debug"
 
 [broker.local]
 URL = "ws://localhost:8080/kadi"
-NETWORKS = ["producer", "programmer", "git", "qa", "quest", "file", "global"]
 
 [broker.remote]
 URL = "wss://broker.dadavidtseng.info/kadi"
 NETWORKS = ["global"]
 
-[agent]
-ROLE = "programmer"
+[provider]
+PRIMARY = "model-manager"
+FALLBACK = "anthropic"
+
+[provider.model-manager]
+MODEL = "gpt-5-mini"
+
+[provider.anthropic]
+MODEL = "claude-haiku-4-5-20251001"
+
+[memory]
+DATA_PATH = "./data/memory"
 
 [repo]
 PATH = "/mnt/c/GitHub/agent-playground"
+
+[secrets]
+VAULTS = ["anthropic", "model-manager"]
+
+# Per-role network configuration
+# kadi run start:artist → AGENT_ROLE=artist → reads [roles.artist.NETWORKS]
+
+[roles.artist]
+NETWORKS = ["producer", "artist", "git", "qa", "quest", "file", "global"]
+
+[roles.designer]
+NETWORKS = ["producer", "designer", "git", "qa", "quest", "file", "global"]
+
+[roles.programmer]
+NETWORKS = ["producer", "programmer", "git", "qa", "deploy", "quest", "file", "global"]

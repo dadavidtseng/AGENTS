@@ -1,5 +1,32 @@
-import 'dotenv/config';
-import { BaseAgent, loadVaultCredentials, logger, MODULE_AGENT, timer } from 'agents-library';
+/**
+ * Lead Agent for KĀDI Protocol
+ * ==============================
+ *
+ * Orchestration agent for the KĀDI multi-agent system.
+ * Coordinates task assignment, verification, PR creation, and cleanup.
+ *
+ * Architecture:
+ * - BaseAgent provides KadiClient + ProviderManager + MemoryService
+ * - Event-driven: subscribes to broker events, dispatches tasks to workers
+ * - Optional LLM enhancement for PR descriptions, conflict resolution, fix instructions
+ *
+ * Event Topics:
+ * - Listens: quest.tasks_ready, task.validated, task.failed, task.revision_needed,
+ *            quest.cascade_needed, quest.verification_complete, quest.merged
+ * - Publishes: task.assigned, quest.verification_complete, conflict.escalation
+ *
+ * @module agent-lead
+ */
+
+import {
+  BaseAgent,
+  loadVaultCredentials,
+  readConfig,
+  setLogLevel,
+  setAgentTag,
+  logger,
+  timer,
+} from 'agents-library';
 import type { BaseAgentConfig, AgentRole } from 'agents-library';
 import type { KadiClient } from '@kadi.build/core';
 import { setupTaskReceptionHandler } from './handlers/task-reception.js';
@@ -7,25 +34,57 @@ import { setupTaskVerificationHandler } from './handlers/task-verification.js';
 import { setupPrWorkflowHandler } from './handlers/pr-workflow.js';
 import { setupQuestCleanupHandler } from './handlers/quest-cleanup.js';
 
+const cfg = readConfig();
 
-// Role-based network mapping
-const ROLE_NETWORKS: Record<string, string[]> = {
-  artist: ['producer', 'artist', 'git', 'qa', 'quest', 'file', 'global'],
-  designer: ['producer', 'designer', 'git', 'qa', 'quest', 'file', 'global'],
-  programmer: ['producer', 'programmer', 'git', 'qa', 'deploy', 'quest', 'file', 'global'],
-};
+// ============================================================================
+// Agent identity + logging
+// ============================================================================
 
-const VALID_ROLES = ['artist', 'designer', 'programmer'];
+const agentId = cfg.string('agent.ID');
+const agentVersion = cfg.string('agent.VERSION');
+const logLevel = cfg.has('logging.LEVEL') ? cfg.string('logging.LEVEL') : 'info';
+setLogLevel(logLevel);
+setAgentTag(agentId);
 
-const role = process.env.AGENT_ROLE ?? 'programmer';
-if (!VALID_ROLES.includes(role)) {
-  console.error(`Invalid AGENT_ROLE: ${role}. Must be one of: ${VALID_ROLES.join(', ')}`);
-  process.exit(1);
+// ============================================================================
+// Configuration
+// ============================================================================
+
+// Role resolution: env var (from kadi run start:artist) takes priority over config.toml
+const roleName = process.env.AGENT_ROLE ?? cfg.string('agent.ROLE');
+const agentName = `agent-lead-${roleName}`;
+
+// Networks from per-role config section
+const roleNetworksKey = `roles.${roleName}.NETWORKS`;
+if (!cfg.has(roleNetworksKey)) {
+  throw new Error(`Unknown role '${roleName}': no [roles.${roleName}] section in config.toml`);
+}
+const roleNetworks = cfg.strings(roleNetworksKey);
+
+// Broker resolution: at least one of local/remote required
+const hasLocal = cfg.has('broker.local.URL');
+const hasRemote = cfg.has('broker.remote.URL');
+if (!hasLocal && !hasRemote) {
+  throw new Error('At least one broker required: set [broker.local] or [broker.remote] in config.toml');
 }
 
-const agentName = `agent-lead-${role}`;
-const networks = ROLE_NETWORKS[role];
-const brokerUrl = process.env.KADI_BROKER_URL ?? 'ws://localhost:8080/kadi';
+const brokerUrl = hasLocal
+  ? (process.env.KADI_BROKER_URL_LOCAL ?? cfg.string('broker.local.URL'))
+  : (process.env.KADI_BROKER_URL_REMOTE ?? cfg.string('broker.remote.URL'));
+
+// For local broker, use role-specific networks; for remote-only, use remote networks
+const networks = hasLocal ? roleNetworks : cfg.strings('broker.remote.NETWORKS');
+
+const additionalBrokerUrl = hasLocal && hasRemote
+  ? (process.env.KADI_BROKER_URL_REMOTE ?? cfg.string('broker.remote.URL'))
+  : undefined;
+const additionalBrokerNetworks = hasLocal && hasRemote
+  ? (process.env.KADI_NETWORK_REMOTE?.split(',') ?? cfg.strings('broker.remote.NETWORKS'))
+  : undefined;
+
+// Provider config
+const primaryProvider = cfg.has('provider.PRIMARY') ? cfg.string('provider.PRIMARY') : undefined;
+const fallbackProvider = cfg.has('provider.FALLBACK') ? cfg.string('provider.FALLBACK') : undefined;
 
 // ============================================================================
 // Agent Registration & Heartbeat
@@ -38,95 +97,56 @@ const LEAD_CAPABILITIES = [
   'workflow-management',
 ];
 
-async function registerAgent(kadiClient: KadiClient, agentRole: string, agentId: string): Promise<void> {
+async function registerAgent(kadiClient: KadiClient, agentRole: string, leadAgentId: string): Promise<void> {
   try {
-    logger.info(MODULE_AGENT, '📝 Registering agent with mcp-server-quest...', timer.elapsed('main'));
-
+    logger.info(agentId, 'Registering with quest server...', timer.elapsed('main'));
     const result = await kadiClient.invokeRemote<{
       content: Array<{ type: string; text: string }>;
     }>('quest_quest_register_agent', {
-      agentId,
+      agentId: leadAgentId,
       name: `Lead ${agentRole.charAt(0).toUpperCase() + agentRole.slice(1)} Agent`,
       role: agentRole,
       capabilities: LEAD_CAPABILITIES,
       maxConcurrentTasks: 10,
     });
-
     const resultText = result.content[0].text;
     const data = JSON.parse(resultText);
-    logger.info(MODULE_AGENT, `✅ Agent registered: ${data.message}`, timer.elapsed('main'));
+    logger.info(agentId, `Registered: ${data.message}`, timer.elapsed('main'));
   } catch (error: any) {
-    logger.error(MODULE_AGENT, `Failed to register agent: ${error.message}`, timer.elapsed('main'), error);
+    logger.error(agentId, `Registration failed: ${error.message}`, timer.elapsed('main'), error);
   }
 }
 
-async function sendHeartbeat(kadiClient: KadiClient, agentId: string): Promise<void> {
+async function sendHeartbeat(kadiClient: KadiClient, leadAgentId: string): Promise<void> {
   try {
     await kadiClient.invokeRemote('quest_quest_agent_heartbeat', {
-      agentId,
+      agentId: leadAgentId,
       status: 'available',
       currentTasks: [],
       timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
-    logger.warn(MODULE_AGENT, `Heartbeat failed: ${error.message}`, timer.elapsed('main'));
+    logger.warn(agentId, `Heartbeat failed: ${error.message}`, timer.elapsed('main'));
   }
 }
 
-function startHeartbeat(kadiClient: KadiClient, agentId: string): NodeJS.Timeout {
-  logger.info(MODULE_AGENT, '💓 Starting heartbeat (30s interval)...', timer.elapsed('main'));
-  sendHeartbeat(kadiClient, agentId).catch(() => {});
-  return setInterval(() => sendHeartbeat(kadiClient, agentId).catch(() => {}), 30_000);
+function startHeartbeat(kadiClient: KadiClient, leadAgentId: string): NodeJS.Timeout {
+  logger.debug(agentId, 'Starting heartbeat (30s interval)', timer.elapsed('main'));
+  sendHeartbeat(kadiClient, leadAgentId).catch(() => {});
+  return setInterval(() => sendHeartbeat(kadiClient, leadAgentId).catch(() => {}), 30_000);
 }
 
-async function unregisterAgent(kadiClient: KadiClient, agentId: string): Promise<void> {
+async function unregisterAgent(kadiClient: KadiClient, leadAgentId: string): Promise<void> {
   try {
-    logger.info(MODULE_AGENT, '📝 Unregistering agent...', timer.elapsed('main'));
+    logger.info(agentId, 'Unregistering from quest server...', timer.elapsed('main'));
     await kadiClient.invokeRemote('quest_quest_unregister_agent', {
-      agentId,
+      agentId: leadAgentId,
       reason: 'Graceful shutdown',
     });
-    logger.info(MODULE_AGENT, '✅ Agent unregistered', timer.elapsed('main'));
+    logger.info(agentId, 'Unregistered', timer.elapsed('main'));
   } catch (error: any) {
-    logger.error(MODULE_AGENT, `Failed to unregister: ${error.message}`, timer.elapsed('main'), error);
+    logger.error(agentId, `Unregister failed: ${error.message}`, timer.elapsed('main'), error);
   }
-}
-
-// ============================================================================
-// Provider Config Builder
-// ============================================================================
-
-/** Build provider config. Model Manager is primary, Anthropic is fallback. */
-function buildProviderConfig(
-  modelManagerBaseUrl?: string,
-  modelManagerApiKey?: string,
-  anthropicApiKey?: string,
-): { provider: BaseAgentConfig['provider'] } | Record<string, never> {
-
-  if (modelManagerBaseUrl && modelManagerApiKey) {
-    return {
-      provider: {
-        modelManagerBaseUrl,
-        modelManagerApiKey,
-        primaryProvider: 'model-manager',
-        ...(anthropicApiKey && {
-          anthropicApiKey,
-          fallbackProvider: 'anthropic',
-        }),
-      },
-    };
-  }
-
-  if (anthropicApiKey) {
-    return {
-      provider: {
-        anthropicApiKey,
-        primaryProvider: 'anthropic',
-      },
-    };
-  }
-
-  return {};
 }
 
 // ============================================================================
@@ -136,8 +156,19 @@ function buildProviderConfig(
 async function main(): Promise<void> {
   timer.start('main');
 
-  logger.info(MODULE_AGENT, `Starting ${agentName}`, timer.elapsed('main'));
-  logger.info(MODULE_AGENT, `Networks: ${networks.join(', ')}`, timer.elapsed('main'));
+  // Startup summary
+  logger.info(agentId, `Starting ${agentName} v${agentVersion} (role: ${roleName})`, timer.elapsed('main'));
+  const brokerSummary = [
+    hasLocal ? `local=${process.env.KADI_BROKER_URL_LOCAL ?? cfg.string('broker.local.URL')}` : null,
+    hasRemote ? `remote=${process.env.KADI_BROKER_URL_REMOTE ?? cfg.string('broker.remote.URL')}` : null,
+  ].filter(Boolean).join(', ');
+  logger.info(agentId, `Broker: ${brokerSummary}`, timer.elapsed('main'));
+  logger.info(agentId, `Networks: ${networks.join(', ')}`, timer.elapsed('main'));
+  if (primaryProvider) {
+    const primaryModel = cfg.string(`provider.${primaryProvider}.MODEL`);
+    const fallbackModel = fallbackProvider ? cfg.string(`provider.${fallbackProvider}.MODEL`) : undefined;
+    logger.info(agentId, `LLM: ${primaryProvider}/${primaryModel}${fallbackProvider ? ` (fallback: ${fallbackProvider}/${fallbackModel})` : ''}`, timer.elapsed('main'));
+  }
 
   // Load credentials: env vars take priority over vault
   const vault = await loadVaultCredentials();
@@ -148,62 +179,69 @@ async function main(): Promise<void> {
   // Build BaseAgent config
   const baseAgentConfig: BaseAgentConfig = {
     agentId: agentName,
-    agentRole: role as AgentRole,
-    version: '1.0.0',
+    agentRole: roleName as AgentRole,
+    version: agentVersion,
     brokerUrl,
     networks,
-    ...buildProviderConfig(modelManagerBaseUrl, modelManagerApiKey, anthropicApiKey),
+    ...(additionalBrokerUrl && {
+      additionalBrokers: {
+        remote: { url: additionalBrokerUrl, networks: additionalBrokerNetworks! },
+      },
+    }),
+    ...((anthropicApiKey || (modelManagerBaseUrl && modelManagerApiKey)) ? {
+      provider: {
+        ...(anthropicApiKey && { anthropicApiKey }),
+        ...(modelManagerBaseUrl && modelManagerApiKey && {
+          modelManagerBaseUrl,
+          modelManagerApiKey,
+        }),
+        ...(primaryProvider && { primaryProvider }),
+        ...(fallbackProvider && { fallbackProvider }),
+      },
+    } : {}),
     memory: {
-      dataPath: process.env.MEMORY_DATA_PATH || './data/memory',
+      dataPath: process.env.MEMORY_DATA_PATH ?? cfg.string('memory.DATA_PATH'),
     },
   };
 
   const baseAgent = new BaseAgent(baseAgentConfig);
+  await baseAgent.connect();
+
   const client = baseAgent.client;
 
-  await baseAgent.connect();
-  logger.info(MODULE_AGENT, `Connected to broker at ${brokerUrl}`, timer.elapsed('main'));
+  // Subscribe to all event handlers
+  await setupTaskReceptionHandler(client, roleName, agentName);
+  await setupTaskVerificationHandler(client, roleName, agentName, baseAgent.providerManager);
+  await setupPrWorkflowHandler(client, roleName, agentName, baseAgent.providerManager, baseAgent.memoryService);
+  await setupQuestCleanupHandler(client, roleName, agentName);
 
-  // Task 4.10 + 4.11: Subscribe to quest.tasks_ready and dispatch tasks to workers
-  await setupTaskReceptionHandler(client, role, agentName);
-
-  // Task 4.12: Subscribe to task.completed and task.failed for verification
-  await setupTaskVerificationHandler(client, role, agentName, baseAgent.providerManager);
-
-  // Task 4.14: Subscribe to quest.verification_complete for PR creation
-  await setupPrWorkflowHandler(client, role, agentName, baseAgent.providerManager, baseAgent.memoryService);
-
-  // Post-merge cleanup: delete quest/<questId> branches after PR merge
-  await setupQuestCleanupHandler(client, role, agentName);
-
-  // Register with mcp-server-quest and start heartbeat
-  await registerAgent(client, role, agentName);
+  // Register with quest server and start heartbeat
+  await registerAgent(client, roleName, agentName);
   const heartbeatInterval = startHeartbeat(client, agentName);
 
   if (baseAgent.providerManager) {
-    const primary = modelManagerBaseUrl ? 'Model Manager' : 'Anthropic';
-    logger.info(MODULE_AGENT, `LLM orchestration enabled (primary: ${primary})`, timer.elapsed('main'));
+    logger.info(agentId, 'LLM orchestration enabled', timer.elapsed('main'));
   } else {
-    logger.warn(MODULE_AGENT, 'No LLM provider configured — using rule-based orchestration only', timer.elapsed('main'));
+    logger.warn(agentId, 'No LLM provider — rule-based orchestration only', timer.elapsed('main'));
   }
 
   // Graceful shutdown
   const shutdown = async (signal: string) => {
-    logger.info(MODULE_AGENT, `${signal} received, shutting down...`, timer.elapsed('main'));
+    logger.info(agentId, `${signal} received, shutting down...`, timer.elapsed('main'));
     clearInterval(heartbeatInterval);
     await unregisterAgent(client, agentName);
     await baseAgent.shutdown();
-    logger.info(MODULE_AGENT, 'Shutdown complete', timer.elapsed('main'));
+    logger.info(agentId, 'Shutdown complete', timer.elapsed('main'));
     process.exit(0);
   };
 
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-  logger.info(MODULE_AGENT, `${agentName} ready`, timer.elapsed('main'));
+  logger.info(agentId, `Ready (${timer.elapsed('main')})`, timer.elapsed('main'));
 }
 
-main().catch((err) => {
-  logger.error(MODULE_AGENT, `Fatal error: ${err}`, timer.elapsed('main'));
+main().catch((error) => {
+  logger.error(agentId, 'Fatal error', '+0ms', error);
   process.exit(1);
 });
