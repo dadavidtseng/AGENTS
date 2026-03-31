@@ -100,7 +100,7 @@ function searchDir(
 // KadiClient
 // ============================================================================
 
-const brokerConfig: Record<string, unknown> = {
+const brokerConfig: { url: string; networks?: string[] } = {
   url: process.env.KADI_BROKER_URL || 'ws://localhost:8080/kadi',
 };
 if (process.env.KADI_NETWORK) {

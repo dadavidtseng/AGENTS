@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Local file operations ability - list, move, copy, delete, create, watch files and folders",
-  "scripts": {},
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc"
+  },
   "author": "Yu-Wei Tseng",
   "license": "Apache License 2.0",
   "dependencies": {
@@ -16,6 +19,10 @@
     "unzipper": "^0.12.3"
   },
   "devDependencies": {
+    "@types/archiver": "^7.0.0",
+    "@types/node": "^25.5.0",
+    "@types/tar": "^6.1.13",
+    "@types/unzipper": "^0.10.11",
     "typescript": "^5.0.0"
   }
 }
