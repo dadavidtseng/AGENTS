@@ -1,5 +1,13 @@
 # Agent QA Configuration
 
+[agent]
+ID = "agent-qa"
+VERSION = "0.3.0"
+ROLE = "qa"
+
+[logging]
+LEVEL = "debug"
+
 [broker.local]
 URL = "ws://localhost:8080/kadi"
 NETWORKS = ["qa", "quest", "git", "eval", "global"]
@@ -8,5 +16,18 @@ NETWORKS = ["qa", "quest", "git", "eval", "global"]
 URL = "wss://broker.dadavidtseng.info/kadi"
 NETWORKS = ["global"]
 
-[agent]
-ROLE = "programmer"
+[provider]
+PRIMARY = "model-manager"
+FALLBACK = "anthropic"
+
+[provider.model-manager]
+MODEL = "gpt-5-mini"
+
+[provider.anthropic]
+MODEL = "claude-haiku-4-5-20251001"
+
+[memory]
+DATA_PATH = "./data/memory"
+
+[secrets]
+VAULTS = ["anthropic", "model-manager"]
