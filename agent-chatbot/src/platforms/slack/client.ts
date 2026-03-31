@@ -78,4 +78,20 @@ export class SlackPlatformClient {
   ): Promise<{ ts: string; channel: string }> {
     return this.sendMessage(channel, text, threadTs);
   }
+
+  async addReaction(
+    channel: string,
+    timestamp: string,
+    emoji: string,
+  ): Promise<void> {
+    const channelId = await this.resolveChannelId(channel);
+    const result = await this.webClient.reactions.add({
+      channel: channelId,
+      timestamp,
+      name: emoji,
+    });
+    if (!result.ok) {
+      throw new Error(`Failed to add reaction: ${result.error}`);
+    }
+  }
 }

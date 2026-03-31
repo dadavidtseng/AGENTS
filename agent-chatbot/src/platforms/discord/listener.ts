@@ -10,6 +10,7 @@ import type { Message } from 'discord.js';
 import type { KadiClient } from '@kadi.build/core';
 import type { DiscordPlatformClient } from './client.js';
 import type { DiscordMentionEvent, ChatImageAttachment } from '../../shared/types.js';
+import { logger, MODULE_DISCORD_BOT, timer } from 'agents-library';
 
 export class DiscordListener {
   private botUserId: string | null = null;
@@ -20,6 +21,7 @@ export class DiscordListener {
     private readonly kadiClient: KadiClient,
     configBotUserId: string,
     private readonly logLevel: string = 'info',
+    private readonly publishNetwork: string = 'chatbot',
   ) {
     this.configBotUserId = configBotUserId;
   }
@@ -30,16 +32,16 @@ export class DiscordListener {
   start(): void {
     const { client } = this.discord;
 
-    client.on('ready', () => {
+    client.on('clientReady', () => {
       this.botUserId = client.user?.id ?? null;
-      console.log(`🆔 [Discord] Bot User ID: ${this.botUserId}`);
+      logger.debug(MODULE_DISCORD_BOT, `Bot User ID: ${this.botUserId}`, timer.elapsed('main'));
     });
 
     client.on('messageCreate', async (message: Message) => {
       await this.handleMessage(message);
     });
 
-    console.log('🎧 [Discord] Listening for @mentions via Gateway');
+    logger.debug(MODULE_DISCORD_BOT, 'Listening for @mentions via Gateway', timer.elapsed('main'));
   }
 
   private async handleMessage(message: Message): Promise<void> {
@@ -47,13 +49,13 @@ export class DiscordListener {
       if (message.author.bot) return;
 
       if (!this.botUserId) {
-        console.warn('⚠️  [Discord] Message received but botUserId not initialized yet');
+        logger.warn(MODULE_DISCORD_BOT, 'Message received but botUserId not initialized yet', timer.elapsed('main'));
         return;
       }
 
       if (!message.mentions.has(this.botUserId)) {
         if (this.logLevel === 'debug') {
-          console.log(`🔇 [Discord] Message from @${message.author.username} (no mention)`);
+          logger.debug(MODULE_DISCORD_BOT, `Message from @${message.author.username} (no mention)`, timer.elapsed('main'));
         }
         return;
       }
@@ -62,6 +64,13 @@ export class DiscordListener {
       const cleanText = message.content
         .replace(new RegExp(`<@!?${this.botUserId}>`, 'g'), '')
         .trim();
+
+      // Immediate acknowledgement reaction
+      try {
+        await message.react('👀');
+      } catch {
+        logger.debug(MODULE_DISCORD_BOT, 'Failed to add 👀 reaction', timer.elapsed('main'));
+      }
 
       const channelName = message.channel.isDMBased()
         ? 'DM'
@@ -101,12 +110,12 @@ export class DiscordListener {
 
       await this.kadiClient.publish(topic, event, {
         broker: 'default',
-        network: 'text',
+        network: this.publishNetwork,
       });
 
-      console.log(`💬 [Discord] @${message.author.username} in #${channelName}: "${textPreview}"${imgInfo} → published`);
+      logger.info(MODULE_DISCORD_BOT, `@${message.author.username} in #${channelName}: "${textPreview}"${imgInfo} → published`, timer.elapsed('main'));
     } catch (error) {
-      console.error('❌ [Discord] Error handling message:', error);
+      logger.error(MODULE_DISCORD_BOT, 'Error handling message', timer.elapsed('main'), error as Error);
     }
   }
 }

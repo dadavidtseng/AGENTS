@@ -8,6 +8,7 @@
  */
 
 import { Client, GatewayIntentBits, Partials, TextChannel, Message } from 'discord.js';
+import { logger, MODULE_DISCORD_BOT, timer } from 'agents-library';
 
 export class DiscordPlatformClient {
   readonly client: Client;
@@ -29,18 +30,18 @@ export class DiscordPlatformClient {
       partials: [Partials.Channel],
     });
 
-    this.client.on('ready', () => {
+    this.client.on('clientReady', () => {
       this.ready = true;
-      console.log(`✅ Discord client ready as ${this.client.user?.tag}`);
+      logger.info(MODULE_DISCORD_BOT, `Client ready as ${this.client.user?.tag}`, timer.elapsed('main'));
     });
 
     this.client.on('error', (error) => {
-      console.error('❌ Discord client error:', error);
+      logger.error(MODULE_DISCORD_BOT, 'Client error', timer.elapsed('main'), error);
     });
 
     // Login immediately
     this.client.login(token).catch((err) => {
-      console.error('❌ Failed to login to Discord:', err);
+      logger.error(MODULE_DISCORD_BOT, 'Failed to login to Discord', timer.elapsed('main'), err);
     });
   }
 
@@ -121,8 +122,23 @@ export class DiscordPlatformClient {
     return this.sendMessage(channel, text, messageId);
   }
 
+  async addReaction(
+    channel: string,
+    messageId: string,
+    emoji: string,
+  ): Promise<void> {
+    await this.waitForReady();
+    const channelId = await this.resolveChannelId(channel);
+    const textChannel = await this.client.channels.fetch(channelId) as TextChannel;
+    if (!textChannel?.isTextBased()) {
+      throw new Error('Channel is not a text channel');
+    }
+    const message = await textChannel.messages.fetch(messageId);
+    await message.react(emoji);
+  }
+
   destroy(): void {
     this.client.destroy();
-    console.log('🛑 Discord client destroyed');
+    logger.info(MODULE_DISCORD_BOT, 'Client destroyed', timer.elapsed('main'));
   }
 }

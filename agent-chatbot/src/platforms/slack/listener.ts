@@ -9,6 +9,7 @@
 import { App } from '@slack/bolt';
 import type { KadiClient } from '@kadi.build/core';
 import type { SlackMentionEvent, ChatImageAttachment } from '../../shared/types.js';
+import { logger, MODULE_SLACK_BOT, timer } from 'agents-library';
 
 export interface SlackListenerConfig {
   botToken: string;
@@ -16,6 +17,7 @@ export interface SlackListenerConfig {
   httpPort: number;
   botUserId: string;
   logLevel: string;
+  publishNetwork: string;
 }
 
 export class SlackListener {
@@ -41,11 +43,22 @@ export class SlackListener {
       await this.handleMention(event);
     });
 
-    console.log('✅ Registered Slack event handler: app_mention');
+    logger.debug(MODULE_SLACK_BOT, 'Registered event handler: app_mention', timer.elapsed('main'));
   }
 
   private async handleMention(event: any): Promise<void> {
     try {
+      // Immediate acknowledgement reaction
+      try {
+        await this.app.client.reactions.add({
+          channel: event.channel,
+          timestamp: event.ts,
+          name: 'eyes',
+        });
+      } catch {
+        logger.debug(MODULE_SLACK_BOT, 'Failed to add 👀 reaction', timer.elapsed('main'));
+      }
+
       // Remove bot mention tags from text
       const cleanText = event.text.replace(/<@[A-Z0-9]+>/g, '').trim();
 
@@ -69,16 +82,16 @@ export class SlackListener {
 
       await this.kadiClient.publish(topic, mentionEvent, {
         broker: 'default',
-        network: 'text',
+        network: this.config.publishNetwork,
       });
 
       const textPreview = cleanText.length > 50
         ? cleanText.substring(0, 50) + '...'
         : cleanText;
       const imgInfo = imageAttachments.length > 0 ? ` [${imageAttachments.length} image(s)]` : '';
-      console.log(`💬 [Slack] @${event.user}: "${textPreview}"${imgInfo} → published`);
+      logger.info(MODULE_SLACK_BOT, `@${event.user}: "${textPreview}"${imgInfo} → published`, timer.elapsed('main'));
     } catch (error) {
-      console.error('❌ [Slack] Error handling mention:', error);
+      logger.error(MODULE_SLACK_BOT, 'Error handling mention', timer.elapsed('main'), error as Error);
     }
   }
 
@@ -98,11 +111,11 @@ export class SlackListener {
         // Use Slack Web API to verify file access and get download URL
         const fileId = file.id;
         if (!fileId) {
-          console.warn(`⚠️  [Slack] No file ID for image "${file.name}"`);
+          logger.warn(MODULE_SLACK_BOT, `No file ID for image "${file.name}"`, timer.elapsed('main'));
           continue;
         }
 
-        console.log(`📥 [Slack] Downloading image "${file.name}" (id: ${fileId})...`);
+        logger.debug(MODULE_SLACK_BOT, `Downloading image "${file.name}" (id: ${fileId})...`, timer.elapsed('main'));
         const base64 = await this.downloadSlackFile(fileId, file.url_private_download || file.url_private);
         attachments.push({
           filename: file.name ?? 'unknown',
@@ -111,7 +124,7 @@ export class SlackListener {
           base64,
         });
       } catch (err) {
-        console.warn(`⚠️  [Slack] Failed to download image "${file.name}":`, err);
+        logger.warn(MODULE_SLACK_BOT, `Failed to download image "${file.name}": ${err}`, timer.elapsed('main'));
       }
     }
 
@@ -127,17 +140,17 @@ export class SlackListener {
     try {
       const info = await this.app.client.files.info({ file: fileId });
       if (!info.ok) {
-        console.warn(`⚠️  [Slack] files.info failed: ${info.error}`);
+        logger.warn(MODULE_SLACK_BOT, `files.info failed: ${info.error}`, timer.elapsed('main'));
       } else {
-        console.log(`✅ [Slack] files.info OK — file accessible`);
+        logger.debug(MODULE_SLACK_BOT, 'files.info OK — file accessible', timer.elapsed('main'));
         // Use the URL from the API response (most reliable)
         const url = (info.file as any)?.url_private_download || (info.file as any)?.url_private || fallbackUrl;
         return await this.fetchFileWithAuth(url);
       }
     } catch (err: any) {
-      console.warn(`⚠️  [Slack] files.info error: ${err.data?.error || err.message}`);
+      logger.warn(MODULE_SLACK_BOT, `files.info error: ${err.data?.error || err.message}`, timer.elapsed('main'));
       if (err.data?.error === 'missing_scope') {
-        console.error(`❌ [Slack] Bot is missing 'files:read' scope! Add it at https://api.slack.com/apps → OAuth & Permissions`);
+        logger.error(MODULE_SLACK_BOT, "Bot is missing 'files:read' scope! Add it at https://api.slack.com/apps → OAuth & Permissions", timer.elapsed('main'));
       }
     }
 
@@ -164,19 +177,19 @@ export class SlackListener {
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
-    console.log(`✅ [Slack] Downloaded ${buffer.length} bytes (Content-Type: ${contentType})`);
+    logger.debug(MODULE_SLACK_BOT, `Downloaded ${buffer.length} bytes (Content-Type: ${contentType})`, timer.elapsed('main'));
     return buffer.toString('base64');
   }
 
   async start(): Promise<void> {
-    console.log(`🚀 [Slack] Starting HTTP Events API listener on port ${this.config.httpPort}...`);
+    logger.debug(MODULE_SLACK_BOT, `Starting HTTP Events API listener on port ${this.config.httpPort}...`, timer.elapsed('main'));
     await this.app.start(this.config.httpPort);
-    console.log(`✅ [Slack] HTTP listener started on port ${this.config.httpPort}`);
-    console.log(`🎧 [Slack] Events URL: http://localhost:${this.config.httpPort}/slack/events`);
+    logger.debug(MODULE_SLACK_BOT, `HTTP listener started on port ${this.config.httpPort}`, timer.elapsed('main'));
+    logger.debug(MODULE_SLACK_BOT, `Events URL: http://localhost:${this.config.httpPort}/slack/events`, timer.elapsed('main'));
   }
 
   async stop(): Promise<void> {
     await this.app.stop();
-    console.log('🛑 [Slack] HTTP listener stopped');
+    logger.info(MODULE_SLACK_BOT, 'HTTP listener stopped', timer.elapsed('main'));
   }
 }
