@@ -1,0 +1,19 @@
+# Designer Role Configuration
+
+role = "designer"
+capabilities = ["ui-design", "ux-design", "css", "responsive-layout", "wireframing", "prototyping"]
+maxConcurrentTasks = 1
+mainRepoPath = "/mnt/c/GitHub/agent-playground"
+worktreePath = "/mnt/c/GitHub/agent-playground-designer"
+eventTopic = "task"
+commitFormat = "feat: create design for task {taskId}"
+tools = ["git_git_", "ability_file_"]
+networks = ["designer", "git", "qa", "file", "quest", "global"]
+
+[provider]
+temperature = 0.7
+maxTokens = 8192
+
+[memory]
+enabled = true
+namespace = "designer"

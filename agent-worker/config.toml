@@ -1,6 +1,14 @@
 # Agent Worker Configuration
 # Secrets go in secrets.toml (encrypted vault)
 
+[agent]
+ID = "agent-worker"
+ROLE = "programmer"
+VERSION = "1.0.0"
+
+[logging]
+LEVEL = "info"
+
 [broker.local]
 URL = "ws://localhost:8080/kadi"
 NETWORKS = ["programmer", "git", "qa", "file", "utility", "quest", "global"]
@@ -9,11 +17,18 @@ NETWORKS = ["programmer", "git", "qa", "file", "utility", "quest", "global"]
 URL = "wss://broker.dadavidtseng.info/kadi"
 NETWORKS = ["global"]
 
-[agent]
-ROLE = "programmer"
+[provider]
+PRIMARY = "model-manager"
+FALLBACK = "anthropic"
 
-[model]
-MANAGER_BASE_URL = ""
+[provider.model-manager]
+MODEL = "gpt-5-mini"
 
-[data]
-PATH = "./data"
+[provider.anthropic]
+MODEL = "claude-haiku-4-5-20251001"
+
+[memory]
+DATA_PATH = "./data/memory"
+
+[secrets]
+VAULTS = ["anthropic", "model-manager"]

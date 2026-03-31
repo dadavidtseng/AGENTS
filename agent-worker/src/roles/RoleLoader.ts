@@ -1,7 +1,7 @@
 /**
  * RoleLoader and RoleValidator — Configuration management for KĀDI worker agents
  *
- * Loads role configuration JSON files from config/roles/ and validates all sections
+ * Loads role configuration TOML files from config/roles/ and validates all sections
  * using Zod schemas. Returns typed RoleConfig objects or descriptive error messages.
  *
  * @module roles/RoleLoader
@@ -10,6 +10,7 @@
 import { z } from 'zod';
 import fs from 'fs';
 import path from 'path';
+import { readConfigFile } from 'agents-library';
 
 // ============================================================================
 // Zod Schemas
@@ -17,7 +18,7 @@ import path from 'path';
 
 /** Provider configuration schema */
 const ProviderConfigSchema = z.object({
-  model: z.string().min(1, 'Provider model name is required'),
+  model: z.string().min(1).optional(),
   temperature: z.number().min(0).max(2).optional(),
   maxTokens: z.number().int().min(1).max(65536).optional(),
 });
@@ -51,7 +52,7 @@ const RoleConfigSchema = z.object({
 
 /** Provider configuration for LLM access */
 export interface ProviderConfig {
-  model: string;
+  model?: string;
   temperature?: number;
   maxTokens?: number;
 }
@@ -89,17 +90,8 @@ export interface ValidationResult {
 
 /**
  * Validates role configuration objects against the Zod schema.
- *
- * Returns a ValidationResult with descriptive error messages for each
- * validation failure. All fields are checked — both required and optional.
  */
 export class RoleValidator {
-  /**
-   * Validate a raw configuration object.
-   *
-   * @param config - Raw parsed JSON object
-   * @returns ValidationResult with `valid` flag and `errors` array
-   */
   validate(config: unknown): ValidationResult {
     const result = RoleConfigSchema.safeParse(config);
 
@@ -107,7 +99,6 @@ export class RoleValidator {
       return { valid: true, errors: [] };
     }
 
-    // Map Zod issues to human-readable error messages
     const errors = result.error.issues.map((issue) => {
       const fieldPath = issue.path.join('.');
       return fieldPath ? `${fieldPath}: ${issue.message}` : issue.message;
@@ -134,9 +125,6 @@ export class RoleLoader {
   private readonly configDir: string;
   private readonly validator: RoleValidator;
 
-  /**
-   * @param projectRoot - Absolute path to the agent project root (e.g., 'C:/GitHub/agent-worker')
-   */
   constructor(projectRoot: string) {
     this.configDir = path.join(projectRoot, 'config', 'roles');
     this.validator = new RoleValidator();
@@ -144,15 +132,10 @@ export class RoleLoader {
 
   /**
    * Load and validate a role configuration by name.
-   *
-   * @param roleName - Role identifier (e.g., 'artist', 'programmer', 'designer')
-   * @returns Validated RoleConfig object
-   * @throws {RoleConfigError} If file not found, JSON parse fails, or validation fails
    */
   loadRole(roleName: string): RoleConfig {
-    const filePath = path.join(this.configDir, `${roleName}.json`);
+    const filePath = path.join(this.configDir, `${roleName}.toml`);
 
-    // Step 1: Check file exists
     if (!fs.existsSync(filePath)) {
       throw new RoleConfigError(
         `Role configuration file not found: ${filePath}`,
@@ -161,11 +144,33 @@ export class RoleLoader {
       );
     }
 
-    // Step 2: Read and parse JSON
-    let rawConfig: unknown;
+    let rawConfig: Record<string, unknown>;
     try {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      rawConfig = JSON.parse(content);
+      const cfg = readConfigFile(filePath);
+      rawConfig = {
+        role: cfg.string('role'),
+        capabilities: cfg.strings('capabilities'),
+        maxConcurrentTasks: cfg.number('maxConcurrentTasks'),
+        worktreePath: cfg.string('worktreePath'),
+        eventTopic: cfg.string('eventTopic'),
+        commitFormat: cfg.string('commitFormat'),
+        ...(cfg.has('mainRepoPath') && { mainRepoPath: cfg.string('mainRepoPath') }),
+        ...(cfg.has('tools') && { tools: cfg.strings('tools') }),
+        ...(cfg.has('networks') && { networks: cfg.strings('networks') }),
+        ...(cfg.has('provider.model') || cfg.has('provider.temperature') || cfg.has('provider.maxTokens') ? {
+          provider: {
+            ...(cfg.has('provider.model') && { model: cfg.string('provider.model') }),
+            ...(cfg.has('provider.temperature') && { temperature: cfg.number('provider.temperature') }),
+            ...(cfg.has('provider.maxTokens') && { maxTokens: cfg.number('provider.maxTokens') }),
+          },
+        } : {}),
+        ...(cfg.has('memory.enabled') && {
+          memory: {
+            enabled: cfg.bool('memory.enabled'),
+            namespace: cfg.string('memory.namespace'),
+          },
+        }),
+      };
     } catch (error: any) {
       throw new RoleConfigError(
         `Failed to parse role configuration: ${error.message}`,
@@ -174,7 +179,6 @@ export class RoleLoader {
       );
     }
 
-    // Step 3: Validate
     const result = this.validator.validate(rawConfig);
     if (!result.valid) {
       throw new RoleConfigError(
@@ -185,13 +189,11 @@ export class RoleLoader {
       );
     }
 
-    return rawConfig as RoleConfig;
+    return rawConfig as unknown as RoleConfig;
   }
 
   /**
    * List all available role names by scanning the config directory.
-   *
-   * @returns Array of role names (without .json extension)
    */
   listRoles(): string[] {
     if (!fs.existsSync(this.configDir)) {
@@ -200,8 +202,8 @@ export class RoleLoader {
 
     return fs
       .readdirSync(this.configDir)
-      .filter((f) => f.endsWith('.json'))
-      .map((f) => f.replace('.json', ''));
+      .filter((f) => f.endsWith('.toml'))
+      .map((f) => f.replace('.toml', ''));
   }
 }
 
@@ -209,10 +211,6 @@ export class RoleLoader {
 // Error Class
 // ============================================================================
 
-/**
- * Typed error for role configuration failures.
- * Includes the role name and error code for programmatic handling.
- */
 export class RoleConfigError extends Error {
   constructor(
     message: string,
