@@ -49,13 +49,9 @@ interface SlackBotConfig {
 // ============================================================================
 
 export class SlackBot extends BaseBot {
-  private readonly providerManager: ProviderManager;
-  private readonly memoryService: MemoryService;
 
   constructor(config: SlackBotConfig) {
     super(config);
-    this.providerManager = config.providerManager;
-    this.memoryService = config.memoryService;
   }
 
   /**
@@ -172,7 +168,7 @@ export class SlackBot extends BaseBot {
         },
         agent: 'agent-artist',
         timestamp: new Date().toISOString(),
-      }, { broker: 'default', network: 'global' });
+      }, { broker: 'default', network: 'chatbot' });
 
       // Send user-friendly error message
       await this.sendSlackReply(
@@ -187,7 +183,7 @@ export class SlackBot extends BaseBot {
       logger.info(MODULE_SLACK_BOT, `Processing mention from @${mention.user}: "${mention.text}"`, timer.elapsed('main'));
 
       // Step 1: Retrieve conversation context from MemoryService
-      const contextResult = await this.memoryService.retrieveContext(mention.user, mention.channel);
+      const contextResult = await this.memoryService!.retrieveContext(mention.user, mention.channel);
 
       if (!contextResult.success) {
         const errorResult = contextResult as { success: false; error: MemoryError };
@@ -217,7 +213,7 @@ export class SlackBot extends BaseBot {
       }
 
       // Step 4: Generate response using ProviderManager (STREAMING enabled for better UX)
-      const streamResult = await this.providerManager.streamChat(messages, {
+      const streamResult = await this.providerManager!.streamChat(messages, {
         model: detectedModel,
       });
 
@@ -245,7 +241,7 @@ export class SlackBot extends BaseBot {
           },
           agent: 'agent-artist',
           timestamp: new Date().toISOString(),
-        }, { broker: 'default', network: 'global' });
+        }, { broker: 'default', network: 'chatbot' });
 
         // Send user-friendly error message (no stack traces)
         const userMessage = 'Sorry, I encountered an issue generating a response. The issue has been logged.';
@@ -268,14 +264,14 @@ export class SlackBot extends BaseBot {
 
       // Step 6: Store messages in MemoryService
       // Store user message
-      await this.memoryService.storeMessage(mention.user, mention.channel, {
+      await this.memoryService!.storeMessage(mention.user, mention.channel, {
         role: 'user',
         content: mention.text,
         timestamp: Date.now(),
       });
 
       // Store bot response
-      await this.memoryService.storeMessage(mention.user, mention.channel, {
+      await this.memoryService!.storeMessage(mention.user, mention.channel, {
         role: 'assistant',
         content: botResponse,
         timestamp: Date.now(),
@@ -312,7 +308,7 @@ export class SlackBot extends BaseBot {
         },
         agent: 'agent-artist',
         timestamp: new Date().toISOString(),
-      }, { broker: 'default', network: 'global' });
+      }, { broker: 'default', network: 'chatbot' });
 
       // Send appropriate error message to Slack (no stack traces)
       const userMessage = isTransient
@@ -373,8 +369,8 @@ export class SlackBot extends BaseBot {
    * Execute a KADI tool via broker with retry logic
    * @deprecated This method is unused in the current implementation (tools are invoked via invokeToolWithRetry)
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  private async executeKadiTool(
+  // @ts-ignore — reserved for future use
+  private async _executeKadiTool(
     toolName: string,
     input: Record<string, unknown>
   ): Promise<any> {
@@ -435,7 +431,7 @@ export class SlackBot extends BaseBot {
         },
         agent: 'agent-artist',
         timestamp: new Date().toISOString(),
-      }, { broker: 'default', network: 'global' });
+      }, { broker: 'default', network: 'chatbot' });
 
       // Extract useful error message for Claude
       const errorMessage = error.message || String(error);
@@ -616,8 +612,8 @@ export class SlackBot extends BaseBot {
    *
    * @deprecated This method is unused in the current implementation (tool use removed)
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  private async getAvailableTools(): Promise<Anthropic.Tool[]> {
+  // @ts-ignore — reserved for future use
+  private async _getAvailableTools(): Promise<Anthropic.Tool[]> {
     // 1. Get locally registered tools (tools on THIS agent)
     const localTools = this.client.readAgentJson().tools.map(tool => ({
       name: tool.name,

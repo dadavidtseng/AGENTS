@@ -9,6 +9,6 @@
     "clean": "rm -rf node_modules package-lock.json agent-lock.json"
   },
   "abilities": {
-    "ability-file-management": "1.0.0"
+    "secret-ability": "^0.9.4"
   }
 }

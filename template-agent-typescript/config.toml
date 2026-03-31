@@ -1,0 +1,43 @@
+# Template Agent Configuration
+# Copy this file and customize for your agent
+
+[agent]
+ID = "template-agent-typescript"
+VERSION = "0.0.1"
+ROLE = "programmer"
+
+[logging]
+LEVEL = "debug"
+
+[broker.local]
+URL = "ws://localhost:8080/kadi"
+NETWORKS = ["chatbot"]
+
+# [broker.remote]
+# URL = "wss://broker.example.com/kadi"
+# NETWORKS = ["global"]
+
+[provider]
+PRIMARY = "model-manager"
+FALLBACK = "anthropic"
+
+[provider.model-manager]
+MODEL = "gpt-5-mini"
+
+[provider.anthropic]
+MODEL = "claude-haiku-4-5-20251001"
+
+[memory]
+DATA_PATH = "./data/memory"
+
+[secrets]
+VAULTS = ["anthropic", "model-manager"]
+
+# Bot configuration — uncomment and set USER_IDs to enable
+[bot.slack]
+ENABLED = "true"
+USER_ID = "U09SCDV78AK"
+
+[bot.discord]
+ENABLED = "true"
+USER_ID = "1438685741751210025"

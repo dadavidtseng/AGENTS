@@ -46,13 +46,9 @@ interface DiscordBotConfig extends BaseBotConfig {
 // ============================================================================
 
 export class DiscordBot extends BaseBot {
-    private readonly providerManager: ProviderManager;
-    private readonly memoryService: MemoryService;
 
     constructor(config: DiscordBotConfig) {
         super(config);
-        this.providerManager = config.providerManager;
-        this.memoryService = config.memoryService;
     }
 
     /**
@@ -176,7 +172,7 @@ export class DiscordBot extends BaseBot {
                 },
                 agent: 'agent-artist',
                 timestamp: new Date().toISOString(),
-            }, { broker: 'default', network: 'global' });
+            }, { broker: 'default', network: 'chatbot' });
 
             // Send user-friendly error message
             await this.sendDiscordReply(
@@ -189,7 +185,7 @@ export class DiscordBot extends BaseBot {
 
         try {
             // Step 1: Retrieve conversation context from MemoryService
-            const contextResult = await this.memoryService.retrieveContext(mention.user, mention.channel);
+            const contextResult = await this.memoryService!.retrieveContext(mention.user, mention.channel);
 
             if (!contextResult.success) {
                 const errorResult = contextResult as { success: false; error: MemoryError };
@@ -253,7 +249,7 @@ export class DiscordBot extends BaseBot {
                     // Non-streaming mode for tool calls
                     logger.info(MODULE_DISCORD_BOT, `Using NON-STREAMING mode (tools present)`, timer.elapsed('main'));
                     
-                    const result = await this.providerManager.chat(messages, {
+                    const result = await this.providerManager!.chat(messages, {
                         model: detectedModel,
                         tools: openaiTools,
                         tool_choice: 'auto',
@@ -283,7 +279,7 @@ export class DiscordBot extends BaseBot {
                             },
                             agent: 'agent-artist',
                             timestamp: new Date().toISOString(),
-                        }, { broker: 'default', network: 'global' });
+                        }, { broker: 'default', network: 'chatbot' });
 
                         // Send user-friendly error message (no stack traces)
                         const userMessage = 'Sorry, I encountered an issue generating a response. The issue has been logged.';
@@ -297,7 +293,7 @@ export class DiscordBot extends BaseBot {
                     // Streaming mode for final text responses
                     logger.info(MODULE_DISCORD_BOT, `Using STREAMING mode (no tools)`, timer.elapsed('main'));
                     
-                    const streamResult = await this.providerManager.streamChat(messages, {
+                    const streamResult = await this.providerManager!.streamChat(messages, {
                         model: detectedModel,
                     });
 
@@ -325,7 +321,7 @@ export class DiscordBot extends BaseBot {
                             },
                             agent: 'agent-artist',
                             timestamp: new Date().toISOString(),
-                        }, { broker: 'default', network: 'global' });
+                        }, { broker: 'default', network: 'chatbot' });
 
                         // Send user-friendly error message (no stack traces)
                         const userMessage = 'Sorry, I encountered an issue generating a response. The issue has been logged.';
@@ -409,14 +405,14 @@ export class DiscordBot extends BaseBot {
 
             // Step 6: Store messages in MemoryService
             // Store user message
-            await this.memoryService.storeMessage(mention.user, mention.channel, {
+            await this.memoryService!.storeMessage(mention.user, mention.channel, {
                 role: 'user',
                 content: mention.text,
                 timestamp: Date.now(),
             });
 
             // Store bot response
-            await this.memoryService.storeMessage(mention.user, mention.channel, {
+            await this.memoryService!.storeMessage(mention.user, mention.channel, {
                 role: 'assistant',
                 content: botResponse,
                 timestamp: Date.now(),
@@ -454,7 +450,7 @@ export class DiscordBot extends BaseBot {
                 },
                 agent: 'agent-artist',
                 timestamp: new Date().toISOString(),
-            }, { broker: 'default', network: 'global' });
+            }, { broker: 'default', network: 'chatbot' });
 
             // Send appropriate error message to Discord (no stack traces)
             const userMessage = isTransient
@@ -528,10 +524,10 @@ export class DiscordBot extends BaseBot {
 
         // If message fits in one reply, send directly
         if (text.length <= MAX_DISCORD_MESSAGE_LENGTH) {
-            logger.info(MODULE_DISCORD_BOT, `Invoking discord_server_send_reply for message_id: ${message_id}, text length: ${text.length}`, timer.elapsed('main'));
+            logger.info(MODULE_DISCORD_BOT, `Invoking discord_send_reply for message_id: ${message_id}, text length: ${text.length}`, timer.elapsed('main'));
             await this.invokeToolWithRetry({
                 targetAgent: 'mcp-server-discord',
-                toolName: 'discord_server_send_reply',
+                toolName: 'discord_send_reply',
                 toolInput: {
                     channel,
                     message_id,
@@ -553,7 +549,7 @@ export class DiscordBot extends BaseBot {
         // Send first chunk as a reply to the original message
         await this.invokeToolWithRetry({
             targetAgent: 'mcp-server-discord',
-            toolName: 'discord_server_send_reply',
+            toolName: 'discord_send_reply',
             toolInput: {
                 channel,
                 message_id,

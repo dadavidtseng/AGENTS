@@ -1,9 +1,9 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ESNext",
+    "module": "Node16",
     "lib": ["ES2022"],
-    "moduleResolution": "node",
+    "moduleResolution": "Node16",
     "resolveJsonModule": true,
     "allowJs": true,
     "outDir": "./dist",
@@ -11,15 +11,21 @@
     "removeComments": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "strict": false,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "noImplicitReturns": true,
     "skipLibCheck": true,
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "paths": {
+      "agents-library": ["../agents-library/dist/index.d.ts"],
+      "agents-library/*": ["../agents-library/dist/*"],
+      "@kadi.build/core": ["../../humin-game-lab/KADI/kadi-core/dist/index.d.ts"],
+      "@kadi.build/core/*": ["../../humin-game-lab/KADI/kadi-core/dist/*"]
+    }
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "../kadi", "**/node_modules/@kadi.build/**", "src/__tests__"]
+  "exclude": ["node_modules", "dist"]
 }
