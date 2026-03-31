@@ -145,10 +145,10 @@ export class BaseAgent {
   readonly client: KadiClient;
 
   /** LLM provider manager (undefined if no provider config) */
-  readonly providerManager?: ProviderManager;
+  providerManager?: ProviderManager;
 
   /** Memory service for context persistence (undefined if no memory config) */
-  readonly memoryService?: MemoryService;
+  memoryService?: MemoryService;
 
   /** Agent configuration */
   readonly config: BaseAgentConfig;
@@ -157,13 +157,13 @@ export class BaseAgent {
   private shutdownHandlersRegistered = false;
 
   /** Whether the agent is currently connected */
-  private connected = false;
+  protected connected = false;
 
   /** Timer key for this agent's lifetime tracking */
-  private readonly timerKey: string;
+  protected readonly timerKey: string;
 
   /** Module tag for logging (uses agentId instead of generic 'template-agent') */
-  private readonly tag: string;
+  protected readonly tag: string;
 
   constructor(config: BaseAgentConfig) {
     this.config = config;

@@ -193,6 +193,65 @@ export interface WorkerAgentConfig {
 }
 
 // ============================================================================
+// Worker Agent Full Configuration (extends BaseAgentConfig)
+// ============================================================================
+
+/**
+ * Full configuration for BaseWorkerAgent when it extends BaseAgent.
+ *
+ * Combines BaseAgentConfig (broker, provider, memory) with worker-specific
+ * fields (role, worktree, model, capabilities). This eliminates the need
+ * for separate BaseAgent + WorkerAgent creation and manual service injection.
+ *
+ * @example
+ * ```typescript
+ * const config: WorkerAgentFullConfig = {
+ *   // BaseAgentConfig fields
+ *   agentId: 'agent-worker-artist',
+ *   agentRole: 'artist',
+ *   brokerUrl: 'ws://localhost:8080/kadi',
+ *   networks: ['artist', 'global'],
+ *   provider: { anthropicApiKey: '...' },
+ *   memory: { dataPath: './data/memory' },
+ *   // Worker-specific fields
+ *   role: 'artist',
+ *   worktreePath: '/path/to/worktree',
+ *   claudeModel: 'gpt-5-mini',
+ *   capabilities: ['art', 'illustration'],
+ * };
+ * ```
+ */
+export interface WorkerAgentFullConfig {
+  // === BaseAgentConfig fields ===
+  agentId: string;
+  agentRole: string;
+  version?: string;
+  brokerUrl: string;
+  networks: string[];
+  additionalBrokers?: Record<string, { url: string; networks: string[] }>;
+  provider?: {
+    anthropicApiKey?: string;
+    modelManagerBaseUrl?: string;
+    modelManagerApiKey?: string;
+    primaryProvider?: string;
+    fallbackProvider?: string;
+    retryAttempts?: number;
+    retryDelayMs?: number;
+    healthCheckIntervalMs?: number;
+  };
+  memory?: {
+    dataPath: string;
+  };
+
+  // === Worker-specific fields ===
+  role: AgentRole;
+  worktreePath: string;
+  claudeModel?: string;
+  capabilities?: string[];
+  customBehaviors?: WorkerBehaviors;
+}
+
+// ============================================================================
 // Shadow Agent Configuration
 // ============================================================================
 

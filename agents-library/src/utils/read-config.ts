@@ -111,3 +111,13 @@ export function readConfig(startDir?: string): Config {
   const data = parseSimpleToml(content);
   return new Config(data, configPath);
 }
+
+/**
+ * Read a specific TOML file by path and return a Config instance.
+ * Unlike readConfig(), this does not walk up directories — it reads the exact file.
+ */
+export function readConfigFile(filePath: string): Config {
+  const content = readFileSync(filePath, 'utf-8');
+  const data = parseSimpleToml(content);
+  return new Config(data, filePath);
+}

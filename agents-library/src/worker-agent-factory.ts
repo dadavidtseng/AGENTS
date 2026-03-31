@@ -25,9 +25,10 @@
  * @module worker-agent-factory
  */
 
-import { KadiClient, z } from '@kadi.build/core';
+import { z } from '@kadi.build/core';
 import type { WorkerAgentConfig, AgentRole } from './types/agent-config.js';
 import { BaseBot, BaseBotConfig } from './base-bot.js';
+import { BaseAgent } from './base-agent.js';
 import type { ProviderManager } from './providers/provider-manager.js';
 import type { Message, ToolDefinition, ChatOptions } from './providers/types.js';
 import {
@@ -37,6 +38,7 @@ import {
   TaskRejectedEvent,
   type TaskReviewRequestedPayload,
 } from './types/event-schemas.js';
+import type { WorkerAgentFullConfig } from './types/agent-config.js';
 import { logger, MODULE_AGENT } from './utils/logger.js';
 import { timer } from './utils/timer.js';
 import type { MemoryService } from './memory/memory-service.js';
@@ -124,38 +126,12 @@ const WorkerAgentConfigSchema = z.object({
  * // Agent now listens for {role}.task.assigned events and executes tasks
  * ```
  */
-export class BaseWorkerAgent {
+export class BaseWorkerAgent extends BaseAgent {
   // ============================================================================
   // Protected Properties (accessible to subclasses/extensions)
   // ============================================================================
 
-  /**
-   * KĀDI client for broker communication
-   *
-   * Used for:
-   * - Subscribing to events
-   * - Publishing completion/failure events
-   * - Invoking remote MCP tools (git, file management)
-   */
-  protected client: KadiClient;
-
-  /**
-   * LLM provider manager for model selection and chat
-   *
-   * Replaces direct Anthropic SDK usage. Provides:
-   * - Model-based routing (claude→Anthropic, gpt→Model Manager)
-   * - Automatic fallback on provider failure
-   * - Tool-calling via ChatOptions.tools
-   *
-   * Optional — if null, agent cannot execute tasks requiring LLM.
-   */
-  protected providerManager: ProviderManager | null = null;
-
-  /**
-   * Memory service for storing task outcomes and recalling past patterns.
-   * Injected via setMemoryService() from the agent entry point.
-   */
-  protected memoryService: MemoryService | null = null;
+  // NOTE: client, providerManager, memoryService are inherited from BaseAgent
 
   /**
    * Agent role (artist, designer, programmer)
@@ -256,11 +232,9 @@ export class BaseWorkerAgent {
   private baseBot: BaseBot | null = null;
 
   /**
-   * Full agent configuration
-   *
-   * Stored for reference and potential reconfiguration.
+   * Worker-specific configuration (role, worktree, model, etc.)
    */
-  private config: WorkerAgentConfig;
+  private workerConfig: WorkerAgentConfig;
 
   /**
    * Set of task IDs that have been processed or are currently in-flight.
@@ -297,38 +271,74 @@ export class BaseWorkerAgent {
    * });
    * ```
    */
-  constructor(config: WorkerAgentConfig) {
+  constructor(config: WorkerAgentConfig | WorkerAgentFullConfig) {
+    // If WorkerAgentFullConfig (has agentId at top level), use BaseAgent inheritance
+    const isFullConfig = 'agentId' in config && 'brokerUrl' in config && 'role' in config && 'agentRole' in config;
+
+    if (isFullConfig) {
+      // WorkerAgentFullConfig path: BaseAgent handles client, providers, memory
+      const fullConfig = config as WorkerAgentFullConfig;
+      super({
+        agentId: fullConfig.agentId,
+        agentRole: fullConfig.agentRole,
+        version: fullConfig.version,
+        brokerUrl: fullConfig.brokerUrl,
+        networks: fullConfig.networks,
+        additionalBrokers: fullConfig.additionalBrokers,
+        provider: fullConfig.provider,
+        memory: fullConfig.memory,
+      });
+    } else {
+      // Legacy WorkerAgentConfig path: create minimal BaseAgent config
+      const legacyConfig = config as WorkerAgentConfig;
+      super({
+        agentId: legacyConfig.agentId || `agent-${legacyConfig.role}`,
+        agentRole: legacyConfig.role,
+        brokerUrl: legacyConfig.brokerUrl,
+        networks: legacyConfig.networks,
+        provider: legacyConfig.anthropicApiKey ? {
+          anthropicApiKey: legacyConfig.anthropicApiKey,
+        } : undefined,
+      });
+    }
+
     // Start factory timer for lifetime tracking
     timer.start('factory');
 
-    // Store full configuration
-    this.config = config;
+    // Store worker-specific configuration
+    this.workerConfig = 'anthropicApiKey' in config
+      ? config as WorkerAgentConfig
+      : {
+          // Convert WorkerAgentFullConfig to WorkerAgentConfig for internal use
+          role: (config as WorkerAgentFullConfig).role,
+          worktreePath: (config as WorkerAgentFullConfig).worktreePath,
+          brokerUrl: (config as WorkerAgentFullConfig).brokerUrl,
+          networks: (config as WorkerAgentFullConfig).networks,
+          anthropicApiKey: (config as WorkerAgentFullConfig).provider?.anthropicApiKey || '',
+          agentId: (config as WorkerAgentFullConfig).agentId,
+          claudeModel: (config as WorkerAgentFullConfig).claudeModel,
+          capabilities: (config as WorkerAgentFullConfig).capabilities,
+          customBehaviors: (config as WorkerAgentFullConfig).customBehaviors,
+        };
 
     // Extract and store individual config properties
-    this.role = config.role;
-    this.worktreePath = config.worktreePath;
+    this.role = 'role' in config ? config.role : (config as any).role;
+    this.worktreePath = 'worktreePath' in config ? config.worktreePath : '';
     this.networks = config.networks;
     this.claudeModel = config.claudeModel || 'claude-sonnet-4-20250514';
     this.capabilities = config.capabilities || [];
     this.toolPrefixes = [];
 
-    // Initialize KĀDI client
-    this.client = new KadiClient({
-      name: config.agentId || `agent-${config.role}`,
-      version: '1.0.0',
-      brokers: {
-        default: { url: config.brokerUrl, networks: config.networks }
-      },
-      defaultBroker: 'default',
-    });
-
     // COMPOSITION: Create BaseBot instance for circuit breaker and retry logic
-    // Only created when anthropicApiKey is available (backward compatibility)
-    if (config.anthropicApiKey) {
+    const apiKey = 'anthropicApiKey' in config
+      ? (config as WorkerAgentConfig).anthropicApiKey
+      : (config as WorkerAgentFullConfig).provider?.anthropicApiKey;
+
+    if (apiKey) {
       const baseBotConfig: BaseBotConfig = {
-        client: this.client,
-        anthropicApiKey: config.anthropicApiKey,
-        botUserId: config.agentId || `agent-${config.role}`
+        client: this.client,  // inherited from BaseAgent
+        anthropicApiKey: apiKey,
+        botUserId: this.workerConfig.agentId || `agent-${this.role}`,
       };
       this.baseBot = new (class extends BaseBot {
         protected async handleMention(_event: any): Promise<void> { /* No-op */ }
@@ -363,16 +373,13 @@ export class BaseWorkerAgent {
    * ```
    */
   protected async initializeClient(): Promise<void> {
-    logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
-    logger.info(MODULE_AGENT, '🔌 Initializing KĀDI client...', timer.elapsed('factory'));
+    logger.debug(MODULE_AGENT, 'Initializing KADI client...', timer.elapsed('factory'));
 
     try {
       // Step 1: Start client connection to broker
-      logger.info(MODULE_AGENT, '   → Connecting to broker...', timer.elapsed('factory'));
-
       try {
         await this.client.connect();
-        logger.info(MODULE_AGENT, '   ✅ Connected to broker', timer.elapsed('factory'));
+        logger.debug(MODULE_AGENT, 'Connected to broker', timer.elapsed('factory'));
       } catch (error: any) {
         logger.error(MODULE_AGENT, `Client connection error: ${error.message || String(error)}`, timer.elapsed('factory'), error);
         throw error;
@@ -380,25 +387,17 @@ export class BaseWorkerAgent {
 
       // Step 2: Initialize ability response subscription (if BaseBot available)
       if (this.baseBot) {
-        logger.info(MODULE_AGENT, '   → Initializing ability response subscription...', timer.elapsed('factory'));
         await this.baseBot['initializeAbilityResponseSubscription']();
-        logger.info(MODULE_AGENT, '   ✅ Ability response subscription initialized', timer.elapsed('factory'));
+        logger.debug(MODULE_AGENT, 'Ability response subscription initialized', timer.elapsed('factory'));
       }
 
-      logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
-      logger.info(MODULE_AGENT, '✅ KĀDI client initialized successfully', timer.elapsed('factory'));
-      logger.info(MODULE_AGENT, `   Networks: ${this.networks.join(', ')}`, timer.elapsed('factory'));
-      logger.info(MODULE_AGENT, `   Protocol: Ready`, timer.elapsed('factory'));
-      logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
+      logger.debug(MODULE_AGENT, `KADI client ready (networks: ${this.networks.join(', ')})`, timer.elapsed('factory'));
 
       // Note: client.serve() continues running in background to handle incoming requests
       // We don't await it because it never resolves (blocks indefinitely)
 
     } catch (error: any) {
-      logger.error(MODULE_AGENT, '', timer.elapsed('factory'));
-      logger.error(MODULE_AGENT, 'Failed to initialize KĀDI client', timer.elapsed('factory'), error);
-      logger.error(MODULE_AGENT, `   Error: ${error.message || String(error)}`, timer.elapsed('factory'));
-      logger.error(MODULE_AGENT, '', timer.elapsed('factory'));
+      logger.error(MODULE_AGENT, 'Failed to initialize KADI client', timer.elapsed('factory'), error);
       throw error;
     }
   }
@@ -430,24 +429,17 @@ export class BaseWorkerAgent {
     // Subscribe to generic task.assigned topic (role filtering done in handler)
     const topic = `task.assigned`;
 
-    logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
-    logger.info(MODULE_AGENT, `📡 Subscribing to task assignments...`, timer.elapsed('factory'));
-    logger.info(MODULE_AGENT, `   Topic: ${topic}`, timer.elapsed('factory'));
+    logger.debug(MODULE_AGENT, `Subscribing to task assignments (topic: ${topic})...`, timer.elapsed('factory'));
 
     try {
       // Subscribe to event topic with bound callback
       // Using .bind(this) to preserve instance context in callback
       await this.client.subscribe(topic, this.handleTaskAssignment.bind(this), { broker: 'default' });
 
-      logger.info(MODULE_AGENT, `   ✅ Subscribed successfully`, timer.elapsed('factory'));
-      logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
+      logger.debug(MODULE_AGENT, `Subscribed to ${topic}`, timer.elapsed('factory'));
 
     } catch (error: any) {
-      logger.error(MODULE_AGENT, '', timer.elapsed('factory'));
-      logger.error(MODULE_AGENT, `Failed to subscribe to task assignments`, timer.elapsed('factory'), error);
-      logger.error(MODULE_AGENT, `   Topic: ${topic}`, timer.elapsed('factory'));
-      logger.error(MODULE_AGENT, `   Error: ${error.message || String(error)}`, timer.elapsed('factory'));
-      logger.error(MODULE_AGENT, '', timer.elapsed('factory'));
+      logger.error(MODULE_AGENT, `Failed to subscribe to task assignments (topic: ${topic})`, timer.elapsed('factory'), error);
       throw error;
     }
   }
@@ -1214,8 +1206,8 @@ Important:
    * @returns Formatted commit message
    */
   protected formatCommitMessage(taskId: string, files: string[], taskDescription?: string): string {
-    if (this.config.customBehaviors?.formatCommitMessage) {
-      return this.config.customBehaviors.formatCommitMessage(taskId, files);
+    if (this.workerConfig.customBehaviors?.formatCommitMessage) {
+      return this.workerConfig.customBehaviors.formatCommitMessage(taskId, files);
     }
 
     if (taskDescription) {
@@ -1510,23 +1502,25 @@ Important:
    * ```
    */
   public async start(): Promise<void> {
-    logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('factory'));
-    logger.info(MODULE_AGENT, `Starting Worker Agent: ${this.role}`, timer.elapsed('factory'));
-    logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('factory'));
-    logger.info(MODULE_AGENT, `Broker URL: ${this.config.brokerUrl}`, timer.elapsed('factory'));
-    logger.info(MODULE_AGENT, `Networks: ${this.networks.join(', ')}`, timer.elapsed('factory'));
-    logger.info(MODULE_AGENT, `Worktree Path: ${this.worktreePath}`, timer.elapsed('factory'));
-    logger.info(MODULE_AGENT, `LLM Model: ${this.claudeModel}`, timer.elapsed('factory'));
-    logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('factory'));
+    logger.debug(MODULE_AGENT, `Starting Worker Agent: ${this.role}`, timer.elapsed('factory'));
+    logger.debug(MODULE_AGENT, `Broker URL: ${this.workerConfig.brokerUrl}`, timer.elapsed('factory'));
+    logger.debug(MODULE_AGENT, `Networks: ${this.networks.join(', ')}`, timer.elapsed('factory'));
+    logger.debug(MODULE_AGENT, `Worktree Path: ${this.worktreePath}`, timer.elapsed('factory'));
+    logger.debug(MODULE_AGENT, `LLM Model: ${this.claudeModel}`, timer.elapsed('factory'));
 
-    // Initialize KĀDI client and connect to broker
-    await this.initializeClient();
+    // If already connected (via BaseAgent.connect()), skip client initialization
+    if (!this.connected) {
+      await this.initializeClient();
+    } else {
+      // Still need ability response subscription even if already connected
+      if (this.baseBot) {
+        await this.baseBot['initializeAbilityResponseSubscription']();
+        logger.debug(MODULE_AGENT, 'Ability response subscription initialized', timer.elapsed('factory'));
+      }
+    }
 
     // Subscribe to task assignment events
     await this.subscribeToTaskAssignments();
-
-    // TODO: Implement remaining start logic in next tasks
-    // 1. Register tools (if any)
   }
 
   /**
@@ -1547,30 +1541,17 @@ Important:
    * ```
    */
   public async stop(): Promise<void> {
-    logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('factory'));
-    logger.info(MODULE_AGENT, `Stopping Worker Agent: ${this.role}`, timer.elapsed('factory'));
-    logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('factory'));
+    logger.debug(MODULE_AGENT, `Stopping Worker Agent: ${this.role}`, timer.elapsed('factory'));
 
     try {
-      // TODO: Unsubscribe from events in next task
-
-      // Disconnect KĀDI client
-      logger.info(MODULE_AGENT, '   → Disconnecting KĀDI client...', timer.elapsed('factory'));
-      await this.client.disconnect();
-      logger.info(MODULE_AGENT, '   ✅ KĀDI client disconnected', timer.elapsed('factory'));
-
-      // Clear references
-      this.providerManager = null;
-
-      logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
-      logger.info(MODULE_AGENT, '✅ Worker agent stopped successfully', timer.elapsed('factory'));
-      logger.info(MODULE_AGENT, '='.repeat(60), timer.elapsed('factory'));
-
+      // Delegate to BaseAgent.shutdown() which handles:
+      // - ProviderManager disposal
+      // - MemoryService disposal
+      // - Client disconnect
+      await this.shutdown();
+      logger.debug(MODULE_AGENT, 'Worker agent stopped', timer.elapsed('factory'));
     } catch (error: any) {
-      logger.error(MODULE_AGENT, '', timer.elapsed('factory'));
       logger.error(MODULE_AGENT, 'Error during shutdown', timer.elapsed('factory'), error);
-      logger.error(MODULE_AGENT, `   Error: ${error.message || String(error)}`, timer.elapsed('factory'));
-      logger.error(MODULE_AGENT, '', timer.elapsed('factory'));
       // Don't throw - best effort cleanup
     }
   }
@@ -1789,20 +1770,21 @@ export class WorkerAgentFactory {
    * }
    * ```
    */
-  static createAgent(config: WorkerAgentConfig): BaseWorkerAgent {
+  static createAgent(config: WorkerAgentConfig | WorkerAgentFullConfig): BaseWorkerAgent {
     try {
-      // Validate configuration with Zod schema
-      const validatedConfig = WorkerAgentConfigSchema.parse(config);
+      // Only validate with Zod schema for legacy WorkerAgentConfig
+      if ('anthropicApiKey' in config) {
+        const validatedConfig = WorkerAgentConfigSchema.parse(config);
+        return new BaseWorkerAgent(validatedConfig);
+      }
 
-      // Create and return BaseWorkerAgent instance
-      // Agent is not started automatically - caller must call start()
-      return new BaseWorkerAgent(validatedConfig);
+      // WorkerAgentFullConfig — skip Zod validation (BaseAgent handles its own)
+      return new BaseWorkerAgent(config);
 
     } catch (error: any) {
       // Re-throw Zod validation errors with context
       if (error.name === 'ZodError') {
         logger.error(MODULE_AGENT, 'Worker agent configuration validation failed', timer.elapsed('factory'), error);
-        logger.error(MODULE_AGENT, '   Validation errors:', timer.elapsed('factory'));
         for (const issue of error.issues || []) {
           logger.error(MODULE_AGENT, `   - ${issue.path.join('.')}: ${issue.message}`, timer.elapsed('factory'));
         }
@@ -1833,6 +1815,6 @@ export class WorkerAgentFactory {
  * await agent.start();
  * ```
  */
-export function createWorkerAgent(config: WorkerAgentConfig): BaseWorkerAgent {
+export function createWorkerAgent(config: WorkerAgentConfig | WorkerAgentFullConfig): BaseWorkerAgent {
   return WorkerAgentFactory.createAgent(config);
 }

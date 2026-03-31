@@ -75,20 +75,22 @@
 // Utilities
 // ============================================================================
 
-export { BaseBot, BaseBotConfig } from './base-bot.js';
+export { BaseBot } from './base-bot.js';
+export type { BaseBotConfig } from './base-bot.js';
 export {
   BaseAgent,
   type BaseAgentConfig,
   type BaseAgentProviderConfig,
   type BaseAgentMemoryConfig
 } from './base-agent.js';
-export { KadiEventPublisher, PublisherConfig, validateTopicPattern } from './kadi-event-publisher.js';
+export { KadiEventPublisher, validateTopicPattern } from './kadi-event-publisher.js';
+export type { PublisherConfig } from './kadi-event-publisher.js';
 export { logger, setLogLevel, setAgentTag, MODULE_AGENT, MODULE_SLACK_BOT, MODULE_DISCORD_BOT, MODULE_TASK_HANDLER, MODULE_TOOLS } from './utils/logger.js';
 export { timer, type Timer } from './utils/timer.js';
 export { isWsl, toNativePath } from './utils/path-utils.js';
 export { loadVaultCredentials, loadModelManagerCredentials, type VaultCredentials, type ModelManagerCredentials } from './utils/vault.js';
 export { loadConfig, registerConfigMapping, type LoadConfigResult } from './utils/config.js';
-export { Config, readConfig } from './utils/read-config.js';
+export { Config, readConfig, readConfigFile } from './utils/read-config.js';
 export {
   invokeShrimTool,
   isToolSuccess,
@@ -128,6 +130,7 @@ export {
 export {
   type AgentRole,
   type WorkerAgentConfig,
+  type WorkerAgentFullConfig,
   type ShadowAgentConfig,
   type WorkerBehaviors,
   type PathConfig,
