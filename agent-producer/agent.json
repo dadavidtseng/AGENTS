@@ -1,15 +1,17 @@
 {
   "name": "agent-producer",
-  "version": "0.3.0",
+  "type": "agent",
+  "version": "0.3.2",
+  "entrypoint": "dist/index.js",
   "scripts": {
-    "preflight": "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules')){console.error('Dependencies not installed. Run: npm install');process.exit(1)}console.log('✓ Dependencies OK')\"",
-    "setup": "npx tsc",
+    "setup": "npm run build",
     "start": "node dist/index.js",
     "dev": "npx tsx watch src/index.ts",
     "build": "npx tsc",
     "type-check": "npx tsc --noEmit",
     "lint": "npx eslint src --ext .ts",
-    "test": "npx vitest"
+    "test": "npx vitest",
+    "clean": "rm -rf node_modules dist abilities agent-lock.json package-lock.json"
   },
   "build": {
     "default": {
@@ -67,7 +69,7 @@
     }
   },
   "abilities": {
-    "secret-ability": "^0.9.4"
+    "secret-ability": "*"
   },
   "brokers": {
     "local": "ws://localhost:8080/kadi",

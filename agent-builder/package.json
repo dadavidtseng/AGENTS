@@ -1,6 +1,6 @@
 {
   "name": "agent-builder",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "KĀDI agent for game lifecycle management - shutdown, rebuild (MSBuild), and relaunch DaemonAgent",
   "type": "module",
   "main": "dist/index.js",
@@ -20,9 +20,8 @@
   "author": "Yu-Wei Tseng",
   "license": "MIT",
   "dependencies": {
-    "@kadi.build/core": "file:../kadi/kadi-core",
-    "agents-library": "file:../agents-library",
-    "dotenv": "^16.4.5",
+    "@kadi.build/core": "latest",
+    "agents-library": "latest",
     "zod": "^4.1.5"
   },
   "devDependencies": {

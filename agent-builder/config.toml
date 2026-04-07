@@ -1,5 +1,13 @@
 # Agent Builder Configuration
 
+[agent]
+ID = "agent-builder"
+ROLE = "builder"
+VERSION = "0.1.0"
+
+[logging]
+LEVEL = "debug"
+
 [broker.local]
 URL = "ws://localhost:8080/kadi"
 NETWORKS = ["utility", "deploy", "git", "file"]

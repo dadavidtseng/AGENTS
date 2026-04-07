@@ -1,6 +1,8 @@
 {
   "name": "agent-quest",
+  "type": "agent",
   "version": "0.3.0",
+  "entrypoint": "dist/index.js",
   "scripts": {
     "preflight": "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules')){console.error('Dependencies not installed. Run: npm install');process.exit(1)}console.log('✓ Dependencies OK')\"",
     "setup": "npm run install:all && npm run build",

@@ -1,140 +1,203 @@
 /**
- * Shadow Agent for KĀDI Protocol
- * ===============================
+ * agent-shadow-worker - KADI Shadow Agent for Worktree Monitoring
+ * ================================================================
  *
  * Generic shadow agent for monitoring and backing up worker agent worktrees.
  * Uses BaseAgent for broker connection and ShadowRoleLoader for role configuration.
  *
  * Supports multiple roles (artist, programmer, designer) via config/roles/{role}.json.
- * Role is determined by AGENT_ROLE environment variable (default: from .env AGENT_NAME suffix).
+ * Role is determined by AGENT_ROLE env var (for kadi run dev:artist) or config.toml default.
  *
  * Event Topics:
  * - Publishes: shadow-{role}.backup.completed, shadow-{role}.backup.failed
  *
- * Environment Variables:
- * - KADI_BROKER_URL: WebSocket URL for KĀDI broker (required)
- * - KADI_NETWORK: Comma-separated list of networks to join (optional, default: global)
- * - AGENT_ROLE: Shadow role to load from config/roles/ (optional, default: artist)
- *
- * @module shadow-agent-worker
+ * @module agent-shadow-worker
  */
 
-import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createShadowAgent, BaseAgent, logger, MODULE_AGENT, timer } from 'agents-library';
+import { createShadowAgent, BaseAgent, loadVaultCredentials, readConfig, setLogLevel, setAgentTag, logger, timer } from 'agents-library';
+import type { BaseAgentConfig } from 'agents-library';
 import { ShadowRoleLoader } from './roles/ShadowRoleLoader.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-async function main() {
-  // Start main timer for application lifetime tracking
+const cfg = readConfig();
+
+// ============================================================================
+// Agent identity + logging
+// ============================================================================
+
+const agentId = cfg.string('agent.ID');
+const agentVersion = cfg.string('agent.VERSION');
+const logLevel = cfg.has('logging.LEVEL') ? cfg.string('logging.LEVEL') : 'info';
+setLogLevel(logLevel);
+setAgentTag(agentId);
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+// Role: env var takes priority (for kadi run dev:artist), fallback to config.toml
+const roleName = process.env.AGENT_ROLE ?? cfg.string('agent.ROLE');
+
+// Broker resolution
+const hasLocal = cfg.has('broker.local.URL');
+const hasRemote = cfg.has('broker.remote.URL');
+if (!hasLocal && !hasRemote) {
+  throw new Error('At least one broker required: set [broker.local] or [broker.remote] in config.toml');
+}
+
+const brokerUrl = hasLocal
+  ? cfg.string('broker.local.URL')
+  : cfg.string('broker.remote.URL');
+const networks = hasLocal
+  ? cfg.strings('broker.local.NETWORKS')
+  : cfg.strings('broker.remote.NETWORKS');
+
+const additionalBrokerUrl = hasLocal && hasRemote
+  ? cfg.string('broker.remote.URL')
+  : undefined;
+const additionalBrokerNetworks = hasLocal && hasRemote
+  ? cfg.strings('broker.remote.NETWORKS')
+  : undefined;
+
+// Credentials: vault for provider keys (optional — shadow agents may not need LLM)
+const vault = await loadVaultCredentials();
+const anthropicApiKey = process.env.ANTHROPIC_API_KEY || vault.ANTHROPIC_API_KEY;
+const modelManagerBaseUrl = process.env.MODEL_MANAGER_BASE_URL || vault.MODEL_MANAGER_BASE_URL;
+const modelManagerApiKey = process.env.MODEL_MANAGER_API_KEY || vault.MODEL_MANAGER_API_KEY;
+
+// ============================================================================
+// Main
+// ============================================================================
+
+async function main(): Promise<void> {
   timer.start('main');
 
-  // Determine role from environment (default: artist)
-  const role = process.env.AGENT_ROLE || 'artist';
+  try {
+    // Load role configuration from config/roles/{role}.json
+    logger.info(agentId, `Loading shadow role configuration: ${roleName}`, timer.elapsed('main'));
+    const projectRoot = path.resolve(__dirname, '..');
+    const roleLoader = new ShadowRoleLoader(projectRoot);
+    const roleConfig = roleLoader.loadRole(roleName);
+    logger.info(agentId, `Role: ${roleConfig.role}`, timer.elapsed('main'));
+    logger.debug(agentId, `  Worker worktree: ${roleConfig.workerWorktreePath}`, timer.elapsed('main'));
+    logger.debug(agentId, `  Shadow worktree: ${roleConfig.shadowWorktreePath}`, timer.elapsed('main'));
+    logger.debug(agentId, `  Worker branch: ${roleConfig.workerBranch}`, timer.elapsed('main'));
+    logger.debug(agentId, `  Shadow branch: ${roleConfig.shadowBranch}`, timer.elapsed('main'));
+    logger.debug(agentId, `  Monitoring interval: ${roleConfig.monitoringInterval}ms`, timer.elapsed('main'));
 
-  // Load role configuration from config/roles/{role}.json
-  logger.info(MODULE_AGENT, '📋 Loading shadow role configuration...', timer.elapsed('main'));
-  const projectRoot = path.resolve(__dirname, '..');
-  const roleLoader = new ShadowRoleLoader(projectRoot);
-  const roleConfig = roleLoader.loadRole(role);
-  logger.info(MODULE_AGENT, `   ✅ Shadow role loaded: ${roleConfig.role}`, timer.elapsed('main'));
-  logger.info(MODULE_AGENT, `   Worker worktree: ${roleConfig.workerWorktreePath}`, timer.elapsed('main'));
-  logger.info(MODULE_AGENT, `   Shadow worktree: ${roleConfig.shadowWorktreePath}`, timer.elapsed('main'));
-  logger.info(MODULE_AGENT, `   Worker branch: ${roleConfig.workerBranch}`, timer.elapsed('main'));
-  logger.info(MODULE_AGENT, `   Shadow branch: ${roleConfig.shadowBranch}`, timer.elapsed('main'));
-  logger.info(MODULE_AGENT, `   Monitoring interval: ${roleConfig.monitoringInterval}ms`, timer.elapsed('main'));
-
-  // Auto-create worktrees if they don't exist
-  const mainRepoPath = (roleConfig as any).mainRepoPath;
-  if (mainRepoPath) {
-    const { execSync } = await import('child_process');
-    for (const [wtPath, branch] of [
-      [roleConfig.workerWorktreePath, roleConfig.workerBranch],
-      [roleConfig.shadowWorktreePath, roleConfig.shadowBranch],
-    ] as const) {
-      if (!fs.existsSync(wtPath)) {
-        logger.info(MODULE_AGENT, `   📂 Worktree not found at ${wtPath} — creating...`, timer.elapsed('main'));
-        try {
-          execSync(`git worktree add "${wtPath}" -b "${branch}"`, { cwd: mainRepoPath, stdio: 'pipe' });
-          logger.info(MODULE_AGENT, `   ✅ Worktree created: ${wtPath} (branch: ${branch})`, timer.elapsed('main'));
-        } catch {
+    // Auto-create worktrees if they don't exist
+    const mainRepoPath = (roleConfig as any).mainRepoPath;
+    if (mainRepoPath) {
+      const { execSync } = await import('child_process');
+      for (const [wtPath, branch] of [
+        [roleConfig.workerWorktreePath, roleConfig.workerBranch],
+        [roleConfig.shadowWorktreePath, roleConfig.shadowBranch],
+      ] as const) {
+        if (!fs.existsSync(wtPath)) {
+          logger.info(agentId, `Worktree not found at ${wtPath} — creating...`, timer.elapsed('main'));
           try {
-            execSync(`git worktree add "${wtPath}" "${branch}"`, { cwd: mainRepoPath, stdio: 'pipe' });
-            logger.info(MODULE_AGENT, `   ✅ Worktree created (existing branch): ${wtPath}`, timer.elapsed('main'));
-          } catch (retryError: any) {
-            logger.error(MODULE_AGENT, `   ❌ Failed to create worktree: ${retryError.message}`, timer.elapsed('main'));
-            process.exit(1);
+            execSync(`git worktree add "${wtPath}" -b "${branch}"`, { cwd: mainRepoPath, stdio: 'pipe' });
+            logger.info(agentId, `Worktree created: ${wtPath} (branch: ${branch})`, timer.elapsed('main'));
+          } catch {
+            try {
+              execSync(`git worktree add "${wtPath}" "${branch}"`, { cwd: mainRepoPath, stdio: 'pipe' });
+              logger.info(agentId, `Worktree created (existing branch): ${wtPath}`, timer.elapsed('main'));
+            } catch (retryError: any) {
+              logger.error(agentId, `Failed to create worktree: ${retryError.message}`, timer.elapsed('main'));
+              process.exit(1);
+            }
           }
+        } else {
+          logger.debug(agentId, `Worktree exists: ${wtPath}`, timer.elapsed('main'));
         }
-      } else {
-        logger.info(MODULE_AGENT, `   📂 Worktree exists: ${wtPath}`, timer.elapsed('main'));
       }
     }
-  }
 
-  // Validate required environment variables
-  const brokerUrl = process.env.KADI_BROKER_URL;
-  const networks = process.env.KADI_NETWORK?.split(',').map(n => n.trim()) || ['global'];
+    // Startup summary
+    logger.info(agentId, `Starting ${agentId} v${agentVersion} (role: ${roleName})`, timer.elapsed('main'));
+    const brokerSummary = [
+      hasLocal ? `local=${cfg.string('broker.local.URL')}` : null,
+      hasRemote ? `remote=${cfg.string('broker.remote.URL')}` : null,
+    ].filter(Boolean).join(', ');
+    logger.info(agentId, `Broker: ${brokerSummary}`, timer.elapsed('main'));
+    logger.info(agentId, `Networks: ${networks.join(', ')}`, timer.elapsed('main'));
 
-  if (!brokerUrl) {
-    logger.error(MODULE_AGENT, 'KADI_BROKER_URL environment variable is required', timer.elapsed('main'));
+    // BaseAgent instance
+    const baseAgentConfig: BaseAgentConfig = {
+      agentId: `shadow-agent-${roleConfig.role}`,
+      agentRole: roleConfig.role,
+      version: agentVersion,
+      brokerUrl,
+      networks,
+      ...(additionalBrokerUrl && {
+        additionalBrokers: {
+          remote: { url: additionalBrokerUrl, networks: additionalBrokerNetworks! },
+        },
+      }),
+      ...(roleConfig.provider && modelManagerBaseUrl ? {
+        provider: {
+          anthropicApiKey: anthropicApiKey!,
+          modelManagerBaseUrl,
+          modelManagerApiKey: modelManagerApiKey!,
+        }
+      } : {}),
+    };
+
+    const baseAgent = new BaseAgent(baseAgentConfig);
+
+    // Step 1: Connect to broker
+    await baseAgent.connect();
+
+    // Step 1b: Load ability-file-local natively (for watch_folder)
+    let nativeFileLocal: any = null;
+    try {
+      nativeFileLocal = await baseAgent.client.loadNative('ability-file-local');
+      logger.info(agentId, 'Loaded ability-file-local natively', timer.elapsed('main'));
+    } catch (err: any) {
+      logger.warn(agentId, `Could not load ability-file-local natively: ${err.message}`, timer.elapsed('main'));
+    }
+
+    // Step 2: Create shadow agent with BaseAgent
+    const agent = createShadowAgent({
+      role: roleConfig.role,
+      workerWorktreePath: roleConfig.workerWorktreePath,
+      shadowWorktreePath: roleConfig.shadowWorktreePath,
+      workerBranch: roleConfig.workerBranch,
+      shadowBranch: roleConfig.shadowBranch,
+      brokerUrl,
+      networks,
+      debounceMs: roleConfig.debounceMs,
+    }, baseAgent);
+
+    // Step 2b: Wire native ability-file-local into shadow agent
+    if (nativeFileLocal) {
+      agent.setNativeFileLocal(nativeFileLocal);
+    }
+
+    // Step 3: Start shadow agent (watchers only — connection already handled)
+    await agent.start();
+
+    // Step 4: Register graceful shutdown
+    baseAgent.registerShutdownHandlers(async () => {
+      await agent.stop();
+    });
+
+    // Ready
+    logger.info(agentId, `Ready (${timer.elapsed('main')})`, timer.elapsed('main'));
+
+  } catch (error: any) {
+    logger.error(agentId, 'Fatal error', '+0ms', error);
+    if (error.stack) logger.error(agentId, 'Stack trace', '+0ms', error.stack);
     process.exit(1);
   }
-
-  // Create BaseAgent for broker connection management
-  const baseAgent = new BaseAgent({
-    agentId: `shadow-agent-${roleConfig.role}`,
-    agentRole: roleConfig.role,
-    brokerUrl,
-    networks,
-    // Wire up ProviderManager if role config has provider section (future shadow intelligence)
-    ...(roleConfig.provider && process.env.MODEL_MANAGER_BASE_URL ? {
-      provider: {
-        anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-        modelManagerBaseUrl: process.env.MODEL_MANAGER_BASE_URL,
-        modelManagerApiKey: process.env.MODEL_MANAGER_API_KEY,
-      }
-    } : {}),
-  });
-
-  // Connect BaseAgent to broker
-  logger.info(MODULE_AGENT, '', timer.elapsed('main'));
-  logger.info(MODULE_AGENT, '============================================================', timer.elapsed('main'));
-  logger.info(MODULE_AGENT, `Starting Shadow Agent: ${roleConfig.role}`, timer.elapsed('main'));
-  logger.info(MODULE_AGENT, '============================================================', timer.elapsed('main'));
-  logger.info(MODULE_AGENT, `Broker URL: ${brokerUrl}`, timer.elapsed('main'));
-  logger.info(MODULE_AGENT, `Networks: ${networks.join(', ')}`, timer.elapsed('main'));
-  logger.info(MODULE_AGENT, '============================================================', timer.elapsed('main'));
-  logger.info(MODULE_AGENT, '', timer.elapsed('main'));
-
-  await baseAgent.connect();
-
-  // Create shadow agent with BaseAgent (delegates connection management)
-  const agent = createShadowAgent({
-    role: roleConfig.role,
-    workerWorktreePath: roleConfig.workerWorktreePath,
-    shadowWorktreePath: roleConfig.shadowWorktreePath,
-    workerBranch: roleConfig.workerBranch,
-    shadowBranch: roleConfig.shadowBranch,
-    brokerUrl,
-    networks,
-    debounceMs: roleConfig.debounceMs,
-  }, baseAgent);
-
-  // Start shadow agent (watchers only — connection already handled by BaseAgent)
-  await agent.start();
-
-  // Register graceful shutdown via BaseAgent
-  baseAgent.registerShutdownHandlers(async () => {
-    await agent.stop();
-  });
 }
 
 main().catch((error) => {
-  logger.error(MODULE_AGENT, 'Fatal error', timer.elapsed('main'), error);
+  logger.error(agentId, 'Fatal error', '+0ms', error);
   process.exit(1);
 });

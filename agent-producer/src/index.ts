@@ -30,7 +30,6 @@
  * @license MIT
  */
 
-import 'dotenv/config';
 import {BaseAgent, loadVaultCredentials, readConfig, setLogLevel, setAgentTag, logger, timer} from 'agents-library';
 import type {BaseAgentConfig} from 'agents-library';
 import {registerAllTools, injectOrchestrator} from './tools/index.js';

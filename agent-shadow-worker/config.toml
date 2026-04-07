@@ -1,6 +1,14 @@
 # Agent Shadow Worker Configuration
 # Secrets go in secrets.toml (encrypted vault)
 
+[agent]
+ID = "agent-shadow-worker"
+ROLE = "artist"
+VERSION = "1.0.0"
+
+[logging]
+LEVEL = "info"
+
 [broker.local]
 URL = "ws://localhost:8080/kadi"
 NETWORKS = ["git", "qa", "file"]

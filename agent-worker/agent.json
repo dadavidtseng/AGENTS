@@ -1,21 +1,24 @@
 {
   "name": "agent-worker",
-  "version": "0.3.0",
+  "type": "agent",
+  "version": "0.3.1",
+  "entrypoint": "dist/index.js",
   "scripts": {
-    "preflight": "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules')){console.error('Dependencies not installed. Run: npm install');process.exit(1)}console.log('✓ Dependencies OK')\"",
-    "setup": "npx tsc",
+    "preflight": "node --version",
+    "setup": "npm run build",
     "start": "node dist/index.js",
     "start:artist": "AGENT_ROLE=artist node dist/index.js",
     "start:designer": "AGENT_ROLE=designer node dist/index.js",
     "start:programmer": "AGENT_ROLE=programmer node dist/index.js",
-    "dev": "tsx watch src/index.ts",
-    "dev:artist": "AGENT_ROLE=artist tsx watch src/index.ts",
-    "dev:designer": "AGENT_ROLE=designer tsx watch src/index.ts",
-    "dev:programmer": "AGENT_ROLE=programmer tsx watch src/index.ts",
-    "build": "tsc",
-    "type-check": "tsc --noEmit",
-    "lint": "eslint src --ext .ts",
-    "test": "vitest"
+    "dev": "npx tsx watch src/index.ts",
+    "dev:artist": "AGENT_ROLE=artist npx tsx watch src/index.ts",
+    "dev:designer": "AGENT_ROLE=designer npx tsx watch src/index.ts",
+    "dev:programmer": "AGENT_ROLE=programmer npx tsx watch src/index.ts",
+    "build": "npx tsc",
+    "type-check": "npx tsc --noEmit",
+    "lint": "npx eslint src --ext .ts",
+    "test": "npx vitest",
+    "clean": "rm -rf node_modules dist abilities agent-lock.json package-lock.json"
   },
   "build": {
     "default": {
@@ -32,7 +35,8 @@
     }
   },
   "abilities": {
-    "secret-ability": "^0.9.4"
+    "secret-ability": "*",
+    "ability-file-local": "*"
   },
   "brokers": {
     "local": "ws://localhost:8080/kadi",

@@ -10,22 +10,24 @@
 
 import { execSync, spawn } from 'child_process';
 import type { KadiClient } from '@kadi.build/core';
-import { logger, MODULE_AGENT, timer } from 'agents-library';
+import { logger, MODULE_AGENT, timer, readConfig } from 'agents-library';
 
 // ============================================================================
-// Configuration (from environment)
+// Configuration (from config.toml)
 // ============================================================================
+
+const cfg = readConfig();
 
 export function getConfig() {
   return {
-    gameExePath: process.env.GAME_EXE_PATH || 'C:/GitHub/DaemonAgent/Run/ProtogameJS3D_Debug_x64.exe',
-    gameWorkingDir: process.env.GAME_WORKING_DIR || 'C:/GitHub/DaemonAgent/Run',
-    msbuildPath: process.env.MSBUILD_PATH || 'C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe',
-    solutionPath: process.env.SOLUTION_PATH || 'C:/GitHub/DaemonAgent/ProtogameJS3D.sln',
-    buildConfiguration: process.env.BUILD_CONFIGURATION || 'Debug',
-    buildPlatform: process.env.BUILD_PLATFORM || 'x64',
-    gameReadyTimeoutMs: parseInt(process.env.GAME_READY_TIMEOUT_MS || '60000', 10),
-    processKillTimeoutMs: parseInt(process.env.PROCESS_KILL_TIMEOUT_MS || '10000', 10),
+    gameExePath: cfg.string('game.EXE_PATH'),
+    gameWorkingDir: cfg.string('game.WORKING_DIR'),
+    msbuildPath: cfg.string('build.MSBUILD_PATH'),
+    solutionPath: cfg.string('build.SOLUTION_PATH'),
+    buildConfiguration: cfg.string('build.CONFIGURATION'),
+    buildPlatform: cfg.string('build.PLATFORM'),
+    gameReadyTimeoutMs: cfg.number('game.READY_TIMEOUT_MS'),
+    processKillTimeoutMs: cfg.number('game.KILL_TIMEOUT_MS'),
   };
 }
 

@@ -46,6 +46,11 @@ const logLevel = cfg.has('logging.LEVEL') ? cfg.string('logging.LEVEL') : 'info'
 setLogLevel(logLevel);
 setAgentTag(agentId);
 
+// Wire repo path from config.toml → env (used by pr-workflow, quest-cleanup)
+if (cfg.has('repo.PATH') && !process.env.REPO_PATH) {
+  process.env.REPO_PATH = cfg.string('repo.PATH');
+}
+
 // ============================================================================
 // Configuration
 // ============================================================================

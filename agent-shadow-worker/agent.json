@@ -1,6 +1,8 @@
 {
-  "name": "shadow-agent-worker",
+  "name": "agent-shadow-worker",
+  "type": "agent",
   "version": "0.1.0",
+  "entrypoint": "dist/index.js",
   "scripts": {
     "preflight": "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules')){console.error('Dependencies not installed. Run: npm install');process.exit(1)}console.log('✓ Dependencies OK')\"",
     "setup": "npx tsc",
@@ -34,5 +36,9 @@
   "brokers": {
     "local": "ws://localhost:8080/kadi",
     "remote": "wss://broker.dadavidtseng.info/kadi"
+  },
+  "abilities": {
+    "secret-ability": "*",
+    "ability-file-local": "^0.1.1"
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "shadow-agent-worker",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Generic shadow agent for KĀDI multi-agent system (supports artist, programmer, designer roles via config)",
   "type": "module",
   "main": "dist/index.js",
@@ -26,12 +26,11 @@
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
-    "@kadi.build/core": "file:../kadi/kadi-core",
+    "@kadi.build/core": "latest",
     "@modelcontextprotocol/sdk": "^1.21.1",
     "@types/chokidar": "^1.7.5",
-    "agents-library": "file:../agents-library",
+    "agents-library": "latest",
     "chokidar": "^5.0.0",
-    "dotenv": "^16.4.5",
     "zod": "^3.22.4"
   },
   "devDependencies": {

@@ -13,7 +13,6 @@
  * Single broker connection serves both event publishing and tool registration.
  */
 
-import 'dotenv/config';
 import { KadiClient } from '@kadi.build/core';
 import {
   readConfig,
