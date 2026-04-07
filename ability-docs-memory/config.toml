@@ -1,0 +1,7 @@
+# Ability Docs Memory Configuration
+# Secrets go in secrets.toml (encrypted vault)
+
+[broker.local]
+URL = "ws://localhost:8080/kadi"
+NETWORKS = ["docs"]
+MODE = "native"
