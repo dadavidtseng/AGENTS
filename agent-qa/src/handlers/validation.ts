@@ -68,6 +68,106 @@ const PASS_THRESHOLD = 70;
 const WARN_THRESHOLD = 50;
 
 // ============================================================================
+// Native File-Local Helper
+// ============================================================================
+
+/**
+ * Invoke a file-local tool — natively if available, otherwise via broker.
+ * Strips the broker `file_` prefix for native invocation.
+ */
+async function invokeFileLocal<T>(
+  client: KadiClient,
+  nativeFileLocal: any | null,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<T> {
+  if (nativeFileLocal && toolName.startsWith('file_')) {
+    return await nativeFileLocal.invoke(toolName.slice(5), args);
+  }
+  return await client.invokeRemote<T>(toolName, args);
+}
+
+// ============================================================================
+// Native Eval Helper
+// ============================================================================
+
+/**
+ * Invoke an eval tool — natively if available, otherwise via broker.
+ * eval_ is part of the tool name itself (not a broker prefix), so no stripping needed.
+ */
+async function invokeEval<T>(
+  client: KadiClient,
+  nativeEval: any | null,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<T> {
+  if (nativeEval) {
+    return await nativeEval.invoke(toolName, args);
+  }
+  return await client.invokeRemote<T>(toolName, args);
+}
+
+// ============================================================================
+// Native Vision Helper
+// ============================================================================
+
+/**
+ * Invoke a vision tool — natively if available, otherwise via broker.
+ * Strips the broker `vision_` prefix for native invocation.
+ */
+async function invokeVision<T>(
+  client: KadiClient,
+  nativeVision: any | null,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<T> {
+  if (nativeVision && toolName.startsWith('vision_')) {
+    return await nativeVision.invoke(toolName.slice(7), args);
+  }
+  return await client.invokeRemote<T>(toolName, args);
+}
+
+// ============================================================================
+// Native File-Cloud Helper
+// ============================================================================
+
+/**
+ * Invoke a file-cloud tool — natively if available, otherwise via broker.
+ * Strips the broker `cloud_` prefix for native invocation.
+ */
+async function invokeFileCloud<T>(
+  client: KadiClient,
+  nativeFileCloud: any | null,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<T> {
+  if (nativeFileCloud && toolName.startsWith('cloud_')) {
+    return await nativeFileCloud.invoke(toolName.slice(6), args);
+  }
+  return await client.invokeRemote<T>(toolName, args);
+}
+
+// ============================================================================
+// Native File-Remote Helper
+// ============================================================================
+
+/**
+ * Invoke a file-remote tool — natively if available, otherwise via broker.
+ * Strips the broker `remote_` prefix for native invocation.
+ */
+async function invokeFileRemote<T>(
+  client: KadiClient,
+  nativeFileRemote: any | null,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<T> {
+  if (nativeFileRemote && toolName.startsWith('remote_')) {
+    return await nativeFileRemote.invoke(toolName.slice(7), args);
+  }
+  return await client.invokeRemote<T>(toolName, args);
+}
+
+// ============================================================================
 // Task Type Detection
 // ============================================================================
 
@@ -226,6 +326,7 @@ function parseEvalResponse(resp: any): EvalResponse | null {
  */
 async function validateCodeWithEval(
   client: KadiClient,
+  nativeEval: any | null,
   diff: string,
   taskDescription: string,
   taskRequirements: string,
@@ -240,7 +341,9 @@ async function validateCodeWithEval(
     : diff;
 
   try {
-    const resp = await client.invokeRemote(
+    const resp = await invokeEval(
+      client,
+      nativeEval ?? null,
       'eval_code_diff',
       {
         diff: truncatedDiff,
@@ -278,6 +381,7 @@ async function validateCodeWithEval(
  */
 async function validateTaskCompletion(
   client: KadiClient,
+  nativeEval: any | null,
   taskRequirements: string,
   deliverables: string,
   evidence?: string,
@@ -289,7 +393,7 @@ async function validateTaskCompletion(
     };
     if (evidence) args.evidence = evidence;
 
-    const resp = await client.invokeRemote('eval_task_completion', args);
+    const resp = await invokeEval(client, nativeEval, 'eval_task_completion', args);
 
     logger.info(MODULE_AGENT, `eval_task_completion response: ${JSON.stringify(resp).slice(0, 500)}`, timer.elapsed('main'));
 
@@ -332,6 +436,9 @@ const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'];
  */
 async function resolveScreenshot(
   client: KadiClient,
+  nativeFileLocal: any | null,
+  nativeFileCloud: any | null,
+  nativeFileRemote: any | null,
   questId: string,
   taskId: string,
   worktreePath: string,
@@ -339,16 +446,16 @@ async function resolveScreenshot(
 ): Promise<string | null> {
   // Strategy 0: Explicit URI from payload — dispatch by scheme
   if (screenshotUri) {
-    const resolved = await resolveByUri(client, screenshotUri);
+    const resolved = await resolveByUri(client, nativeFileLocal, nativeFileCloud, nativeFileRemote, screenshotUri);
     if (resolved) return resolved;
     logger.warn(MODULE_AGENT, `screenshotUri provided but unresolvable: ${screenshotUri}`, timer.elapsed('main'));
   }
 
   // Strategy 1: Check screenshot directory for matching files
   try {
-    const dirResp = await client.invokeRemote<{
+    const dirResp = await invokeFileLocal<{
       content: Array<{ type: string; text: string }>;
-    }>('file_list_files_and_folders', { path: SCREENSHOT_DIR });
+    }>(client, nativeFileLocal, 'file_list_files_and_folders', { path: SCREENSHOT_DIR });
 
     const dirText = dirResp?.content?.[0]?.text;
     if (dirText && !dirText.startsWith('Error:')) {
@@ -398,7 +505,7 @@ async function resolveScreenshot(
  * Resolve a screenshotUri by its scheme.
  * Returns a value usable by vision_describe_ui (path, data URI, or URL).
  */
-async function resolveByUri(client: KadiClient, uri: string): Promise<string | null> {
+async function resolveByUri(client: KadiClient, nativeFileLocal: any | null, nativeFileCloud: any | null, nativeFileRemote: any | null, uri: string): Promise<string | null> {
   // Data URI — pass through directly
   if (uri.startsWith('data:')) return uri;
 
@@ -407,25 +514,25 @@ async function resolveByUri(client: KadiClient, uri: string): Promise<string | n
 
   // Cloud URI — download via ability-file-cloud, then read locally
   if (uri.startsWith('cloud://')) {
-    return resolveCloudUri(client, uri);
+    return resolveCloudUri(client, nativeFileLocal, nativeFileCloud, uri);
   }
 
   // Remote URI — download via ability-file-remote, then read locally
   if (uri.startsWith('remote://')) {
-    return resolveRemoteUri(client, uri);
+    return resolveRemoteUri(client, nativeFileLocal, nativeFileRemote, uri);
   }
 
   // Plain local path or file:// — read via ability-file-local for base64
   const localPath = uri.startsWith('file://') ? uri.slice(7) : uri;
-  return resolveLocalPath(client, localPath);
+  return resolveLocalPath(client, nativeFileLocal, localPath);
 }
 
 /** Read a local image file via ability-file-local, returns data URI or null. */
-async function resolveLocalPath(client: KadiClient, filePath: string): Promise<string | null> {
+async function resolveLocalPath(client: KadiClient, nativeFileLocal: any | null, filePath: string): Promise<string | null> {
   try {
-    const resp = await client.invokeRemote<{
+    const resp = await invokeFileLocal<{
       content: Array<{ type: string; text: string }>;
-    }>('file_read_file', { filePath, encoding: 'base64' });
+    }>(client, nativeFileLocal, 'file_read_file', { filePath, encoding: 'base64' });
 
     const text = resp?.content?.[0]?.text;
     if (!text) return null;
@@ -442,7 +549,7 @@ async function resolveLocalPath(client: KadiClient, filePath: string): Promise<s
 }
 
 /** Download from cloud (Dropbox etc.) via ability-file-cloud, then read locally. */
-async function resolveCloudUri(client: KadiClient, uri: string): Promise<string | null> {
+async function resolveCloudUri(client: KadiClient, nativeFileLocal: any | null, nativeFileCloud: any | null, uri: string): Promise<string | null> {
   // cloud://dropbox/path/to/file.png → provider=dropbox, remotePath=/path/to/file.png
   const withoutScheme = uri.slice('cloud://'.length);
   const slashIdx = withoutScheme.indexOf('/');
@@ -453,13 +560,13 @@ async function resolveCloudUri(client: KadiClient, uri: string): Promise<string 
   const localTmp = `${SCREENSHOT_DIR}/_cloud_${Date.now()}.png`;
 
   try {
-    await client.invokeRemote('cloud_cloud_download_file', {
+    await invokeFileCloud(client, nativeFileCloud, 'cloud_cloud_download_file', {
       provider,
       remotePath,
       localPath: localTmp,
     });
     logger.info(MODULE_AGENT, `Cloud screenshot downloaded: ${uri} → ${localTmp}`, timer.elapsed('main'));
-    return resolveLocalPath(client, localTmp);
+    return resolveLocalPath(client, nativeFileLocal, localTmp);
   } catch {
     logger.warn(MODULE_AGENT, `Failed to download cloud screenshot: ${uri}`, timer.elapsed('main'));
     return null;
@@ -467,7 +574,7 @@ async function resolveCloudUri(client: KadiClient, uri: string): Promise<string 
 }
 
 /** Download from remote host via ability-file-remote, then read locally. */
-async function resolveRemoteUri(client: KadiClient, uri: string): Promise<string | null> {
+async function resolveRemoteUri(client: KadiClient, nativeFileLocal: any | null, nativeFileRemote: any | null, uri: string): Promise<string | null> {
   // remote://host/path/to/file.png → host, remotePath=/path/to/file.png
   const withoutScheme = uri.slice('remote://'.length);
   const slashIdx = withoutScheme.indexOf('/');
@@ -478,13 +585,13 @@ async function resolveRemoteUri(client: KadiClient, uri: string): Promise<string
   const localTmp = `${SCREENSHOT_DIR}/_remote_${Date.now()}.png`;
 
   try {
-    await client.invokeRemote('remote_download_file_from_remote', {
+    await invokeFileRemote(client, nativeFileRemote, 'remote_download_file_from_remote', {
       host,
       remotePath,
       localPath: localTmp,
     });
     logger.info(MODULE_AGENT, `Remote screenshot downloaded: ${uri} → ${localTmp}`, timer.elapsed('main'));
-    return resolveLocalPath(client, localTmp);
+    return resolveLocalPath(client, nativeFileLocal, localTmp);
   } catch {
     logger.warn(MODULE_AGENT, `Failed to download remote screenshot: ${uri}`, timer.elapsed('main'));
     return null;
@@ -504,6 +611,8 @@ async function resolveRemoteUri(client: KadiClient, uri: string): Promise<string
  */
 async function validateVisual(
   client: KadiClient,
+  nativeEval: any | null,
+  nativeVision: any | null,
   screenshotPath: string,
   taskRequirements: string,
   taskDescription: string,
@@ -511,9 +620,9 @@ async function validateVisual(
   // Stage 1: Get UI description from ability-vision
   let uiDescription: string;
   try {
-    const visionResp = await client.invokeRemote<{
+    const visionResp = await invokeVision<{
       content: Array<{ type: string; text: string }>;
-    }>('vision_vision_describe_ui', {
+    }>(client, nativeVision ?? null, 'vision_vision_describe_ui', {
       image: screenshotPath,
       focus: 'layout, components, colors, typography, accessibility',
     });
@@ -533,6 +642,7 @@ async function validateVisual(
   // Stage 2: Evaluate description against requirements
   const completionCheck = await validateTaskCompletion(
     client,
+    nativeEval ?? null,
     taskRequirements,
     `Visual analysis of UI output:\n${uiDescription}`,
     `Task: ${taskDescription}`,
@@ -683,6 +793,7 @@ function validateNoAntiPatterns(diff: string): ValidationCheck {
  */
 async function validateCodeTask(
   client: KadiClient,
+  nativeEval: any | null,
   providerManager: ProviderManager | undefined,
   questId: string,
   taskId: string,
@@ -703,14 +814,14 @@ async function validateCodeTask(
   // 3. Structured evaluation via ability-eval (preferred)
   let usedAbilityEval = false;
 
-  const codeDiffCheck = await validateCodeWithEval(client, diff, description, requirements, pastPatterns);
+  const codeDiffCheck = await validateCodeWithEval(client, nativeEval ?? null, diff, description, requirements, pastPatterns);
   if (codeDiffCheck) {
     checks.push(codeDiffCheck);
     usedAbilityEval = true;
   }
 
   const completionCheck = await validateTaskCompletion(
-    client, requirements, `Git diff from commit ${commitHash}`,
+    client, nativeEval ?? null, requirements, `Git diff from commit ${commitHash}`,
     diff ? diff.slice(0, 4000) : (pastPatterns || undefined),
   );
   if (completionCheck) {
@@ -816,6 +927,11 @@ export function setupValidationHandler(
   client: KadiClient,
   providerManager?: ProviderManager,
   memoryService?: MemoryService,
+  nativeFileLocal?: any,
+  nativeEval?: any,
+  nativeVision?: any,
+  nativeFileCloud?: any,
+  nativeFileRemote?: any,
 ): void {
   logger.info(MODULE_AGENT, 'Setting up validation handler', timer.elapsed('main'));
 
@@ -877,13 +993,13 @@ export function setupValidationHandler(
       if (validationNeeds.needsDiffReview) {
         // Diff-based pipeline: works for code, design docs, specs, etc.
         result = await validateCodeTask(
-          client, providerManager, questId, taskId, commitHash, worktreePath, pastPatterns,
+          client, nativeEval ?? null, providerManager, questId, taskId, commitHash, worktreePath, pastPatterns,
         );
       } else {
         // No diff needed — start with task completion check as baseline
         const baseChecks: ValidationCheck[] = [];
         const completionCheck = await validateTaskCompletion(
-          client, taskReqs || taskDesc, `Deliverables for task ${taskId} (commit: ${commitHash})`,
+          client, nativeEval ?? null, taskReqs || taskDesc, `Deliverables for task ${taskId} (commit: ${commitHash})`,
         );
         if (completionCheck) {
           baseChecks.push(completionCheck);
@@ -903,10 +1019,10 @@ export function setupValidationHandler(
 
       // Art-specific: add visual check if screenshot is available (regardless of task type)
       if (taskType === 'art' || screenshotUri) {
-        const screenshot = await resolveScreenshot(client, questId, taskId, worktreePath, screenshotUri);
+        const screenshot = await resolveScreenshot(client, nativeFileLocal ?? null, nativeFileCloud ?? null, nativeFileRemote ?? null, questId, taskId, worktreePath, screenshotUri);
         if (screenshot) {
           logger.info(MODULE_AGENT, `Running visual pipeline for task ${taskId}`, timer.elapsed(timerKey));
-          const visualCheck = await validateVisual(client, screenshot, taskReqs || taskDesc, taskDesc);
+          const visualCheck = await validateVisual(client, nativeEval ?? null, nativeVision ?? null, screenshot, taskReqs || taskDesc, taskDesc);
           if (visualCheck) {
             result = mergeGameChecks(result, [visualCheck]);
           }
@@ -920,12 +1036,12 @@ export function setupValidationHandler(
 
       if (validationNeeds.needsGameState) {
         logger.info(MODULE_AGENT, `Running game state validation for task ${taskId}`, timer.elapsed(timerKey));
-        gameChecks.push(await validateGameState(client, taskReqs || taskDesc));
+        gameChecks.push(await validateGameState(client, nativeEval ?? null, taskReqs || taskDesc));
       }
 
       if (validationNeeds.needsScreenshot) {
         logger.info(MODULE_AGENT, `Running game screenshot validation for task ${taskId}`, timer.elapsed(timerKey));
-        gameChecks.push(await validateGameScreenshot(client, taskReqs || taskDesc, taskDesc, questId, taskId));
+        gameChecks.push(await validateGameScreenshot(client, nativeEval ?? null, nativeVision ?? null, taskReqs || taskDesc, taskDesc, questId, taskId));
       }
 
       if (validationNeeds.needsBuild) {

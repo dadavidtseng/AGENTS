@@ -16,6 +16,42 @@ import type { KadiClient } from '@kadi.build/core';
 import type { ValidationCheck } from './validation.js';
 
 // ============================================================================
+// Native Eval Helper
+// ============================================================================
+
+/**
+ * Invoke an eval tool — natively if available, otherwise via broker.
+ * eval_ is part of the tool name itself (not a broker prefix), so no stripping needed.
+ */
+async function invokeEval<T>(
+  client: KadiClient,
+  nativeEval: any | null,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<T> {
+  if (nativeEval) {
+    return await nativeEval.invoke(toolName, args);
+  }
+  return await client.invokeRemote<T>(toolName, args);
+}
+
+/**
+ * Invoke a vision tool — natively if available, otherwise via broker.
+ * Strips the broker `vision_` prefix for native invocation.
+ */
+async function invokeVision<T>(
+  client: KadiClient,
+  nativeVision: any | null,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<T> {
+  if (nativeVision && toolName.startsWith('vision_')) {
+    return await nativeVision.invoke(toolName.slice(7), args);
+  }
+  return await client.invokeRemote<T>(toolName, args);
+}
+
+// ============================================================================
 // Response Parsing Helper
 // ============================================================================
 
@@ -183,6 +219,7 @@ export function analyzeValidationNeeds(
  */
 export async function validateGameState(
   client: KadiClient,
+  nativeEval: any | null,
   taskRequirements: string,
 ): Promise<ValidationCheck> {
   try {
@@ -210,7 +247,7 @@ export async function validateGameState(
 
     // Use eval_task_completion to assess whether game state satisfies requirements
     try {
-      const evalResp = await client.invokeRemote<any>('eval_task_completion', {
+      const evalResp = await invokeEval<any>(client, nativeEval, 'eval_task_completion', {
         task_requirements: taskRequirements,
         deliverables: `Current game state:\n${JSON.stringify(gameState, null, 2)}`,
         evidence: 'Game state queried directly from DaemonAgent via get_game_state tool',
@@ -265,6 +302,8 @@ export async function validateGameState(
  */
 export async function validateGameScreenshot(
   client: KadiClient,
+  nativeEval: any | null,
+  nativeVision: any | null,
   taskRequirements: string,
   taskDescription: string,
   questId: string,
@@ -322,7 +361,7 @@ export async function validateGameScreenshot(
   // Step 2: Analyze with ability-vision
   let visionDescription: string | null = null;
   try {
-    const visionResp = await client.invokeRemote<any>('vision_vision_describe_ui', {
+    const visionResp = await invokeVision<any>(client, nativeVision, 'vision_vision_describe_ui', {
       image: screenshotPath,
       focus: 'game scene, 3D objects, entities, colors, positions, lighting',
     });
@@ -344,7 +383,7 @@ export async function validateGameScreenshot(
   // Step 4: Evaluate vision description against task requirements
   if (visionDescription) {
     try {
-      const evalResp = await client.invokeRemote<any>('eval_task_completion', {
+      const evalResp = await invokeEval<any>(client, nativeEval, 'eval_task_completion', {
         task_requirements: taskRequirements,
         deliverables: `Visual analysis of game screenshot:\n${visionDescription}`,
         evidence: `Task: ${taskDescription}\nScreenshot captured from DaemonAgent viewport`,

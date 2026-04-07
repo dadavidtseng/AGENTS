@@ -123,10 +123,55 @@ async function main(): Promise<void> {
   const baseAgent = new BaseAgent(baseAgentConfig);
   await baseAgent.connect();
 
+  // Load ability-file-local natively (zero-latency file ops, in-process)
+  let nativeFileLocal: any = null;
+  try {
+    nativeFileLocal = await baseAgent.client.loadNative('ability-file-local');
+    logger.info(agentId, 'Loaded ability-file-local natively', timer.elapsed('main'));
+  } catch (err: any) {
+    logger.warn(agentId, `Could not load ability-file-local natively: ${err.message}`, timer.elapsed('main'));
+  }
+
+  // Load ability-eval natively (zero-latency code/task evaluation, in-process)
+  let nativeEval: any = null;
+  try {
+    nativeEval = await baseAgent.client.loadNative('ability-eval');
+    logger.info(agentId, 'Loaded ability-eval natively', timer.elapsed('main'));
+  } catch (err: any) {
+    logger.warn(agentId, `Could not load ability-eval natively: ${err.message}`, timer.elapsed('main'));
+  }
+
+  // Load ability-vision natively (zero-latency image analysis, in-process)
+  let nativeVision: any = null;
+  try {
+    nativeVision = await baseAgent.client.loadNative('ability-vision');
+    logger.info(agentId, 'Loaded ability-vision natively', timer.elapsed('main'));
+  } catch (err: any) {
+    logger.warn(agentId, `Could not load ability-vision natively: ${err.message}`, timer.elapsed('main'));
+  }
+
+  // Load ability-file-cloud natively (zero-latency cloud file ops, in-process)
+  let nativeFileCloud: any = null;
+  try {
+    nativeFileCloud = await baseAgent.client.loadNative('ability-file-cloud');
+    logger.info(agentId, 'Loaded ability-file-cloud natively', timer.elapsed('main'));
+  } catch (err: any) {
+    logger.warn(agentId, `Could not load ability-file-cloud natively: ${err.message}`, timer.elapsed('main'));
+  }
+
+  // Load ability-file-remote natively (zero-latency remote file ops, in-process)
+  let nativeFileRemote: any = null;
+  try {
+    nativeFileRemote = await baseAgent.client.loadNative('ability-file-remote');
+    logger.info(agentId, 'Loaded ability-file-remote natively', timer.elapsed('main'));
+  } catch (err: any) {
+    logger.warn(agentId, `Could not load ability-file-remote natively: ${err.message}`, timer.elapsed('main'));
+  }
+
   const client = baseAgent.client;
 
   // Register validation handler (subscribes to task.review_requested)
-  setupValidationHandler(client, baseAgent.providerManager, baseAgent.memoryService);
+  setupValidationHandler(client, baseAgent.providerManager, baseAgent.memoryService, nativeFileLocal, nativeEval, nativeVision, nativeFileCloud, nativeFileRemote);
 
   if (baseAgent.providerManager) {
     logger.info(agentId, 'LLM semantic review enabled', timer.elapsed('main'));
