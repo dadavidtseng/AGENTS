@@ -1,6 +1,6 @@
 {
   "name": "agents-library",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Shared utilities and factories for KĀDI multi-agent orchestration system",
   "type": "module",
   "main": "./dist/index.js",
@@ -29,7 +29,7 @@
     "zod": "^3.22.4"
   },
   "peerDependencies": {
-    "@kadi.build/core": "*"
+    "@kadi.build/core": "latest"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.0.15",

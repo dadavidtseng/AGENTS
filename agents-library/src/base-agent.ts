@@ -195,7 +195,7 @@ export class BaseAgent {
     // Create ProviderManager if configured
     if (config.provider) {
       this.providerManager = this.createProviderManager(config.provider);
-      logger.debug(this.tag, '   ✅ ProviderManager created', timer.elapsed(this.timerKey));
+      logger.debug(this.tag, '   ProviderManager created', timer.elapsed(this.timerKey));
     }
 
     // Create MemoryService if configured (requires async initialize() later)
@@ -207,7 +207,7 @@ export class BaseAgent {
         this.providerManager,
         config.agentId,
       );
-      logger.debug(this.tag, '   ✅ MemoryService created (pending initialization)', timer.elapsed(this.timerKey));
+      logger.debug(this.tag, '   MemoryService created (pending initialization)', timer.elapsed(this.timerKey));
     }
 
     logger.debug(this.tag, `   BaseAgent initialized for ${config.agentId}`, timer.elapsed(this.timerKey));
@@ -237,7 +237,7 @@ export class BaseAgent {
     if (this.memoryService) {
       try {
         await this.memoryService.initialize();
-        logger.info(this.tag, '   ✅ MemoryService initialized', timer.elapsed(this.timerKey));
+        logger.info(this.tag, '   MemoryService initialized', timer.elapsed(this.timerKey));
       } catch (error: any) {
         // Memory initialization failure is non-fatal — agent can still operate
         logger.error(this.tag, `MemoryService initialization failed (non-fatal): ${error.message || String(error)}`, timer.elapsed(this.timerKey), error);

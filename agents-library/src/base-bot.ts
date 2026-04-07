@@ -314,7 +314,7 @@ export abstract class BaseBot {
 
     // Reset circuit if enough time has passed
     if (this.isCircuitOpen && (now - this.lastFailureTime) > this.resetTimeMs) {
-      console.log('🔧 Circuit breaker reset - attempting recovery');
+      console.log('Circuit breaker reset - attempting recovery');
       this.isCircuitOpen = false;
       this.failureCount = 0;
     }
@@ -355,7 +355,7 @@ export abstract class BaseBot {
    */
   protected recordSuccess(): void {
     if (this.failureCount > 0) {
-      console.log(`✅ Request succeeded - resetting failure count (was ${this.failureCount})`);
+      console.log(`Request succeeded - resetting failure count (was ${this.failureCount})`);
     }
     this.failureCount = 0;
     this.successCount++;
@@ -371,7 +371,7 @@ export abstract class BaseBot {
     this.isCircuitOpen = false;
     this.failureCount = 0;
     this.lastFailureTime = 0;
-    console.log('🔧 Circuit breaker manually reset');
+    console.log('Circuit breaker manually reset');
   }
 
   /**
@@ -431,7 +431,7 @@ export abstract class BaseBot {
       // Only retry on timeout or network errors
       if ((isTimeout || isNetworkError) && retryCount < this.maxRetries) {
         const delayMs = this.baseDelayMs * Math.pow(2, retryCount);
-        console.warn(`⚠️  Request failed (${error.message}), retrying in ${delayMs}ms (attempt ${retryCount + 1}/${this.maxRetries})...`);
+        console.warn(`Request failed (${error.message}), retrying in ${delayMs}ms (attempt ${retryCount + 1}/${this.maxRetries})...`);
 
         await this.sleep(delayMs);
         return this.invokeToolWithRetry(params, retryCount + 1);
@@ -494,7 +494,7 @@ export abstract class BaseBot {
   protected logMetrics(): void {
     const metrics = this.getMetrics();
 
-    console.log('📊 Bot Metrics:');
+    console.log('Bot Metrics:');
     console.log(`   Total Requests: ${metrics.totalRequests}`);
     console.log(`   Successes: ${metrics.successCount} (${metrics.successRate}%)`);
     console.log(`   Timeouts: ${metrics.timeoutCount} (${metrics.timeoutRate}%)`);

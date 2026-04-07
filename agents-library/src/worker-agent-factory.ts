@@ -243,6 +243,20 @@ export class BaseWorkerAgent extends BaseAgent {
    */
   private processedTaskIds = new Set<string>();
 
+  /**
+   * Natively loaded ability-file-local for zero-latency file operations.
+   * Loaded in initializeClient(), null if not installed or load fails.
+   */
+  protected nativeFileLocal: any | null = null;
+
+  /** Tool names provided by ability-file-local (used for routing) */
+  private static readonly FILE_LOCAL_TOOLS = new Set([
+    'list_files_and_folders', 'move_and_rename', 'copy_file',
+    'delete_file_or_folder', 'create_folder', 'create_file',
+    'watch_folder', 'unwatch_folder', 'compress_file', 'decompress_file',
+    'compress_multiple_files', 'decompress_multiple_files', 'search_files',
+  ]);
+
   // ============================================================================
   // Constructor
   // ============================================================================
@@ -351,6 +365,21 @@ export class BaseWorkerAgent extends BaseAgent {
   // ============================================================================
   // Protected Initialization Methods
   // ============================================================================
+
+  /**
+   * Override BaseAgent.connect() to load native abilities after broker connection.
+   */
+  async connect(): Promise<void> {
+    await super.connect();
+
+    // Load ability-file-local natively (zero-latency file ops, in-process)
+    try {
+      this.nativeFileLocal = await this.client.loadNative('ability-file-local');
+      logger.info(MODULE_AGENT, 'Loaded ability-file-local natively', timer.elapsed('factory'));
+    } catch (err: any) {
+      logger.warn(MODULE_AGENT, `Could not load ability-file-local natively: ${err.message} — will use broker`, timer.elapsed('factory'));
+    }
+  }
 
   /**
    * Initialize KĀDI client and connect to broker
@@ -489,14 +518,14 @@ export class BaseWorkerAgent extends BaseAgent {
       // Validate event with Zod schema
       const validatedEvent: TaskAssignedEvent = TaskAssignedEventSchema.parse(eventData);
 
-      logger.info(MODULE_AGENT, `   ✅ Event validated`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Event validated`, timer.elapsed('factory'));
       logger.info(MODULE_AGENT, `   Task ID: ${validatedEvent.taskId}`, timer.elapsed('factory'));
       logger.info(MODULE_AGENT, `   Role: ${validatedEvent.role}`, timer.elapsed('factory'));
       logger.info(MODULE_AGENT, `   Description: ${validatedEvent.description.substring(0, 80)}${validatedEvent.description.length > 80 ? '...' : ''}`, timer.elapsed('factory'));
 
       // Check if task is for this agent's role
       if (validatedEvent.role !== this.role) {
-        logger.warn(MODULE_AGENT, `   ⚠️  Task role mismatch: expected ${this.role}, got ${validatedEvent.role}`, timer.elapsed('factory'));
+        logger.warn(MODULE_AGENT, `   Task role mismatch: expected ${this.role}, got ${validatedEvent.role}`, timer.elapsed('factory'));
         logger.warn(MODULE_AGENT, `   Rejecting task (wrong role)`, timer.elapsed('factory'));
         logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
         return;
@@ -507,11 +536,11 @@ export class BaseWorkerAgent extends BaseAgent {
       if (this.processedTaskIds.has(validatedEvent.taskId)) {
         if (validatedEvent.feedback) {
           // Retry with feedback — allow re-processing
-          logger.info(MODULE_AGENT, `   🔄 Retry detected for task ${validatedEvent.taskId}, allowing re-execution`, timer.elapsed('factory'));
+          logger.info(MODULE_AGENT, `   Retry detected for task ${validatedEvent.taskId}, allowing re-execution`, timer.elapsed('factory'));
           this.processedTaskIds.delete(validatedEvent.taskId);
         } else {
           // Duplicate without feedback — skip
-          logger.warn(MODULE_AGENT, `   ⚠️  Duplicate task.assigned for ${validatedEvent.taskId}, skipping (already processed/in-flight)`, timer.elapsed('factory'));
+          logger.warn(MODULE_AGENT, `   Duplicate task.assigned for ${validatedEvent.taskId}, skipping (already processed/in-flight)`, timer.elapsed('factory'));
           logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
           return;
         }
@@ -524,29 +553,29 @@ export class BaseWorkerAgent extends BaseAgent {
       if (this.capabilities.length > 0 && validatedEvent.role !== this.role) {
         const rejectionReason = this.validateTaskCapability(validatedEvent);
         if (rejectionReason) {
-          logger.warn(MODULE_AGENT, `   ⚠️  Task capability mismatch`, timer.elapsed('factory'));
+          logger.warn(MODULE_AGENT, `   Task capability mismatch`, timer.elapsed('factory'));
           logger.warn(MODULE_AGENT, `   Reason: ${rejectionReason}`, timer.elapsed('factory'));
           logger.warn(MODULE_AGENT, `   Publishing task.rejected event`, timer.elapsed('factory'));
           await this.publishRejection(validatedEvent.taskId, validatedEvent.questId, rejectionReason);
           logger.info(MODULE_AGENT, '', timer.elapsed('factory'));
           return;
         }
-        logger.info(MODULE_AGENT, `   ✅ Capability check passed`, timer.elapsed('factory'));
+        logger.info(MODULE_AGENT, `   Capability check passed`, timer.elapsed('factory'));
       } else if (validatedEvent.role === this.role) {
-        logger.info(MODULE_AGENT, `   ✅ Role match (${this.role}) — skipping capability check`, timer.elapsed('factory'));
+        logger.info(MODULE_AGENT, `   Role match (${this.role}) — skipping capability check`, timer.elapsed('factory'));
       }
 
       // Worktree scope validation: soft warning only (worker always operates within its worktree directory)
       const outOfScopeReason = this.validateTaskScope(validatedEvent);
       if (outOfScopeReason) {
-        logger.warn(MODULE_AGENT, `   ⚠️  Path reference outside worktree detected (non-blocking)`, timer.elapsed('factory'));
+        logger.warn(MODULE_AGENT, `   Path reference outside worktree detected (non-blocking)`, timer.elapsed('factory'));
         logger.warn(MODULE_AGENT, `   Note: ${outOfScopeReason}`, timer.elapsed('factory'));
         logger.warn(MODULE_AGENT, `   Proceeding — worker operates within worktree "${this.worktreePath}"`, timer.elapsed('factory'));
       }
 
       // Log retry context if present
       if (validatedEvent.feedback) {
-        logger.info(MODULE_AGENT, `   🔄 RETRY attempt #${validatedEvent.retryAttempt || 1}`, timer.elapsed('factory'));
+        logger.info(MODULE_AGENT, `   RETRY attempt #${validatedEvent.retryAttempt || 1}`, timer.elapsed('factory'));
         logger.info(MODULE_AGENT, `   Feedback: ${validatedEvent.feedback.substring(0, 120)}${validatedEvent.feedback.length > 120 ? '...' : ''}`, timer.elapsed('factory'));
       }
 
@@ -614,7 +643,7 @@ export class BaseWorkerAgent extends BaseAgent {
       let verificationCriteria = '';
 
       if (task.questId) {
-        logger.info(MODULE_AGENT, `📋 Fetching full task details from quest ${task.questId}...`, timer.elapsed('factory'));
+        logger.info(MODULE_AGENT, `Fetching full task details from quest ${task.questId}...`, timer.elapsed('factory'));
         try {
           const taskDetails = await this.client.invokeRemote<{
             content: Array<{ type: string; text: string }>;
@@ -625,19 +654,19 @@ export class BaseWorkerAgent extends BaseAgent {
           implementationGuide = details.task?.implementationGuide || task.requirements;
           verificationCriteria = details.task?.verificationCriteria || '';
 
-          logger.info(MODULE_AGENT, `   ✅ Task details fetched`, timer.elapsed('factory'));
+          logger.info(MODULE_AGENT, `   Task details fetched`, timer.elapsed('factory'));
         } catch (error: any) {
-          logger.warn(MODULE_AGENT, `   ⚠️  Failed to fetch task details: ${error.message}`, timer.elapsed('factory'));
+          logger.warn(MODULE_AGENT, `   Failed to fetch task details: ${error.message}`, timer.elapsed('factory'));
         }
       }
 
       // Step 2: Set git working directory via MCP tool
-      logger.info(MODULE_AGENT, `📂 Setting git working directory: ${this.worktreePath}`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `Setting git working directory: ${this.worktreePath}`, timer.elapsed('factory'));
       try {
         await this.client.invokeRemote('git_git_set_working_dir', { path: this.worktreePath });
-        logger.info(MODULE_AGENT, `   ✅ Git working directory set`, timer.elapsed('factory'));
+        logger.info(MODULE_AGENT, `   Git working directory set`, timer.elapsed('factory'));
       } catch (error: any) {
-        logger.warn(MODULE_AGENT, `   ⚠️  Failed to set git working dir: ${error.message}`, timer.elapsed('factory'));
+        logger.warn(MODULE_AGENT, `   Failed to set git working dir: ${error.message}`, timer.elapsed('factory'));
         // Non-fatal — tools can still pass explicit path
       }
 
@@ -648,7 +677,7 @@ export class BaseWorkerAgent extends BaseAgent {
 
       // Step 4: Build tool definitions — local tools + dynamic discovery from broker
       const tools = await this.buildToolDefinitionsAsync();
-      logger.info(MODULE_AGENT, `🔧 Available tools: ${tools.length}`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `Available tools: ${tools.length}`, timer.elapsed('factory'));
 
       // Step 4.5: Recall relevant past experience (non-blocking, best-effort)
       let memoryContext = '';
@@ -690,7 +719,7 @@ export class BaseWorkerAgent extends BaseAgent {
       let consecutiveFailures = 0;
 
       for (let iteration = 0; iteration < BaseWorkerAgent.MAX_TOOL_LOOP_ITERATIONS; iteration++) {
-        logger.info(MODULE_AGENT, `🔄 Agent loop iteration ${iteration + 1}/${BaseWorkerAgent.MAX_TOOL_LOOP_ITERATIONS}`, timer.elapsed('factory'));
+        logger.info(MODULE_AGENT, `Agent loop iteration ${iteration + 1}/${BaseWorkerAgent.MAX_TOOL_LOOP_ITERATIONS}`, timer.elapsed('factory'));
 
         const result = await this.providerManager.chat(messages, chatOptions);
 
@@ -710,9 +739,9 @@ export class BaseWorkerAgent extends BaseAgent {
           }> = toolCallsData.tool_calls;
           const assistantMessage = toolCallsData.message || '';
 
-          logger.info(MODULE_AGENT, `   🤖 LLM requested ${toolCalls.length} tool call(s)`, timer.elapsed('factory'));
+          logger.info(MODULE_AGENT, `   LLM requested ${toolCalls.length} tool call(s)`, timer.elapsed('factory'));
           if (assistantMessage) {
-            logger.info(MODULE_AGENT, `   💬 ${assistantMessage.substring(0, 120)}${assistantMessage.length > 120 ? '...' : ''}`, timer.elapsed('factory'));
+            logger.info(MODULE_AGENT, `   ${assistantMessage.substring(0, 120)}${assistantMessage.length > 120 ? '...' : ''}`, timer.elapsed('factory'));
           }
 
           // Add assistant message with tool_calls to conversation
@@ -727,7 +756,7 @@ export class BaseWorkerAgent extends BaseAgent {
             const toolName = toolCall.function.name;
             const toolArgs = JSON.parse(toolCall.function.arguments);
 
-            logger.info(MODULE_AGENT, `   🔧 Executing tool: ${toolName}`, timer.elapsed('factory'));
+            logger.info(MODULE_AGENT, `   Executing tool: ${toolName}`, timer.elapsed('factory'));
 
             try {
               const toolResult = await this.executeRemoteTool(toolName, toolArgs);
@@ -749,11 +778,11 @@ export class BaseWorkerAgent extends BaseAgent {
               });
 
               consecutiveFailures = 0;
-              logger.info(MODULE_AGENT, `   ✅ Tool ${toolName} succeeded`, timer.elapsed('factory'));
+              logger.info(MODULE_AGENT, `   Tool ${toolName} succeeded`, timer.elapsed('factory'));
             } catch (error: any) {
               consecutiveFailures++;
               const errorMsg = `Tool ${toolName} failed: ${error.message || String(error)}`;
-              logger.error(MODULE_AGENT, `   ❌ ${errorMsg}`, timer.elapsed('factory'));
+              logger.error(MODULE_AGENT, `   ${errorMsg}`, timer.elapsed('factory'));
 
               messages.push({
                 role: 'tool',
@@ -764,7 +793,7 @@ export class BaseWorkerAgent extends BaseAgent {
           }
           // Circuit breaker: if 3+ consecutive tool failures, tell LLM to stop retrying
           if (consecutiveFailures >= 3) {
-            logger.warn(MODULE_AGENT, `⚠️  Circuit breaker: ${consecutiveFailures} consecutive tool failures — instructing LLM to wrap up`, timer.elapsed('factory'));
+            logger.warn(MODULE_AGENT, `Circuit breaker: ${consecutiveFailures} consecutive tool failures — instructing LLM to wrap up`, timer.elapsed('factory'));
             messages.push({
               role: 'user',
               content: 'SYSTEM: Multiple consecutive tool failures detected. Stop retrying failed tools and provide your final response summarizing what you accomplished so far.'
@@ -774,14 +803,14 @@ export class BaseWorkerAgent extends BaseAgent {
         } else {
           // Plain text response — agent is done
           finalResponse = responseText;
-          logger.info(MODULE_AGENT, `   ✅ Agent completed (${finalResponse.length} chars response)`, timer.elapsed('factory'));
+          logger.info(MODULE_AGENT, `   Agent completed (${finalResponse.length} chars response)`, timer.elapsed('factory'));
           break;
         }
       }
 
       // Step 7: Safety net — auto-commit if LLM forgot to commit
       if (commitSha === 'unknown' && (filesCreated.length > 0 || filesModified.length > 0)) {
-        logger.warn(MODULE_AGENT, `⚠️  LLM did not commit — auto-committing staged changes`, timer.elapsed('factory'));
+        logger.warn(MODULE_AGENT, `LLM did not commit — auto-committing staged changes`, timer.elapsed('factory'));
         try {
           const commitMsg = this.commitFormat
             ? this.commitFormat.replace('{taskId}', task.taskId)
@@ -790,18 +819,18 @@ export class BaseWorkerAgent extends BaseAgent {
           const sha = this.extractCommitSha(commitResult);
           if (sha) {
             commitSha = sha;
-            logger.info(MODULE_AGENT, `   ✅ Auto-commit succeeded: ${sha.substring(0, 7)}`, timer.elapsed('factory'));
+            logger.info(MODULE_AGENT, `   Auto-commit succeeded: ${sha.substring(0, 7)}`, timer.elapsed('factory'));
           } else {
-            logger.warn(MODULE_AGENT, `   ⚠️  Auto-commit returned no SHA`, timer.elapsed('factory'));
+            logger.warn(MODULE_AGENT, `   Auto-commit returned no SHA`, timer.elapsed('factory'));
           }
         } catch (err: any) {
-          logger.warn(MODULE_AGENT, `   ⚠️  Auto-commit failed: ${err.message}`, timer.elapsed('factory'));
+          logger.warn(MODULE_AGENT, `   Auto-commit failed: ${err.message}`, timer.elapsed('factory'));
         }
       }
 
       // Step 8: Publish completion or failure event
       if (!commitSha || commitSha === 'unknown') {
-        logger.warn(MODULE_AGENT, `⚠️  No valid commit SHA — publishing task.failed instead of review request`, timer.elapsed('factory'));
+        logger.warn(MODULE_AGENT, `No valid commit SHA — publishing task.failed instead of review request`, timer.elapsed('factory'));
         // Clear dedup so agent-lead retries are accepted
         this.processedTaskIds.delete(task.taskId);
         await this.publishFailure(
@@ -826,7 +855,7 @@ export class BaseWorkerAgent extends BaseAgent {
         );
       }
 
-      logger.info(MODULE_AGENT, `✅ Task ${task.taskId} execution completed`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `Task ${task.taskId} execution completed`, timer.elapsed('factory'));
 
     } catch (error: any) {
       logger.error(MODULE_AGENT, `Failed to execute task ${task.taskId}`, timer.elapsed('factory'), error);
@@ -858,7 +887,7 @@ export class BaseWorkerAgent extends BaseAgent {
     memoryContext?: string
   ): string {
     const retryContext = task.feedback
-      ? `\n⚠️ REVISION REQUIRED (Attempt #${task.retryAttempt || 1})\nPrevious attempt was rejected. Feedback:\n${task.feedback}\nPlease carefully address the feedback above.\n`
+      ? `\nREVISION REQUIRED (Attempt #${task.retryAttempt || 1})\nPrevious attempt was rejected. Feedback:\n${task.feedback}\nPlease carefully address the feedback above.\n`
       : '';
 
     const predecessorContext = task.predecessors && task.predecessors.length > 0
@@ -933,6 +962,26 @@ Important:
       }
     });
 
+    // Include tools from natively loaded ability-file-local (available even without broker)
+    if (this.nativeFileLocal) {
+      const nativeTools = this.nativeFileLocal.getTools();
+      for (const tool of nativeTools) {
+        tools.push({
+          type: 'function',
+          function: {
+            name: tool.name,
+            description: tool.description || '',
+            parameters: (tool.inputSchema as ToolDefinition['function']['parameters']) || {
+              type: 'object',
+              properties: {},
+              required: []
+            }
+          }
+        });
+      }
+      logger.info(MODULE_AGENT, `Added ${nativeTools.length} tools from native ability-file-local`, timer.elapsed('factory'));
+    }
+
     // Discover network tools from broker, filtered by toolPrefixes if configured
     if (this.client.isConnected()) {
       try {
@@ -944,6 +993,10 @@ Important:
 
         if (response?.tools && Array.isArray(response.tools)) {
           for (const tool of response.tools) {
+            // Skip tools already loaded natively (avoid duplicates)
+            if (this.nativeFileLocal && BaseWorkerAgent.FILE_LOCAL_TOOLS.has(tool.name)) {
+              continue;
+            }
             // If toolPrefixes configured, filter by prefix; otherwise include all
             if (this.toolPrefixes.length > 0 && !this.toolPrefixes.some(prefix => tool.name.startsWith(prefix))) {
               continue;
@@ -1117,6 +1170,11 @@ Important:
       return { success: true, content };
     }
 
+    // Route to native ability-file-local if loaded (zero-latency, in-process)
+    if (this.nativeFileLocal && BaseWorkerAgent.FILE_LOCAL_TOOLS.has(toolName)) {
+      return await this.nativeFileLocal.invoke(toolName, toolArgs);
+    }
+
     // Route to MCP tool via KĀDI broker
     const result = await this.client.invokeRemote<any>(toolName, toolArgs);
 
@@ -1279,7 +1337,7 @@ Important:
 
       await this.client.publish(topic, payload, { broker: 'default', network: 'qa' });
 
-      logger.info(MODULE_AGENT, `   ✅ Review request published to qa network`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Review request published to qa network`, timer.elapsed('factory'));
 
       // Store task memory (fire-and-forget) for learning from past outcomes
       if (this.memoryService) {
@@ -1355,7 +1413,7 @@ Important:
 
       await this.client.publish(topic, payload, { broker: 'default', network: this.role });
 
-      logger.info(MODULE_AGENT, `   ✅ Failure event published`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Failure event published`, timer.elapsed('factory'));
 
     } catch (publishError: any) {
       // Handle publishing failures gracefully - don't throw
@@ -1467,7 +1525,7 @@ Important:
 
       await this.client.publish(topic, payload, { broker: 'default', network: this.role });
 
-      logger.info(MODULE_AGENT, `   ✅ Rejection event published`, timer.elapsed('factory'));
+      logger.info(MODULE_AGENT, `   Rejection event published`, timer.elapsed('factory'));
 
     } catch (error: any) {
       // Handle publishing failures gracefully — don't throw

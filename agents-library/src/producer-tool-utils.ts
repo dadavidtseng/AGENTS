@@ -290,7 +290,7 @@ export async function invokeShrimTool(
         // Wait for async response
         try {
           const asyncResult = await asyncManager.waitForResponse(response.requestId, timeout);
-          console.log(`📤 Async tool result received for ${response.requestId}`);
+          console.log(`Async tool result received for ${response.requestId}`);
 
           // Return the async result
           return {
@@ -298,7 +298,7 @@ export async function invokeShrimTool(
             data: asyncResult
           };
         } catch (error: any) {
-          console.error(`❌ Async tool timeout: ${error.message}`);
+          console.error(`Async tool timeout: ${error.message}`);
           return {
             success: false,
             error: {
@@ -645,7 +645,7 @@ export async function orchestrateWithClaude(
   };
 
   try {
-    console.log('🤖 Starting Claude API orchestration...');
+    console.log('Starting Claude API orchestration...');
     console.log(`   Model: ${model}`);
     console.log(`   Max tokens: ${maxTokens}`);
     console.log(`   Temperature: ${temperature}`);
@@ -666,7 +666,7 @@ export async function orchestrateWithClaude(
 
     while (continueOrchestration && iterationCount < maxIterations) {
       iterationCount++;
-      console.log(`\n📡 Orchestration iteration ${iterationCount}/${maxIterations}`);
+      console.log(`\nOrchestration iteration ${iterationCount}/${maxIterations}`);
 
       // Stream Claude API response
       const stream = await anthropic.messages.stream({
@@ -692,7 +692,7 @@ export async function orchestrateWithClaude(
         } else if (event.type === 'content_block_start') {
           // Handle tool use block
           if (event.content_block.type === 'tool_use') {
-            console.log(`\n🔧 Claude requested tool: ${event.content_block.name}`);
+            console.log(`\nClaude requested tool: ${event.content_block.name}`);
             toolUseBlocks.push({
               id: event.content_block.id,
               name: event.content_block.name,
@@ -705,12 +705,12 @@ export async function orchestrateWithClaude(
       // Accumulate text to result
       if (textAccumulator.length > 0) {
         result.text += textAccumulator;
-        console.log(`\n📝 Claude response: ${textAccumulator.substring(0, 150)}${textAccumulator.length > 150 ? '...' : ''}`);
+        console.log(`\nClaude response: ${textAccumulator.substring(0, 150)}${textAccumulator.length > 150 ? '...' : ''}`);
       }
 
       // Check if Claude requested tool use
       if (toolUseBlocks.length > 0) {
-        console.log(`\n🛠️  Processing ${toolUseBlocks.length} tool invocation(s)...`);
+        console.log(`\nProcessing ${toolUseBlocks.length} tool invocation(s)...`);
 
         // Build tool results for next iteration
         const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
@@ -742,7 +742,7 @@ export async function orchestrateWithClaude(
           };
           result.toolInvocations.push(invocation);
 
-          console.log(`     ✅ Completed in ${durationMs}ms`);
+          console.log(`     Completed in ${durationMs}ms`);
           console.log(`     Success: ${toolResult.success}`);
 
           // Build tool result for Claude
@@ -785,25 +785,25 @@ export async function orchestrateWithClaude(
 
       } else {
         // No tool use - orchestration complete
-        console.log('\n✅ Orchestration complete (no tool use requested)');
+        console.log('\nOrchestration complete (no tool use requested)');
         continueOrchestration = false;
       }
     }
 
     if (iterationCount >= maxIterations) {
-      console.warn('\n⚠️  Orchestration loop exceeded max iterations - stopping');
+      console.warn('\nOrchestration loop exceeded max iterations - stopping');
       result.error = 'Orchestration loop exceeded maximum iterations';
     }
 
     result.success = true;
-    console.log('\n✅ Claude API orchestration succeeded');
+    console.log('\nClaude API orchestration succeeded');
     console.log(`   Total text length: ${result.text.length} characters`);
     console.log(`   Total tool invocations: ${result.toolInvocations.length}`);
 
     return result;
 
   } catch (error: any) {
-    console.error('\n❌ Claude API orchestration failed');
+    console.error('\nClaude API orchestration failed');
     console.error(`   Error: ${error.message || String(error)}`);
 
     result.success = false;
@@ -932,7 +932,7 @@ export async function publishToolEvent(
 
   // Validate topic pattern
   if (!validateTopicPattern(topic)) {
-    console.warn(`⚠️  Invalid topic pattern: ${topic}`);
+    console.warn(`Invalid topic pattern: ${topic}`);
     console.warn(`   Expected format: {platform}.{event_type}.{bot_id}`);
     console.warn(`   This may cause routing issues in KĀDI broker`);
   }
@@ -947,7 +947,7 @@ export async function publishToolEvent(
   };
 
   try {
-    console.log(`📤 Publishing tool event`);
+    console.log(`Publishing tool event`);
     console.log(`   Topic: ${topic}`);
     console.log(`   Tool: ${toolName}`);
     if (taskId) {
@@ -959,11 +959,11 @@ export async function publishToolEvent(
     // Publish event to KĀDI broker
     await client.publish(topic, eventPayload, { broker: 'default', network: 'global' });
 
-    console.log(`   ✅ Event published successfully`);
+    console.log(`   Event published successfully`);
 
   } catch (error: any) {
     // Log error but don't throw - graceful degradation
-    console.error(`❌ Failed to publish tool event (non-fatal)`);
+    console.error(`Failed to publish tool event (non-fatal)`);
     console.error(`   Topic: ${topic}`);
     console.error(`   Tool: ${toolName}`);
     console.error(`   Error: ${error.message || String(error)}`);

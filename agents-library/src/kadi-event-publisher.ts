@@ -109,7 +109,7 @@ export class KadiEventPublisher {
     if (hasValidBrokerUrl) {
       this.enabled = true;
     } else {
-      console.log('⚠️  KĀDI broker URL not configured - running in stub mode');
+      console.log('KĀDI broker URL not configured - running in stub mode');
       console.log('   Set KADI_BROKER_URL to enable event publishing');
     }
   }

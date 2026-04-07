@@ -736,13 +736,13 @@ export class MemoryService {
       }, { timeout: 10000 }).then((result: any) => {
         const parsed = result?.content?.[0]?.text ? JSON.parse(result.content[0].text) : result;
         if (parsed?.stored === false) {
-          console.warn(`[MemoryService] ⚠ KADI memory-store returned error for ${memory.taskId}: ${parsed.error}`);
+          console.warn(`[MemoryService] KADI memory-store returned error for ${memory.taskId}: ${parsed.error}`);
         } else {
-          console.log(`[MemoryService] ✅ Stored task memory via KADI for ${memory.taskId} (rid: ${parsed?.rid || 'unknown'})`);
+          console.log(`[MemoryService] Stored task memory via KADI for ${memory.taskId} (rid: ${parsed?.rid || 'unknown'})`);
         }
       }).catch((error: any) => {
         console.warn(
-          `[MemoryService] ⚠ Failed to store task memory via KADI for ${memory.taskId}: ${error.message || String(error)}`
+          `[MemoryService] Failed to store task memory via KADI for ${memory.taskId}: ${error.message || String(error)}`
         );
       });
     } else {
@@ -834,10 +834,10 @@ export class MemoryService {
             }, { timeout: 5000 });
           }
 
-          console.log(`[MemoryService] ✅ Stored feedback via KADI for ${feedback.taskId} (approved: ${feedback.approved})`);
+          console.log(`[MemoryService] Stored feedback via KADI for ${feedback.taskId} (approved: ${feedback.approved})`);
         } catch (error: any) {
           console.warn(
-            `[MemoryService] ⚠ Failed to store feedback via KADI for ${feedback.taskId}: ${error.message || String(error)}`
+            `[MemoryService] Failed to store feedback via KADI for ${feedback.taskId}: ${error.message || String(error)}`
           );
         }
       })();
@@ -935,7 +935,7 @@ export class MemoryService {
         }
       } catch (error: any) {
         console.warn(
-          `[MemoryService] ⚠ KADI recall failed, falling back to file storage: ${error.message || String(error)}`
+          `[MemoryService] KADI recall failed, falling back to file storage: ${error.message || String(error)}`
         );
       }
     } else {

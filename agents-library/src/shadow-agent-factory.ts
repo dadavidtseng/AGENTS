@@ -205,6 +205,12 @@ export class BaseShadowAgent {
   private fileEventHandler: ((event: unknown) => void) | null = null;
 
   /**
+   * Native ability-file-local instance for in-process file operations.
+   * Set via setNativeFileLocal() after loadNative in the consuming agent.
+   */
+  private nativeFileLocal: any | null = null;
+
+  /**
    * Set of changed file paths awaiting backup processing
    *
    * Stores relative file paths from worker worktree for batch processing.
@@ -255,7 +261,7 @@ export class BaseShadowAgent {
     if (baseAgent) {
       this.client = baseAgent.client;
       this.usesBaseAgent = true;
-      logger.info(MODULE_AGENT, '   ✅ Using BaseAgent client (connection managed externally)', timer.elapsed('shadow-factory'));
+      logger.info(MODULE_AGENT, '   Using BaseAgent client (connection managed externally)', timer.elapsed('shadow-factory'));
     } else {
       this.client = new KadiClient({
         name: `shadow-agent-${config.role}`,
@@ -268,12 +274,20 @@ export class BaseShadowAgent {
       this.usesBaseAgent = false;
     }
 
-    logger.info(MODULE_AGENT, `🔧 BaseShadowAgent initialized for role: ${this.role}`, timer.elapsed('shadow-factory'));
+    logger.info(MODULE_AGENT, `BaseShadowAgent initialized for role: ${this.role}`, timer.elapsed('shadow-factory'));
     logger.info(MODULE_AGENT, `   Worker worktree: ${this.workerWorktreePath}`, timer.elapsed('shadow-factory'));
     logger.info(MODULE_AGENT, `   Shadow worktree: ${this.shadowWorktreePath}`, timer.elapsed('shadow-factory'));
     logger.info(MODULE_AGENT, `   Worker branch: ${this.workerBranch}`, timer.elapsed('shadow-factory'));
     logger.info(MODULE_AGENT, `   Shadow branch: ${this.shadowBranch}`, timer.elapsed('shadow-factory'));
     logger.info(MODULE_AGENT, `   Debounce delay: ${this.debounceMs}ms`, timer.elapsed('shadow-factory'));
+  }
+
+  /**
+   * Set native ability-file-local for in-process file operations.
+   * Call this after loadNative('ability-file-local') in the consuming agent.
+   */
+  setNativeFileLocal(native: any): void {
+    this.nativeFileLocal = native;
   }
 
   /**
@@ -299,27 +313,27 @@ export class BaseShadowAgent {
    * ```
    */
   async start(): Promise<void> {
-    logger.info(MODULE_AGENT, `🚀 Starting shadow agent for role: ${this.role}`, timer.elapsed('shadow-factory'));
+    logger.info(MODULE_AGENT, `Starting shadow agent for role: ${this.role}`, timer.elapsed('shadow-factory'));
 
     // Connect to KĀDI broker (skip if BaseAgent manages connection)
     if (this.usesBaseAgent) {
-      logger.info(MODULE_AGENT, '   ✅ Broker connection managed by BaseAgent (skipping)', timer.elapsed('shadow-factory'));
+      logger.info(MODULE_AGENT, '   Broker connection managed by BaseAgent (skipping)', timer.elapsed('shadow-factory'));
     } else {
       logger.info(MODULE_AGENT, '   → Connecting to KĀDI broker...', timer.elapsed('shadow-factory'));
       try {
         await this.client.connect();
-        logger.info(MODULE_AGENT, '   ✅ Connected to KĀDI broker', timer.elapsed('shadow-factory'));
+        logger.info(MODULE_AGENT, '   Connected to KĀDI broker', timer.elapsed('shadow-factory'));
       } catch (error: any) {
-        logger.error(MODULE_AGENT, '❌ Broker connection error', timer.elapsed('shadow-factory'), error);
+        logger.error(MODULE_AGENT, 'Broker connection error', timer.elapsed('shadow-factory'), error);
         process.exit(1);
       }
     }
 
     // Subscribe to file.changed broker events (emitted by ability-file-local)
     await this.setupBrokerFileEventSubscription();
-    logger.info(MODULE_AGENT, '✅ Broker file event subscription active', timer.elapsed('shadow-factory'));
+    logger.info(MODULE_AGENT, 'Broker file event subscription active', timer.elapsed('shadow-factory'));
 
-    logger.info(MODULE_AGENT, '✅ Shadow agent started and monitoring via broker events', timer.elapsed('shadow-factory'));
+    logger.info(MODULE_AGENT, 'Shadow agent started and monitoring via broker events', timer.elapsed('shadow-factory'));
   }
 
   /**
@@ -342,40 +356,40 @@ export class BaseShadowAgent {
    * ```
    */
   async stop(): Promise<void> {
-    logger.info(MODULE_AGENT, `🛑 Stopping shadow agent for role: ${this.role}`, timer.elapsed('shadow-factory'));
+    logger.info(MODULE_AGENT, `Stopping shadow agent for role: ${this.role}`, timer.elapsed('shadow-factory'));
 
     // Unsubscribe from broker file events
     if (this.fileEventHandler) {
-      logger.info(MODULE_AGENT, '🛑 Unsubscribing from file.changed events...', timer.elapsed('shadow-factory'));
+      logger.info(MODULE_AGENT, 'Unsubscribing from file.changed events...', timer.elapsed('shadow-factory'));
       try {
         await (this.client as any).unsubscribe('file.changed', this.fileEventHandler);
       } catch {
         // Best-effort unsubscribe — may not be supported in all KadiClient versions
       }
       this.fileEventHandler = null;
-      logger.info(MODULE_AGENT, '✅ File event subscription removed', timer.elapsed('shadow-factory'));
+      logger.info(MODULE_AGENT, 'File event subscription removed', timer.elapsed('shadow-factory'));
     }
 
     // Clear all pending debounce timers
     if (this.debounceMap.size > 0) {
-      logger.info(MODULE_AGENT, `🛑 Clearing ${this.debounceMap.size} pending debounce timers...`, timer.elapsed('shadow-factory'));
+      logger.info(MODULE_AGENT, `Clearing ${this.debounceMap.size} pending debounce timers...`, timer.elapsed('shadow-factory'));
       for (const timeout of this.debounceMap.values()) {
         clearTimeout(timeout);
       }
       this.debounceMap.clear();
-      logger.info(MODULE_AGENT, '✅ Debounce timers cleared', timer.elapsed('shadow-factory'));
+      logger.info(MODULE_AGENT, 'Debounce timers cleared', timer.elapsed('shadow-factory'));
     }
 
     // Disconnect KĀDI client (skip if BaseAgent manages connection)
     if (this.usesBaseAgent) {
-      logger.info(MODULE_AGENT, '   ✅ Broker disconnection managed by BaseAgent (skipping)', timer.elapsed('shadow-factory'));
+      logger.info(MODULE_AGENT, '   Broker disconnection managed by BaseAgent (skipping)', timer.elapsed('shadow-factory'));
     } else {
       logger.info(MODULE_AGENT, '   → Disconnecting from KĀDI broker...', timer.elapsed('shadow-factory'));
       await this.client.disconnect();
-      logger.info(MODULE_AGENT, '   ✅ Disconnected from KĀDI broker', timer.elapsed('shadow-factory'));
+      logger.info(MODULE_AGENT, '   Disconnected from KĀDI broker', timer.elapsed('shadow-factory'));
     }
 
-    logger.info(MODULE_AGENT, '✅ Shadow agent stopped', timer.elapsed('shadow-factory'));
+    logger.info(MODULE_AGENT, 'Shadow agent stopped', timer.elapsed('shadow-factory'));
   }
 
   /**
@@ -392,7 +406,7 @@ export class BaseShadowAgent {
    * then debounces and creates shadow backup commits.
    */
   protected async setupBrokerFileEventSubscription(): Promise<void> {
-    logger.info(MODULE_AGENT, `👁️  Subscribing to file.changed broker events for: ${this.workerWorktreePath}`, timer.elapsed('shadow-factory'));
+    logger.info(MODULE_AGENT, `Subscribing to file.changed broker events for: ${this.workerWorktreePath}`, timer.elapsed('shadow-factory'));
 
     const handler = async (event: unknown) => {
       try {
@@ -433,30 +447,34 @@ export class BaseShadowAgent {
         }
 
         const timeout = setTimeout(async () => {
-          logger.info(MODULE_AGENT, `📝 Processing ${operation.toLowerCase()} file: ${relativePath}`, timer.elapsed('shadow-factory'));
+          logger.info(MODULE_AGENT, `Processing ${operation.toLowerCase()} file: ${relativePath}`, timer.elapsed('shadow-factory'));
           await this.createShadowBackup(operation, relativePath);
           this.debounceMap.delete(filePath);
         }, this.debounceMs);
 
         this.debounceMap.set(filePath, timeout);
       } catch (err: any) {
-        logger.error(MODULE_AGENT, `❌ Error processing file.changed event: ${err.message}`, timer.elapsed('shadow-factory'), err);
+        logger.error(MODULE_AGENT, `Error processing file.changed event: ${err.message}`, timer.elapsed('shadow-factory'), err);
       }
     };
 
     this.fileEventHandler = handler;
     await this.client.subscribe('file.changed', handler);
-    logger.info(MODULE_AGENT, '✅ Subscribed to file.changed broker events', timer.elapsed('shadow-factory'));
+    logger.info(MODULE_AGENT, 'Subscribed to file.changed broker events', timer.elapsed('shadow-factory'));
 
     // Invoke ability-file-local's watch_folder to start emitting file.changed events
-    try {
-      await this.client.invokeRemote('watch_folder', {
-        folderPath: this.workerWorktreePath,
-        watchId: `shadow-${this.role}`,
-      });
-      logger.info(MODULE_AGENT, `📂 Started file watcher via ability-file-local for: ${this.workerWorktreePath}`, timer.elapsed('shadow-factory'));
-    } catch (err: any) {
-      logger.warn(MODULE_AGENT, `⚠️ Could not start file watcher (ability-file-local may not be available): ${err.message}`, timer.elapsed('shadow-factory'));
+    if (this.nativeFileLocal) {
+      try {
+        await this.nativeFileLocal.invoke('watch_folder', {
+          folderPath: this.workerWorktreePath,
+          watchId: `shadow-${this.role}`,
+        });
+        logger.info(MODULE_AGENT, `Started file watcher via native ability-file-local for: ${this.workerWorktreePath}`, timer.elapsed('shadow-factory'));
+      } catch (err: any) {
+        logger.warn(MODULE_AGENT, `Could not start native file watcher: ${err.message}`, timer.elapsed('shadow-factory'));
+      }
+    } else {
+      logger.warn(MODULE_AGENT, 'ability-file-local not loaded natively — file watcher disabled (broker fallback not available)', timer.elapsed('shadow-factory'));
     }
   }
 
@@ -486,14 +504,14 @@ export class BaseShadowAgent {
 
     // Check circuit breaker state before attempting git operations
     if (this.checkCircuitBreaker()) {
-      logger.warn(MODULE_AGENT, `⚠️  Circuit breaker open - skipping backup operation`, timer.elapsed('shadow-factory'));
+      logger.warn(MODULE_AGENT, `Circuit breaker open - skipping backup operation`, timer.elapsed('shadow-factory'));
       return;
     }
 
     try {
       // For COMMIT operations, parse worker commit and copy changed files
       if (operation === 'COMMIT') {
-        logger.info(MODULE_AGENT, `📋 Processing worker commit mirror...`, timer.elapsed('shadow-factory'));
+        logger.info(MODULE_AGENT, `Processing worker commit mirror...`, timer.elapsed('shadow-factory'));
 
         // Step 1: Get latest commit hash from worker worktree
         const commitHash = execSync('git log -1 --format=%H', {
@@ -552,7 +570,7 @@ export class BaseShadowAgent {
             logger.info(MODULE_AGENT, `   ✓ Copied: ${file}`, timer.elapsed('shadow-factory'));
           } catch (copyError: any) {
             // File may have been deleted - that's ok, git will handle it
-            logger.info(MODULE_AGENT, `   ℹ️  Could not copy ${file}: ${copyError.message}`, timer.elapsed('shadow-factory'));
+            logger.info(MODULE_AGENT, `   Could not copy ${file}: ${copyError.message}`, timer.elapsed('shadow-factory'));
           }
         }
 
@@ -566,7 +584,7 @@ export class BaseShadowAgent {
         try {
           execSync('git diff --cached --quiet', { cwd: this.shadowWorktreePath });
           // Exit code 0 = nothing staged — FS watcher already backed up this change
-          logger.info(MODULE_AGENT, `ℹ️  No new changes to commit (already backed up by filesystem watcher)`, timer.elapsed('shadow-factory'));
+          logger.info(MODULE_AGENT, `No new changes to commit (already backed up by filesystem watcher)`, timer.elapsed('shadow-factory'));
           this.recordGitSuccess();
           await this.publishBackupStatus(true, changedFiles, 'mirror-commit-skipped');
           return;
@@ -588,7 +606,7 @@ export class BaseShadowAgent {
           encoding: 'utf-8'
         }).trim();
 
-        logger.info(MODULE_AGENT, `✅ Shadow commit created: ${shadowCommitHash.substring(0, 7)}`, timer.elapsed('shadow-factory'));
+        logger.info(MODULE_AGENT, `Shadow commit created: ${shadowCommitHash.substring(0, 7)}`, timer.elapsed('shadow-factory'));
 
         // Record success and reset failure count
         this.recordGitSuccess();
@@ -598,7 +616,7 @@ export class BaseShadowAgent {
 
       } else {
         // For file operations (Created, Modified, Deleted), handle individual file
-        logger.info(MODULE_AGENT, `📋 Processing file operation: ${operation} - ${fileName}`, timer.elapsed('shadow-factory'));
+        logger.info(MODULE_AGENT, `Processing file operation: ${operation} - ${fileName}`, timer.elapsed('shadow-factory'));
 
         const srcPath = path.join(this.workerWorktreePath, fileName);
         const destPath = path.join(this.shadowWorktreePath, fileName);
@@ -637,7 +655,7 @@ export class BaseShadowAgent {
         try {
           execSync('git diff --cached --quiet', { cwd: this.shadowWorktreePath });
           // Exit code 0 = nothing staged — content is identical to HEAD
-          logger.info(MODULE_AGENT, `ℹ️  No new changes to commit (file unchanged)`, timer.elapsed('shadow-factory'));
+          logger.info(MODULE_AGENT, `No new changes to commit (file unchanged)`, timer.elapsed('shadow-factory'));
           this.recordGitSuccess();
           await this.publishBackupStatus(true, [fileName], `file-${operation.toLowerCase()}-skipped`);
           return;
@@ -658,7 +676,7 @@ export class BaseShadowAgent {
           encoding: 'utf-8'
         }).trim();
 
-        logger.info(MODULE_AGENT, `✅ Shadow backup commit created: ${commitHash.substring(0, 7)}`, timer.elapsed('shadow-factory'));
+        logger.info(MODULE_AGENT, `Shadow backup commit created: ${commitHash.substring(0, 7)}`, timer.elapsed('shadow-factory'));
 
         // Record success and reset failure count
         this.recordGitSuccess();
@@ -668,7 +686,7 @@ export class BaseShadowAgent {
       }
 
     } catch (error: any) {
-      logger.error(MODULE_AGENT, `❌ Shadow backup failed: ${error.message}`, timer.elapsed('shadow-factory'), error);
+      logger.error(MODULE_AGENT, `Shadow backup failed: ${error.message}`, timer.elapsed('shadow-factory'), error);
 
       // Record failure and potentially open circuit breaker
       this.recordGitFailure('createShadowBackup', error);
@@ -742,7 +760,7 @@ export class BaseShadowAgent {
 
     // Publish event using KadiClient
     await this.client.publish(topic, payload, { broker: 'default', network: 'global' });
-    logger.info(MODULE_AGENT, `📤 Published backup ${success ? 'success' : 'failure'} event to ${topic}`, timer.elapsed('shadow-factory'));
+    logger.info(MODULE_AGENT, `Published backup ${success ? 'success' : 'failure'} event to ${topic}`, timer.elapsed('shadow-factory'));
   }
 
   /**
@@ -776,7 +794,7 @@ export class BaseShadowAgent {
    */
   protected recordGitFailure(operation: string, error: Error): void {
     this.gitFailureCount++;
-    logger.error(MODULE_AGENT, `❌ Git operation failed (${this.gitFailureCount}/${this.MAX_GIT_FAILURES}): ${operation}`, timer.elapsed('shadow-factory'), error);
+    logger.error(MODULE_AGENT, `Git operation failed (${this.gitFailureCount}/${this.MAX_GIT_FAILURES}): ${operation}`, timer.elapsed('shadow-factory'), error);
 
     if (this.gitFailureCount >= this.MAX_GIT_FAILURES) {
       this.gitCircuitOpen = true;
@@ -786,7 +804,7 @@ export class BaseShadowAgent {
       setTimeout(() => {
         this.gitCircuitOpen = false;
         this.gitFailureCount = 0;
-        logger.info(MODULE_AGENT, `🔄 Circuit breaker reset - retrying git operations`, timer.elapsed('shadow-factory'));
+        logger.info(MODULE_AGENT, `Circuit breaker reset - retrying git operations`, timer.elapsed('shadow-factory'));
       }, this.CIRCUIT_RESET_TIME);
     }
   }
@@ -836,7 +854,7 @@ export class BaseShadowAgent {
  *   debounceMs: 2000 // optional
  * };
  *
- * ShadowAgentConfigSchema.parse(validConfig); // ✅ Passes validation
+ * ShadowAgentConfigSchema.parse(validConfig); // Passes validation
  * ```
  */
 export const ShadowAgentConfigSchema = z.object({
@@ -906,13 +924,13 @@ export const ShadowAgentConfigSchema = z.object({
  * ```typescript
  * try {
  *   const agent = ShadowAgentFactory.createAgent({
- *     role: '', // ❌ Empty role will fail validation
+ *     role: '', // Empty role will fail validation
  *     workerWorktreePath: 'C:/p4/Personal/SD/agent-playground-artist',
  *     shadowWorktreePath: 'C:/p4/Personal/SD/shadow-artist-backup',
  *     workerBranch: 'main',
  *     shadowBranch: 'shadow-main',
  *     brokerUrl: 'ws://localhost:8080/kadi',
- *     networks: []  // ❌ Empty networks array will fail validation
+ *     networks: []  // Empty networks array will fail validation
  *   });
  * } catch (error) {
  *   console.error('Configuration validation failed:', error.message);
