@@ -1,15 +1,23 @@
 {
   "name": "ability-file-cloud",
-  "version": "1.0.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Cloud file operations ability - Dropbox, Google Drive, Box",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx index.ts"
+  },
   "author": "Yu-Wei Tseng",
   "license": "Apache License 2.0",
   "dependencies": {
-    "@kadi.build/core": "file:../../humin-game-lab/KADI/kadi-core",
-    "dotenv": "^17.3.1",
+    "@kadi.build/core": "*",
     "form-data": "^4.0.0",
     "node-fetch": "^2.7.0",
     "tsx": "^4.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.1",
+    "typescript": "^5.9.3"
   }
 }

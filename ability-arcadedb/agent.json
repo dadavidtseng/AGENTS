@@ -1,8 +1,8 @@
 {
-  "name": "arcadedb-ability",
+  "name": "ability-arcadedb",
+  "type": "ability",
   "version": "0.1.1",
   "description": "KADI ability wrapping ArcadeDB 26.2.1 as 17 broker-callable tools (includes backup/restore with distributed file transfer)",
-  "type": "ability",
   "entrypoint": "dist/index.js",
   "abilities": {
     "secret-ability": "^0.9.4"
@@ -12,9 +12,12 @@
     "remote": "wss://broker.dadavidtseng.info/kadi"
   },
   "scripts": {
-    "preflight": "echo 'Setting up ArcadeDB ability...'",
+    "preflight": "node --version",
     "setup": "npm install && npm run build",
-    "start": "node dist/index.js broker"
+    "build": "npx tsc",
+    "start": "node dist/index.js broker",
+    "dev": "npx tsx src/index.ts",
+    "clean": "rm -rf node_modules abilities agent-lock.json package-lock.json dist"
   },
   "build": {
     "default": {

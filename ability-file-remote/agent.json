@@ -1,14 +1,17 @@
 {
   "name": "ability-file-remote",
-  "version": "1.0.0",
+  "type": "ability",
+  "version": "0.1.1",
   "description": "Remote file sharing - tunneling and temporary URL management",
-  "entrypoint": "index.ts",
+  "entrypoint": "dist/index.js",
   "scripts": {
     "preflight": "node --version",
-    "setup": "npm install",
-    "start": "npx tsx index.ts",
+    "setup": "npm install && npm run build",
+    "build": "npx tsc",
+    "start": "node dist/index.js",
+    "dev": "npx tsx index.ts",
     "serve": "npx tsx index.ts stdio",
     "serve:broker": "npx tsx index.ts broker",
-    "clean": "rm -rf node_modules abilities agent-lock.json package-lock.json"
+    "clean": "rm -rf node_modules abilities agent-lock.json package-lock.json dist"
   }
 }

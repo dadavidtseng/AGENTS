@@ -1,5 +1,6 @@
 {
   "name": "ability-voice",
+  "type": "ability",
   "version": "1.0.0",
   "description": "Voice operations - TTS (Piper), STT (Whisper), wake word detection",
   "entrypoint": "src/ability_voice/__main__.py",

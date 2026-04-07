@@ -1,8 +1,8 @@
 {
-  "name": "search-ability",
+  "name": "ability-search",
+  "type": "ability",
   "version": "0.1.1",
   "description": "KADI ability providing chunking, embedding, and hybrid search over text content via 8 broker-callable tools",
-  "kind": "ability",
   "entrypoint": "dist/index.js",
   "abilities": {
     "secret-ability": "^0.9.4"
@@ -12,8 +12,12 @@
     "remote": "wss://broker.dadavidtseng.info/kadi"
   },
   "scripts": {
+    "preflight": "node --version",
     "setup": "npm install && npm run build",
-    "start": "node dist/index.js broker"
+    "build": "npx tsc",
+    "start": "node dist/index.js broker",
+    "dev": "npx tsx src/index.ts",
+    "clean": "rm -rf node_modules abilities agent-lock.json package-lock.json dist"
   },
   "build": {
     "default": {

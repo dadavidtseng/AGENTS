@@ -2,15 +2,20 @@
   "name": "ability-tunnel",
   "version": "0.1.0",
   "type": "module",
-  "description": "Unified tunnel ability — exposes local services via kadi-tunnel (self-hosted), SSH, frpc, ngrok, serveo, localtunnel, pinggy, or localhost.run",
+  "description": "Unified tunnel ability - exposes local services via kadi-tunnel, SSH, frpc, ngrok, serveo, localtunnel, pinggy, or localhost.run",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx index.ts"
+  },
   "author": "Yu-Wei Tseng",
   "license": "Apache License 2.0",
   "dependencies": {
     "@kadi.build/core": "^0.9.0",
-    "dotenv": "^17.3.1",
     "tsx": "^4.21.0"
   },
   "devDependencies": {
+    "@types/node": "^25.3.1",
     "typescript": "^5.9.3"
   }
 }

@@ -1,8 +1,8 @@
 {
   "name": "ability-docs-memory",
+  "type": "ability",
   "version": "0.0.1",
   "description": "Documentation search engine built on graph-ability — crawls, chunks, indexes, and searches documentation with 4-signal hybrid recall including structural navigation",
-  "type": "ability",
   "entrypoint": "dist/index.js",
   "abilities": {
     "graph-ability": "^0.0.7",
@@ -13,7 +13,11 @@
     "remote": "wss://broker.dadavidtseng.info/kadi"
   },
   "scripts": {
+    "preflight": "node --version",
     "setup": "npm install && npm run build",
-    "start": "node dist/index.js broker"
+    "build": "npx tsc",
+    "start": "node dist/index.js broker",
+    "dev": "npx tsx src/index.ts",
+    "clean": "rm -rf node_modules abilities agent-lock.json package-lock.json dist"
   }
 }
