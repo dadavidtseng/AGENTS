@@ -12,10 +12,7 @@
 
 import { spawn, execSync, ChildProcess } from 'child_process';
 import fs from 'fs';
-import dotenv from 'dotenv';
 import { KadiClient, z } from '@kadi.build/core';
-
-dotenv.config();
 
 // ============================================================================
 // Configuration
@@ -692,12 +689,17 @@ client.registerTool({
 // Cleanup & Startup
 // ============================================================================
 
-process.on('SIGINT', () => { destroyAll(); process.exit(0); });
-process.on('SIGTERM', () => { destroyAll(); process.exit(0); });
+export default client;
 
-const mode = process.env.KADI_MODE || process.argv[2] || 'stdio';
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+if (isMainModule) {
+  process.on('SIGINT', () => { destroyAll(); process.exit(0); });
+  process.on('SIGTERM', () => { destroyAll(); process.exit(0); });
 
-console.log(`[ability-tunnel] Default mode: ${DEFAULT_MODE}`);
-console.log(`[ability-tunnel] Starting in ${mode} mode...`);
+  const mode = (process.env.KADI_MODE || process.argv[2] || 'stdio') as 'stdio' | 'broker';
 
-client.serve(mode as any);
+  console.log(`[ability-tunnel] Default mode: ${DEFAULT_MODE}`);
+  console.log(`[ability-tunnel] Starting in ${mode} mode...`);
+
+  client.serve(mode);
+}

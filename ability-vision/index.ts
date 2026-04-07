@@ -9,10 +9,7 @@
 import fs from 'fs';
 import path from 'path';
 import https from 'https';
-import dotenv from 'dotenv';
 import { KadiClient, z } from '@kadi.build/core';
-
-dotenv.config();
 
 // ============================================================================
 // Vault Credential Loading
@@ -306,11 +303,16 @@ client.registerTool({
 // Startup
 // ============================================================================
 
-const mode = (process.env.KADI_MODE || process.argv[2] || 'stdio') as 'stdio' | 'broker';
-const toolCount = 5;
+export default client;
 
-console.log(`[ability-vision] Provider: model-manager (${VISION_MODEL})`);
-console.log(`[ability-vision] Starting in ${mode} mode...`);
-console.log(`[ability-vision] ${toolCount} tools registered`);
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+if (isMainModule) {
+  const mode = (process.env.KADI_MODE || process.argv[2] || 'stdio') as 'stdio' | 'broker';
+  const toolCount = 5;
 
-client.serve(mode);
+  console.log(`[ability-vision] Provider: model-manager (${VISION_MODEL})`);
+  console.log(`[ability-vision] Starting in ${mode} mode...`);
+  console.log(`[ability-vision] ${toolCount} tools registered`);
+
+  client.serve(mode);
+}

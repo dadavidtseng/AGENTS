@@ -5,9 +5,6 @@
  * wrapped in KadiClient for native/stdio/broker transport.
  */
 
-import dotenv from 'dotenv';
-dotenv.config();
-
 import { KadiClient, z } from '@kadi.build/core';
 // @ts-ignore — JS modules without type declarations
 import { CloudStorageManager } from './src/cloudStorageManager.js';
@@ -18,7 +15,7 @@ import { ConfigManager } from './src/configManager.js';
 // KadiClient
 // ============================================================================
 
-const brokerConfig: Record<string, unknown> = {
+const brokerConfig: { url: string; networks?: string[] } = {
   url: process.env.KADI_BROKER_URL || 'ws://localhost:8080/kadi',
 };
 if (process.env.KADI_NETWORK) {
@@ -344,8 +341,11 @@ client.registerTool({
 
 export default client;
 
-const mode = process.env.KADI_MODE || process.argv[2] || 'stdio';
-console.log(`[ability-file-cloud] Starting in ${mode} mode...`);
-(async () => {
-  await client.serve(mode);
-})();
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+if (isMainModule) {
+  const mode = (process.env.KADI_MODE || process.argv[2] || 'stdio') as 'stdio' | 'broker';
+  console.log(`[ability-file-cloud] Starting in ${mode} mode...`);
+  (async () => {
+    await client.serve(mode);
+  })();
+}

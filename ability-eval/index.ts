@@ -9,10 +9,7 @@
 import fs from 'fs';
 import path from 'path';
 import https from 'https';
-import dotenv from 'dotenv';
 import { KadiClient, z } from '@kadi.build/core';
-
-dotenv.config();
 
 // ============================================================================
 // Vault Credential Loading
@@ -458,9 +455,14 @@ Score >= ${threshold} = pass, below = fail.`,
 // Startup
 // ============================================================================
 
-const mode = (process.env.KADI_MODE || process.argv[2] || 'stdio') as 'stdio' | 'broker';
+export default client;
 
-console.log(`[ability-eval] Model: ${EVAL_MODEL} via model-manager`);
-console.log(`[ability-eval] Starting in ${mode} mode...`);
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+if (isMainModule) {
+  const mode = (process.env.KADI_MODE || process.argv[2] || 'stdio') as 'stdio' | 'broker';
 
-client.serve(mode);
+  console.log(`[ability-eval] Model: ${EVAL_MODEL} via model-manager`);
+  console.log(`[ability-eval] Starting in ${mode} mode...`);
+
+  client.serve(mode);
+}

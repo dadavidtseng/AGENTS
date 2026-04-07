@@ -7,10 +7,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import dotenv from 'dotenv';
 import { KadiClient, z } from '@kadi.build/core';
-
-dotenv.config();
 
 // ============================================================================
 // Path Security

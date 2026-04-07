@@ -15,9 +15,6 @@
  * Security: Host allow-list validation, connection pooling.
  */
 
-import dotenv from 'dotenv';
-dotenv.config();
-
 import { exec } from 'child_process';
 import { KadiClient, z } from '@kadi.build/core';
 import { TunnelProvider } from './src/providers/tunnelProvider.js';
@@ -47,7 +44,7 @@ function isHostAllowed(host: string): boolean {
 // ============================================================================
 
 class TunnelConnectionPool {
-  private maxConnections: number;
+  readonly maxConnections: number;
   private active: Map<string, Record<string, unknown>>;
 
   constructor(maxConnections = 5) {
@@ -78,7 +75,7 @@ class TunnelConnectionPool {
 // KadiClient + TunnelProvider
 // ============================================================================
 
-const brokerConfig: Record<string, unknown> = {
+const brokerConfig: { url: string; networks?: string[] } = {
   url: process.env.KADI_BROKER_URL || 'ws://localhost:8080/kadi',
 };
 if (process.env.KADI_NETWORK) {
@@ -306,7 +303,7 @@ client.registerTool({
       service: result.service,
     });
     return { success: true, ...result };
-  } catch (err) {
+  } catch (err: any) {
     return { success: false, error: err.message };
   }
 });
@@ -324,7 +321,7 @@ client.registerTool({
     await tunnel.destroyTunnel(tunnelId);
     pool.remove(tunnelId);
     return { success: true, message: `Tunnel destroyed: ${tunnelId}` };
-  } catch (err) {
+  } catch (err: any) {
     return { success: false, message: `Error: ${err.message}` };
   }
 });
@@ -352,7 +349,7 @@ client.registerTool({
     const result = await tunnel.createTemporaryUrl(filePath, { expiresIn, maxDownloads, password });
     activeUrls.set(result.urlId, { publicUrl: result.publicUrl, expiresAt: result.expiresAt });
     return { success: true, ...result };
-  } catch (err) {
+  } catch (err: any) {
     return { success: false, error: err.message };
   }
 });
@@ -370,7 +367,7 @@ client.registerTool({
     await tunnel.revokeTemporaryUrl(urlId);
     activeUrls.delete(urlId);
     return { success: true, message: `Temporary URL revoked: ${urlId}` };
-  } catch (err) {
+  } catch (err: any) {
     return { success: false, message: `Error: ${err.message}` };
   }
 });
@@ -461,14 +458,17 @@ client.registerTool({
 
 export default client;
 
-const mode = process.env.KADI_MODE || process.argv[2] || 'stdio';
-console.log(`[ability-file-remote] Starting in ${mode} mode...`);
-console.log(`[ability-file-remote] Tunnel service: ${tunnelConfig.service}`);
-if (ALLOWED_HOSTS.length > 0) {
-  console.log(`[ability-file-remote] Host allow-list: ${ALLOWED_HOSTS.join(', ')}`);
-}
-console.log(`[ability-file-remote] Registered 17 tools`);
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+if (isMainModule) {
+  const mode = (process.env.KADI_MODE || process.argv[2] || 'stdio') as 'stdio' | 'broker';
+  console.log(`[ability-file-remote] Starting in ${mode} mode...`);
+  console.log(`[ability-file-remote] Tunnel service: ${tunnelConfig.service}`);
+  if (ALLOWED_HOSTS.length > 0) {
+    console.log(`[ability-file-remote] Host allow-list: ${ALLOWED_HOSTS.join(', ')}`);
+  }
+  console.log(`[ability-file-remote] Registered 17 tools`);
 
-(async () => {
-  await client.serve(mode);
-})();
+  (async () => {
+    await client.serve(mode);
+  })();
+}
