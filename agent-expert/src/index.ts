@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from './server.js';
-import { registerTools, searchDocs, formatAnswer, formatTdd, DEFAULT_MODEL, FEATURED_MODELS } from './tools.js';
+import { registerTools } from './tools.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -48,7 +48,7 @@ try {
   console.log('[agent-expert] secret-ability loaded');
 
   for (const key of ['MM-1_API_KEY', 'MEMORY_API_KEY']) {
-    for (const vault of ['models', 'global']) {
+    for (const vault of ['model-manager', 'anthropic']) {
       try {
         const result = await secrets.invoke('get', { vault, key }) as { value?: string };
         if (result?.value) {

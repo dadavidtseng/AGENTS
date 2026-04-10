@@ -1,0 +1,20 @@
+# Agent Expert Configuration
+# Secrets go in secrets.toml (gitignored)
+
+[agent]
+ID = "agent-expert"
+VERSION = "0.1.0"
+
+[logging]
+LEVEL = "debug"
+
+#[broker.local]
+#URL = "ws://localhost:8080/kadi"
+
+[broker.remote]
+URL = "wss://broker.dadavidtseng.com/kadi"
+NETWORKS = ["global"]
+
+[secrets]
+VAULTS = ["model-manager", "anthropic"]
+KEYS = ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"]
