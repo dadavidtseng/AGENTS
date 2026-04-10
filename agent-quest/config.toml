@@ -3,25 +3,22 @@
 
 [agent]
 ID = "agent-quest"
-VERSION = "0.3.1"
+VERSION = "0.3.7"
 
 [server]
 PORT = 8888
-CORS_ORIGINS = "http://localhost:5173"
+CORS_ORIGINS = "http://localhost:5173,https://quest.dadavidtseng.com"
 
 [logging]
 LEVEL = "debug"
 
-[broker.local]
-URL = "ws://localhost:8080/kadi"
-NETWORKS = ["quest", "global"]
-
-#[broker.remote]
-#URL = "wss://broker.dadavidtseng.info/kadi"
+#[broker.local]
+#URL = "ws://localhost:8080/kadi"
 #NETWORKS = ["quest", "global"]
 
-[data]
-QUEST_DATA_PATH = "/mnt/c/GitHub/mcp-server-quest/.quest-data"
+[broker.remote]
+URL = "wss://broker.dadavidtseng.com/kadi"
+NETWORKS = ["quest", "global"]
 
 [secrets]
 VAULTS = ["observer"]

@@ -325,7 +325,6 @@ export interface HealthResponse {
   environment: string;
   wsClients: number;
   kadiBroker: 'connected' | 'disconnected';
-  fileWatcher: 'enabled' | 'disabled';
   timestamp: string;
 }
 

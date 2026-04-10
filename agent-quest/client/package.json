@@ -1,7 +1,7 @@
 {
-  "name": "mcp-client-quest-client",
+  "name": "agent-quest-client",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.3.7",
   "type": "module",
   "scripts": {
     "dev": "vite",

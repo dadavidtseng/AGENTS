@@ -7,7 +7,7 @@
  *  - KĀDI broker health
  *  - Connected agent count
  *
- * Polls /api/health every 30s for broker + watcher status.
+ * Polls /api/health every 30s for broker status.
  * WebSocket status is reactive via useWebSocket hook.
  */
 
@@ -22,7 +22,6 @@ import { apiClient, type HealthResponse } from '../api/client';
 
 interface ServiceHealth {
   kadiBroker: 'connected' | 'disconnected' | 'unknown';
-  fileWatcher: 'enabled' | 'disabled' | 'unknown';
   wsClients: number;
   lastChecked: string | null;
 }
@@ -58,12 +57,6 @@ function brokerLevel(s: string): StatusLevel {
   return 'error';
 }
 
-function watcherLevel(s: string): StatusLevel {
-  if (s === 'enabled') return 'ok';
-  if (s === 'unknown') return 'muted';
-  return 'muted';
-}
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -73,7 +66,6 @@ export function ConnectionStatus() {
   const { status: observerStatus, snapshot } = useObserverDirect();
   const [health, setHealth] = useState<ServiceHealth>({
     kadiBroker: 'unknown',
-    fileWatcher: 'unknown',
     wsClients: 0,
     lastChecked: null,
   });
@@ -83,7 +75,6 @@ export function ConnectionStatus() {
       const res: HealthResponse = await apiClient.healthCheck();
       setHealth({
         kadiBroker: res.kadiBroker,
-        fileWatcher: res.fileWatcher,
         wsClients: res.wsClients,
         lastChecked: res.timestamp,
       });
@@ -91,7 +82,6 @@ export function ConnectionStatus() {
       setHealth((prev) => ({
         ...prev,
         kadiBroker: 'unknown',
-        fileWatcher: 'unknown',
       }));
     }
   }, []);
@@ -129,11 +119,6 @@ export function ConnectionStatus() {
             label="Broker"
             level={brokerLevel(health.kadiBroker)}
             detail={health.kadiBroker === 'connected' ? 'Healthy' : health.kadiBroker === 'unknown' ? 'Unknown' : 'Down'}
-          />
-          <StatusChip
-            label="Watcher"
-            level={watcherLevel(health.fileWatcher)}
-            detail={health.fileWatcher === 'enabled' ? 'Active' : health.fileWatcher === 'unknown' ? '—' : 'Off'}
           />
         </div>
 

@@ -1,7 +1,7 @@
 {
   "name": "agent-quest",
   "type": "agent",
-  "version": "0.3.0",
+  "version": "0.3.7",
   "entrypoint": "dist/index.js",
   "scripts": {
     "preflight": "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules')){console.error('Dependencies not installed. Run: npm install');process.exit(1)}console.log('✓ Dependencies OK')\"",
@@ -12,7 +12,7 @@
     "build": "npm run build:client && npm run build:server",
     "build:client": "npm run build --prefix client",
     "build:server": "npm run build --prefix server",
-    "start": "npm run start --prefix server",
+    "start": "node server/dist/index.js",
     "install:all": "npm install && npm install --prefix client && npm install --prefix server",
     "lint": "npm run lint --prefix client && npm run lint --prefix server",
     "test": "npm run test --prefix client && npm run test --prefix server",
@@ -23,24 +23,73 @@
       "from": "node:20-alpine",
       "cli": "latest",
       "run": [
-        "npm ci --include=dev",
-        "npx tsc",
-        "npm prune --omit=dev"
+        "NODE_ENV=development npm run install:all",
+        "kadi install kadi-secret",
+        "mkdir -p /app/abilities && cp -a /opt/kadi/abilities/secret-ability@* /app/abilities/",
+        "npm run build",
+        "npm prune --omit=dev --prefix server",
+        "rm -rf client/node_modules"
       ],
       "env": {
         "NODE_ENV": "production"
       }
     }
   },
+  "deploy": {
+    "akash-mainnet": {
+      "target": "akash",
+      "network": "mainnet",
+      "deposit": "10",
+      "blacklist": [
+        "akash1sevd2ymtty3dpq9ycxgkhuzzk4fe6mchqdwd4e",
+        "akash14w36hwrtuqqa3j92fa8ctcxlhjgvr3a0zpp7cj"
+      ],
+      "engine": "podman",
+      "services": {
+        "app": {
+          "image": "agent-quest:0.3.7",
+          "command": ["sh", "-c", "kadi secret receive --vault observer && kadi run start"],
+          "expose": [
+            {
+              "port": 8888,
+              "as": 8888,
+              "to": [
+                {
+                  "global": true
+                }
+              ]
+            }
+          ],
+          "env": [
+            "NODE_ENV=production"
+          ],
+          "resources": {
+            "cpu": 0.5,
+            "memory": "512Mi",
+            "ephemeralStorage": "1Gi"
+          },
+          "pricing": { "amount": "500", "denom": "uact" }
+        }
+      },
+      "secrets": {
+        "vaults": [
+          {
+            "vault": "observer",
+            "required": ["OBSERVER_PASSWORD"]
+          }
+        ],
+        "delivery": "broker"
+      }
+    }
+  },
   "brokers": {
-    "local": "ws://localhost:8080/kadi",
-    "remote": "wss://broker.dadavidtseng.info/kadi"
+    "remote": "wss://broker.dadavidtseng.com/kadi"
   },
   "networks": [
     "quest",
     "global"
   ],
   "abilities": {
-    "secret-ability": "^0.9.4"
+    "secret-ability": "*"
   }
 }

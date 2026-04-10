@@ -51,7 +51,7 @@ export function useKanbanSync(): KanbanSyncResult {
       setLoading(true);
       setError(null);
       const data = await apiClient.getQuests();
-      // Deduplicate by questId — backend may return duplicates from file-watcher races
+      // Deduplicate by questId — backend may return duplicates from event races
       const seen = new Set<string>();
       const unique = data.filter((q) => {
         if (seen.has(q.questId)) return false;
@@ -91,7 +91,7 @@ export function useKanbanSync(): KanbanSyncResult {
         ),
       );
     } else {
-      // Status not in payload (e.g. file-watcher metadata change) → refetch
+      // Status not in payload (e.g. metadata change) → refetch
       reload();
     }
   }, [reload]));

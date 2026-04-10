@@ -5,7 +5,7 @@
  *   Draft → Pending Approval → Approved → In Progress → Completed → Closed
  *
  * Uses @dnd-kit DndContext for drag between columns.
- * Real-time sync via useKanbanSync hook (WebSocket + file-watcher events).
+ * Real-time sync via useKanbanSync hook (WebSocket + broker events).
  */
 
 import { useMemo } from 'react';

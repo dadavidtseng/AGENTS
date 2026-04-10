@@ -1,6 +1,6 @@
 {
   "name": "agent-quest-server",
-  "version": "0.1.0",
+  "version": "0.3.7",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,9 +11,8 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@kadi.build/core": "file:../../../humin-game-lab/KADI/kadi-core",
-    "agents-library": "file:../../agents-library",
-    "chokidar": "^4.0.3",
+    "@kadi.build/core": "latest",
+    "agents-library": "latest",
     "cors": "^2.8.5",
     "express": "^5.0.1",
     "ws": "^8.18.0",

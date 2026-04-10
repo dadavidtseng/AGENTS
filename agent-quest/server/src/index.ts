@@ -1,5 +1,6 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
+import path from 'node:path';
 import { createServer, type Server as HttpServer } from 'http';
 import { setupWebSocket, getConnectedClientCount } from './websocket.js';
 import { questRoutes } from './routes/quest.js';
@@ -13,7 +14,7 @@ import { containerRoutes } from './routes/containers.js';
 import { webhookRoutes } from './routes/webhook.js';
 import { QuestAgentClient, cfg, client } from './kadi-agent.js';
 import { setupBrokerEventBridge } from './broker-events.js';
-import { startFileWatcher, stopFileWatcher } from './file-watcher.js';
+
 
 // ---------------------------------------------------------------------------
 // KĀDI Broker client (singleton)
@@ -41,6 +42,10 @@ const app = express();
 // ---------------------------------------------------------------------------
 // Middleware
 // ---------------------------------------------------------------------------
+
+// Static file serving (production SPA) — before CORS so assets are never blocked
+const clientDist = path.resolve(process.cwd(), 'client', 'dist');
+app.use(express.static(clientDist));
 
 // Request logging
 app.use((req: Request, _res: Response, next: NextFunction) => {
@@ -91,12 +96,10 @@ app.use('/api/webhook', webhookRoutes);
 
 // Health check
 app.get('/api/health', (_req: Request, res: Response) => {
-  const questDataPath = cfg.has('data.QUEST_DATA_PATH') ? cfg.string('data.QUEST_DATA_PATH') : '';
   res.json({
     status: 'ok',
     wsClients: getConnectedClientCount(),
     kadiBroker: kadiClient.isConnected() ? 'connected' : 'disconnected',
-    fileWatcher: questDataPath ? 'enabled' : 'disabled',
     timestamp: new Date().toISOString(),
   });
 });
@@ -161,6 +164,18 @@ app.post('/api/tools/:toolName/execute', async (req: Request, res: Response, nex
 });
 
 // ---------------------------------------------------------------------------
+// Static file serving (production SPA)
+// ---------------------------------------------------------------------------
+// SPA fallback — serve index.html for non-API routes
+// ---------------------------------------------------------------------------
+app.get('/{*splat}', (_req: Request, res: Response, next: NextFunction) => {
+  if (_req.path.startsWith('/api/')) return next();
+  res.sendFile(path.join(clientDist, 'index.html'), (err) => {
+    if (err) next(err);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Global error handler
 // ---------------------------------------------------------------------------
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
@@ -187,15 +202,6 @@ async function bootstrap(): Promise<void> {
     console.warn('[agent-quest] Server will start without broker — routes will return 503');
   }
 
-  // Start file watcher for live dashboard updates
-  const questDataPath = cfg.has('data.QUEST_DATA_PATH') ? cfg.string('data.QUEST_DATA_PATH') : '';
-  if (questDataPath) {
-    startFileWatcher(questDataPath);
-    console.log(`[agent-quest] File watcher started for ${questDataPath}`);
-  } else {
-    console.warn('[agent-quest] data.QUEST_DATA_PATH not set — file watcher disabled');
-  }
-
   // Start log capture from broker observer SSE
   startLogCapture();
 
@@ -213,7 +219,6 @@ bootstrap();
 // ---------------------------------------------------------------------------
 async function gracefulShutdown(signal: string): Promise<void> {
   console.log(`\n[agent-quest] Received ${signal}, shutting down gracefully…`);
-  await stopFileWatcher();
   await kadiClient.disconnect();
   server.close(() => {
     console.log('[agent-quest] HTTP server closed');
