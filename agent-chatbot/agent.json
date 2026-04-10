@@ -1,7 +1,7 @@
 {
   "name": "agent-chatbot",
   "type": "agent",
-  "version": "0.1.0",
+  "version": "0.1.4",
   "entrypoint": "dist/index.js",
   "scripts": {
     "preflight": "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules')){console.error('Dependencies not installed. Run: npm install');process.exit(1)}console.log('✓ Dependencies OK')\"",
@@ -19,6 +19,8 @@
       "cli": "latest",
       "run": [
         "npm ci --include=dev",
+        "kadi install kadi-secret",
+        "kadi install",
         "npx tsc",
         "npm prune --omit=dev"
       ],
@@ -28,10 +30,60 @@
     }
   },
   "abilities": {
-    "secret-ability": "^0.9.4"
+    "secret-ability": "*"
+  },
+  "deploy": {
+    "akash-mainnet": {
+      "target": "akash",
+      "network": "mainnet",
+      "deposit": "10",
+      "blacklist": [
+        "akash1sevd2ymtty3dpq9ycxgkhuzzk4fe6mchqdwd4e",
+        "akash14w36hwrtuqqa3j92fa8ctcxlhjgvr3a0zpp7cj"
+      ],
+      "engine": "podman",
+      "services": {
+        "app": {
+          "image": "agent-chatbot:0.1.4",
+          "command": ["sh", "-c", "kadi secret receive --vault chatbot && kadi run start"],
+          "expose": [
+            {
+              "port": 3000,
+              "as": 3000,
+              "to": [
+                {
+                  "global": true
+                }
+              ]
+            }
+          ],
+          "env": [
+            "NODE_ENV=production"
+          ],
+          "resources": {
+            "cpu": 0.5,
+            "memory": "512Mi",
+            "ephemeralStorage": "1Gi"
+          },
+          "pricing": { "amount": "500", "denom": "uact" }
+        }
+      },
+      "secrets": {
+        "vaults": [
+          {
+            "vault": "chatbot",
+            "required": [
+              "DISCORD_TOKEN",
+              "SLACK_BOT_TOKEN",
+              "SLACK_SIGNING_SECRET"
+            ]
+          }
+        ],
+        "delivery": "broker"
+      }
+    }
   },
   "brokers": {
-    "local": "ws://localhost:8080/kadi",
-    "remote": "wss://broker.dadavidtseng.info/kadi"
+    "remote": "wss://broker.dadavidtseng.com/kadi"
   }
 }

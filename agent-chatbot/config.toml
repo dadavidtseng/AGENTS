@@ -4,14 +4,14 @@
 [agent]
 ID = "agent-chatbot"
 ROLE = "chatbot"
-VERSION = "1.0.0"
+VERSION = "0.1.0"
 
 [broker.local]
 URL = "ws://localhost:8080/kadi"
 NETWORKS = ["chatbot"]
 
 #[broker.remote]
-#URL = "wss://broker.dadavidtseng.info/kadi"
+#URL = "wss://broker.dadavidtseng.com/kadi"
 #NETWORKS = ["chatbot"]
 
 [bot.discord]

@@ -2,23 +2,23 @@
   "lockfileVersion": 1,
   "metadata": {
     "kadiVersion": "0.0.7",
-    "generated": "2026-02-22T16:12:21.644Z",
-    "metaHash": "sha256-14cea3ffae623717386f3adc8b49c77b6777a564c7d24beed4b91074d7f76ae7",
+    "generated": "2026-04-08T19:43:58.476Z",
+    "metaHash": "sha256-99f92e0a672dc03f2334035c1b2c9aef90bd8b0fc5571330752b78ae47e23bd6",
     "source": "agent.json"
   },
   "agent": {
     "name": "agent-chatbot",
-    "version": "0.1.0"
+    "version": "0.1.2"
   },
   "abilities": {
-    "secret-ability@0.7.0": {
-      "version": "0.7.0",
-      "resolvedVersion": "0.7.0",
-      "requestedVersion": "0.7.0",
+    "secret-ability@0.9.4": {
+      "version": "0.9.4",
+      "resolvedVersion": "0.9.4",
+      "requestedVersion": "*",
       "type": "ability",
-      "resolved": "abilities/secret-ability@0.7.0",
+      "resolved": "abilities/secret-ability@0.9.4",
       "entrypoint": "dist/index.js",
-      "integrity": "sha512-o0LPHbK43NXxAguZrVDqOVyOLgaVqF9IT6i9zo8WB1PvBGnOO96MvvLlDanMftEyP80NPrAwMoLPqet4z/+hog==",
+      "integrity": "sha512-d+QGuL/PQCGrLs3LNUg3hK6yrWbu2vnxfiMzcQ4xDEHizd6YVwtukHZgyrKt0dDArL54PbwmO27u1WFex52gHQ==",
       "source": "http://kadi.build:8000",
       "dependencies": {},
       "isTopLevel": true,
