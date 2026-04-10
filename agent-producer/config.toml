@@ -6,7 +6,7 @@
 [agent]
 ID = "agent-producer"
 ROLE = "producer"
-VERSION = "0.3.0"
+VERSION = "0.3.4"
 
 [logging]
 LEVEL = "debug"
@@ -16,7 +16,7 @@ URL = "ws://localhost:8080/kadi"
 NETWORKS = ["chatbot", "quest","producer", "file", "global"]
 
 #[broker.remote]
-#URL = "wss://broker.kadi.build/kadi"
+#URL = "wss://broker.dadavidtseng.com/kadi"
 #NETWORKS = ["chatbot", "quest", "producer", "file", "global"]
 
 [bot]

@@ -1,7 +1,7 @@
 {
   "name": "agent-producer",
   "type": "agent",
-  "version": "0.3.2",
+  "version": "0.3.18",
   "entrypoint": "dist/index.js",
   "scripts": {
     "setup": "npm run build",
@@ -19,6 +19,8 @@
       "cli": "latest",
       "run": [
         "npm ci --include=dev",
+        "kadi install kadi-secret",
+        "kadi install",
         "npx tsc",
         "npm prune --omit=dev"
       ],
@@ -31,10 +33,16 @@
     "akash-mainnet": {
       "target": "akash",
       "network": "mainnet",
+      "deposit": "10",
+      "blacklist": [
+        "akash1sevd2ymtty3dpq9ycxgkhuzzk4fe6mchqdwd4e",
+        "akash14w36hwrtuqqa3j92fa8ctcxlhjgvr3a0zpp7cj"
+      ],
       "engine": "podman",
       "services": {
         "app": {
-          "image": "agent-producer:0.1.0",
+          "image": "agent-producer:0.3.18",
+          "command": ["sh", "-c", "kadi secret receive --vault whatever && kadi run start"],
           "expose": [
             {
               "port": 3000,
@@ -47,22 +55,26 @@
             }
           ],
           "env": [
-            "KADI_BROKER_URL=wss://broker.dadavidtseng.info/kadi",
-            "KADI_BROKER_URL_2=ws://kadi.build:8080/kadi",
             "NODE_ENV=production"
           ],
           "resources": {
             "cpu": 0.5,
             "memory": "512Mi",
             "ephemeralStorage": "1Gi"
-          }
+          },
+          "pricing": { "amount": "500", "denom": "uact" }
         }
       },
       "secrets": {
-        "vault": "agent-producer",
-        "required": [
-          "ANTHROPIC_API_KEY",
-          "MODEL_MANAGER_API_KEY"
+        "vaults": [
+          {
+            "vault": "anthropic",
+            "required": ["ANTHROPIC_API_KEY"]
+          },
+          {
+            "vault": "model-manager",
+            "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"]
+          }
         ],
         "delivery": "broker"
       }
@@ -72,7 +84,6 @@
     "secret-ability": "*"
   },
   "brokers": {
-    "local": "ws://localhost:8080/kadi",
-    "remote": "wss://broker.dadavidtseng.info/kadi"
+    "remote": "wss://broker.dadavidtseng.com/kadi"
   }
 }
