@@ -7,7 +7,7 @@ Overview
 - It groups container lifecycle, database management, query/command execution, data import/export, and backup/restore into 17 tools.
 - Entry point: dist/index.js
 - Agent manifest: agent.json
-- Broker endpoints declared in agent.json: default (wss://broker.dadavidtseng.info/kadi), local (ws://localhost:8080/kadi), remote (wss://broker.dadavidtseng.info/kadi)
+- Broker endpoints declared in agent.json: default (wss://broker.dadavidtseng.com/kadi), local (ws://localhost:8080/kadi), remote (wss://broker.dadavidtseng.com/kadi)
 
 Quick Start
 1. Clone the repository and install dependencies
@@ -63,7 +63,7 @@ Configuration
   - ARCADE_PASSWORD — ArcadeDB password (required in deploy configurations)
   - JAVA_HOME — Java runtime location (build: /opt/java/openjdk)
   - PATH — ensures java bin is on PATH in build image
-  - BROKER_URL — broker endpoint override (production uses wss://broker.dadavidtseng.info/kadi)
+  - BROKER_URL — broker endpoint override (production uses wss://broker.dadavidtseng.com/kadi)
   - KADI_TUNNEL_TOKEN — token used by tunnel services for backup/restore file sharing
   - KADI_DEPLOY_MODE — build/deploy mode (example: container)
 
@@ -172,9 +172,9 @@ kadi run start
 
 ### Brokers
 
-- **default**: `wss://broker.dadavidtseng.info/kadi`
+- **default**: `wss://broker.dadavidtseng.com/kadi`
 - **local**: `ws://localhost:8080/kadi`
-- **remote**: `wss://broker.dadavidtseng.info/kadi`
+- **remote**: `wss://broker.dadavidtseng.com/kadi`
 
 ## Architecture
 

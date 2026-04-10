@@ -14,7 +14,7 @@ URL = "ws://localhost:8080/kadi"
 NETWORKS = ["programmer", "git", "qa", "file", "utility", "quest", "global"]
 
 #[broker.remote]
-#URL = "wss://broker.dadavidtseng.info/kadi"
+#URL = "wss://broker.dadavidtseng.com/kadi"
 #NETWORKS = ["global"]
 
 [provider]

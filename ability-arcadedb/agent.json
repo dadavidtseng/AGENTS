@@ -1,15 +1,14 @@
 {
   "name": "ability-arcadedb",
   "type": "ability",
-  "version": "0.1.1",
+  "version": "0.1.5",
   "description": "KADI ability wrapping ArcadeDB 26.2.1 as 17 broker-callable tools (includes backup/restore with distributed file transfer)",
   "entrypoint": "dist/index.js",
   "abilities": {
     "secret-ability": "^0.9.4"
   },
   "brokers": {
-    "local": "ws://localhost:8080/kadi",
-    "remote": "wss://broker.dadavidtseng.info/kadi"
+    "remote": "wss://broker.dadavidtseng.com/kadi"
   },
   "scripts": {
     "preflight": "node --version",
@@ -21,7 +20,7 @@
   },
   "build": {
     "default": {
-      "image": "arcadedb-ability:0.1.4",
+      "image": "ability-arcadedb:0.1.5",
       "stages": [
         {
           "name": "arcadedb-src",
@@ -63,7 +62,7 @@
       "engine": "docker",
       "services": {
         "agent": {
-          "image": "arcadedb-ability:0.1.4",
+          "image": "ability-arcadedb:0.1.5",
           "command": [
             "sh",
             "-c",
@@ -85,19 +84,18 @@
       "target": "akash",
       "network": "mainnet",
       "deposit": "10",
-      "depositDenom": "uact",
+      "blacklist": [
+        "akash1sevd2ymtty3dpq9ycxgkhuzzk4fe6mchqdwd4e",
+        "akash14w36hwrtuqqa3j92fa8ctcxlhjgvr3a0zpp7cj"
+      ],
+      "engine": "podman",
       "services": {
         "agent": {
-          "image": "docker.io/dadavidtseng/arcadedb-ability:0.1.4",
+          "image": "ability-arcadedb:0.1.5",
           "command": [
             "sh",
             "-c",
-            ". ./scripts/start-arcadedb.sh && kadi run start"
-          ],
-          "env": [
-            "BROKER_URL=wss://broker.dadavidtseng.info/kadi",
-            "ARCADE_USERNAME=root",
-            "ARCADE_PASSWORD=playwithdata"
+            "kadi secret receive --vault arcadedb && . ./scripts/start-arcadedb.sh && kadi run start"
           ],
           "expose": [
             { "port": 2480, "as": 80, "to": [{ "global": true }] }
@@ -107,10 +105,7 @@
             "memory": "1Gi",
             "ephemeralStorage": "2Gi"
           },
-          "pricing": {
-            "amount": "500",
-            "denom": "uact"
-          }
+          "pricing": { "amount": "500", "denom": "uact" }
         }
       },
       "secrets": {

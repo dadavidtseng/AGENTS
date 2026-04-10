@@ -1,6 +1,6 @@
 {
   "name": "ability-arcadedb",
-  "version": "0.1.1",
+  "version": "0.1.5",
   "description": "KADI ability wrapping ArcadeDB as 17 broker-callable tools (includes backup/restore with distributed file transfer)",
   "type": "module",
   "main": "dist/index.js",
