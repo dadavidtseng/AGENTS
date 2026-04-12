@@ -26,11 +26,124 @@
       "cli": "latest",
       "run": [
         "npm ci --include=dev",
+        "kadi install kadi-secret",
+        "kadi install",
         "npx tsc",
         "npm prune --omit=dev"
       ],
       "env": {
         "NODE_ENV": "production"
+      }
+    }
+  },
+  "deploy": {
+    "do-programmer": {
+      "target": "local",
+      "engine": "docker",
+      "services": {
+        "app": {
+          "image": "agent-worker:0.3.1",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:programmer"],
+          "env": [
+            "NODE_ENV=production",
+            "AGENT_ROLE=programmer"
+          ],
+          "volumes": [
+            "~/agent-playground/programmer:/app/playground"
+          ],
+          "restart": "unless-stopped"
+        }
+      },
+      "secrets": {
+        "vaults": [
+          { "vault": "anthropic", "required": ["ANTHROPIC_API_KEY"] },
+          { "vault": "model-manager", "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"] }
+        ],
+        "delivery": "broker"
+      }
+    },
+    "do-artist": {
+      "target": "local",
+      "engine": "docker",
+      "services": {
+        "app": {
+          "image": "agent-worker:0.3.1",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:artist"],
+          "env": [
+            "NODE_ENV=production",
+            "AGENT_ROLE=artist"
+          ],
+          "volumes": [
+            "~/agent-playground/artist:/app/playground"
+          ],
+          "restart": "unless-stopped"
+        }
+      },
+      "secrets": {
+        "vaults": [
+          { "vault": "anthropic", "required": ["ANTHROPIC_API_KEY"] },
+          { "vault": "model-manager", "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"] }
+        ],
+        "delivery": "broker"
+      }
+    },
+    "do-designer": {
+      "target": "local",
+      "engine": "docker",
+      "services": {
+        "app": {
+          "image": "agent-worker:0.3.1",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:designer"],
+          "env": [
+            "NODE_ENV=production",
+            "AGENT_ROLE=designer"
+          ],
+          "volumes": [
+            "~/agent-playground/designer:/app/playground"
+          ],
+          "restart": "unless-stopped"
+        }
+      },
+      "secrets": {
+        "vaults": [
+          { "vault": "anthropic", "required": ["ANTHROPIC_API_KEY"] },
+          { "vault": "model-manager", "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"] }
+        ],
+        "delivery": "broker"
+      }
+    },
+    "do-all": {
+      "target": "local",
+      "engine": "docker",
+      "services": {
+        "programmer": {
+          "image": "agent-worker:0.3.1",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:programmer"],
+          "env": ["NODE_ENV=production", "AGENT_ROLE=programmer"],
+          "volumes": ["~/agent-playground/programmer:/app/playground"],
+          "restart": "unless-stopped"
+        },
+        "artist": {
+          "image": "agent-worker:0.3.1",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:artist"],
+          "env": ["NODE_ENV=production", "AGENT_ROLE=artist"],
+          "volumes": ["~/agent-playground/artist:/app/playground"],
+          "restart": "unless-stopped"
+        },
+        "designer": {
+          "image": "agent-worker:0.3.1",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:designer"],
+          "env": ["NODE_ENV=production", "AGENT_ROLE=designer"],
+          "volumes": ["~/agent-playground/designer:/app/playground"],
+          "restart": "unless-stopped"
+        }
+      },
+      "secrets": {
+        "vaults": [
+          { "vault": "anthropic", "required": ["ANTHROPIC_API_KEY"] },
+          { "vault": "model-manager", "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"] }
+        ],
+        "delivery": "broker"
       }
     }
   },

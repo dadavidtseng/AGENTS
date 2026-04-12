@@ -5,19 +5,20 @@
   "entrypoint": "dist/index.js",
   "scripts": {
     "preflight": "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules')){console.error('Dependencies not installed. Run: npm install');process.exit(1)}console.log('✓ Dependencies OK')\"",
-    "setup": "npx tsc",
+    "setup": "npm run build",
     "start": "node dist/index.js",
     "start:artist": "AGENT_ROLE=artist node dist/index.js",
     "start:designer": "AGENT_ROLE=designer node dist/index.js",
     "start:programmer": "AGENT_ROLE=programmer node dist/index.js",
-    "dev": "tsx watch src/index.ts",
-    "dev:artist": "AGENT_ROLE=artist tsx watch src/index.ts",
-    "dev:designer": "AGENT_ROLE=designer tsx watch src/index.ts",
-    "dev:programmer": "AGENT_ROLE=programmer tsx watch src/index.ts",
-    "build": "tsc",
-    "type-check": "tsc --noEmit",
-    "lint": "eslint src --ext .ts",
-    "test": "vitest"
+    "dev": "npx tsx watch src/index.ts",
+    "dev:artist": "AGENT_ROLE=artist npx tsx watch src/index.ts",
+    "dev:designer": "AGENT_ROLE=designer npx tsx watch src/index.ts",
+    "dev:programmer": "AGENT_ROLE=programmer npx tsx watch src/index.ts",
+    "build": "npx tsc",
+    "type-check": "npx tsc --noEmit",
+    "lint": "npx eslint src --ext .ts",
+    "test": "npx vitest",
+    "clean": "rm -rf node_modules dist abilities agent-lock.json package-lock.json"
   },
   "build": {
     "default": {
@@ -25,6 +26,8 @@
       "cli": "latest",
       "run": [
         "npm ci --include=dev",
+        "kadi install kadi-secret",
+        "kadi install",
         "npx tsc",
         "npm prune --omit=dev"
       ],
@@ -33,12 +36,123 @@
       }
     }
   },
-  "brokers": {
-    "local": "ws://localhost:8080/kadi",
-    "remote": "wss://broker.dadavidtseng.com/kadi"
+  "deploy": {
+    "do-programmer": {
+      "target": "local",
+      "engine": "docker",
+      "services": {
+        "app": {
+          "image": "agent-shadow-worker:0.1.0",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:programmer"],
+          "env": [
+            "NODE_ENV=production",
+            "AGENT_ROLE=programmer"
+          ],
+          "volumes": [
+            "~/shadow-agent-playground/programmer:/app/playground"
+          ],
+          "restart": "unless-stopped"
+        }
+      },
+      "secrets": {
+        "vaults": [
+          { "vault": "anthropic", "required": ["ANTHROPIC_API_KEY"] },
+          { "vault": "model-manager", "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"] }
+        ],
+        "delivery": "broker"
+      }
+    },
+    "do-artist": {
+      "target": "local",
+      "engine": "docker",
+      "services": {
+        "app": {
+          "image": "agent-shadow-worker:0.1.0",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:artist"],
+          "env": [
+            "NODE_ENV=production",
+            "AGENT_ROLE=artist"
+          ],
+          "volumes": [
+            "~/shadow-agent-playground/artist:/app/playground"
+          ],
+          "restart": "unless-stopped"
+        }
+      },
+      "secrets": {
+        "vaults": [
+          { "vault": "anthropic", "required": ["ANTHROPIC_API_KEY"] },
+          { "vault": "model-manager", "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"] }
+        ],
+        "delivery": "broker"
+      }
+    },
+    "do-designer": {
+      "target": "local",
+      "engine": "docker",
+      "services": {
+        "app": {
+          "image": "agent-shadow-worker:0.1.0",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:designer"],
+          "env": [
+            "NODE_ENV=production",
+            "AGENT_ROLE=designer"
+          ],
+          "volumes": [
+            "~/shadow-agent-playground/designer:/app/playground"
+          ],
+          "restart": "unless-stopped"
+        }
+      },
+      "secrets": {
+        "vaults": [
+          { "vault": "anthropic", "required": ["ANTHROPIC_API_KEY"] },
+          { "vault": "model-manager", "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"] }
+        ],
+        "delivery": "broker"
+      }
+    },
+    "do-all": {
+      "target": "local",
+      "engine": "docker",
+      "services": {
+        "programmer": {
+          "image": "agent-shadow-worker:0.1.0",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:programmer"],
+          "env": ["NODE_ENV=production", "AGENT_ROLE=programmer"],
+          "volumes": ["~/shadow-agent-playground/programmer:/app/playground"],
+          "restart": "unless-stopped"
+        },
+        "artist": {
+          "image": "agent-shadow-worker:0.1.0",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:artist"],
+          "env": ["NODE_ENV=production", "AGENT_ROLE=artist"],
+          "volumes": ["~/shadow-agent-playground/artist:/app/playground"],
+          "restart": "unless-stopped"
+        },
+        "designer": {
+          "image": "agent-shadow-worker:0.1.0",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:designer"],
+          "env": ["NODE_ENV=production", "AGENT_ROLE=designer"],
+          "volumes": ["~/shadow-agent-playground/designer:/app/playground"],
+          "restart": "unless-stopped"
+        }
+      },
+      "secrets": {
+        "vaults": [
+          { "vault": "anthropic", "required": ["ANTHROPIC_API_KEY"] },
+          { "vault": "model-manager", "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"] }
+        ],
+        "delivery": "broker"
+      }
+    }
   },
   "abilities": {
     "secret-ability": "*",
     "ability-file-local": "^0.1.1"
+  },
+  "brokers": {
+    "local": "ws://localhost:8080/kadi",
+    "remote": "wss://broker.dadavidtseng.com/kadi"
   }
 }
