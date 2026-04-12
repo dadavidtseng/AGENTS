@@ -1,7 +1,7 @@
 /**
  * ShadowRoleLoader and ShadowRoleValidator — Configuration management for KĀDI shadow agents
  *
- * Loads shadow role configuration JSON files from config/roles/ and validates all sections
+ * Loads shadow role configuration TOML files from config/roles/ and validates all sections
  * using Zod schemas. Includes shadow-specific validation: worktree path existence,
  * git branch name format, and monitoring interval bounds.
  *
@@ -11,6 +11,7 @@
 import { z } from 'zod';
 import fs from 'fs';
 import path from 'path';
+import { readConfigFile } from 'agents-library';
 
 // ============================================================================
 // Zod Schemas
@@ -35,8 +36,8 @@ const MemoryConfigSchema = z.object({
 const ShadowRoleConfigSchema = z.object({
   role: z.string().min(1, 'Role name is required'),
   mainRepoPath: z.string().min(1).optional(),
-  workerWorktreePath: z.string().min(1, 'workerWorktreePath is required'),
-  shadowWorktreePath: z.string().min(1, 'shadowWorktreePath is required'),
+  workerWorktreePath: z.string().min(1).optional(),
+  shadowWorktreePath: z.string().min(1).optional(),
   workerBranch: z.string().min(1, 'workerBranch is required'),
   shadowBranch: z.string().min(1, 'shadowBranch is required'),
   monitoringInterval: z
@@ -74,8 +75,9 @@ export interface MemoryConfig {
 /** Complete shadow role configuration */
 export interface ShadowRoleConfig {
   role: string;
-  workerWorktreePath: string;
-  shadowWorktreePath: string;
+  mainRepoPath?: string;
+  workerWorktreePath?: string;
+  shadowWorktreePath?: string;
   workerBranch: string;
   shadowBranch: string;
   monitoringInterval: number;
@@ -128,10 +130,10 @@ export class ShadowRoleValidator {
 
     // Layer 2: Worktree path existence checks (skip if mainRepoPath is set — auto-creation will handle it)
     if (!parsed.mainRepoPath) {
-      if (!fs.existsSync(parsed.workerWorktreePath)) {
+      if (parsed.workerWorktreePath && !fs.existsSync(parsed.workerWorktreePath)) {
         errors.push(`workerWorktreePath: Directory does not exist: ${parsed.workerWorktreePath}`);
       }
-      if (!fs.existsSync(parsed.shadowWorktreePath)) {
+      if (parsed.shadowWorktreePath && !fs.existsSync(parsed.shadowWorktreePath)) {
         errors.push(`shadowWorktreePath: Directory does not exist: ${parsed.shadowWorktreePath}`);
       }
     }
@@ -181,13 +183,15 @@ export class ShadowRoleLoader {
 
   /**
    * Load and validate a shadow role configuration by name.
+   * Paths (mainRepoPath, workerWorktreePath, shadowWorktreePath) are auto-derived
+   * from process.cwd() unless explicitly set in the TOML file.
    *
    * @param roleName - Role identifier (e.g., 'artist', 'programmer', 'designer')
    * @returns Validated ShadowRoleConfig object
-   * @throws {ShadowRoleConfigError} If file not found, JSON parse fails, or validation fails
+   * @throws {ShadowRoleConfigError} If file not found, TOML parse fails, or validation fails
    */
   loadRole(roleName: string): ShadowRoleConfig {
-    const filePath = path.join(this.configDir, `${roleName}.json`);
+    const filePath = path.join(this.configDir, `${roleName}.toml`);
 
     // Step 1: Check file exists
     if (!fs.existsSync(filePath)) {
@@ -198,11 +202,33 @@ export class ShadowRoleLoader {
       );
     }
 
-    // Step 2: Read and parse JSON
-    let rawConfig: unknown;
+    // Step 2: Read and parse TOML via readConfigFile
+    let rawConfig: Record<string, unknown>;
     try {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      rawConfig = JSON.parse(content);
+      const cfg = readConfigFile(filePath);
+      rawConfig = {
+        role: cfg.string('role'),
+        workerBranch: cfg.string('workerBranch'),
+        shadowBranch: cfg.string('shadowBranch'),
+        monitoringInterval: cfg.number('monitoringInterval'),
+        ...(cfg.has('mainRepoPath') && { mainRepoPath: cfg.string('mainRepoPath') }),
+        ...(cfg.has('workerWorktreePath') && { workerWorktreePath: cfg.string('workerWorktreePath') }),
+        ...(cfg.has('shadowWorktreePath') && { shadowWorktreePath: cfg.string('shadowWorktreePath') }),
+        ...(cfg.has('debounceMs') && { debounceMs: cfg.number('debounceMs') }),
+        ...(cfg.has('provider.model') || cfg.has('provider.temperature') || cfg.has('provider.maxTokens') ? {
+          provider: {
+            ...(cfg.has('provider.model') && { model: cfg.string('provider.model') }),
+            ...(cfg.has('provider.temperature') && { temperature: cfg.number('provider.temperature') }),
+            ...(cfg.has('provider.maxTokens') && { maxTokens: cfg.number('provider.maxTokens') }),
+          },
+        } : {}),
+        ...(cfg.has('memory.enabled') && {
+          memory: {
+            enabled: cfg.bool('memory.enabled'),
+            namespace: cfg.string('memory.namespace'),
+          },
+        }),
+      };
     } catch (error: any) {
       throw new ShadowRoleConfigError(
         `Failed to parse shadow role configuration: ${error.message}`,
@@ -222,7 +248,25 @@ export class ShadowRoleLoader {
       );
     }
 
-    return rawConfig as ShadowRoleConfig;
+    const config = rawConfig as unknown as ShadowRoleConfig;
+
+    // Auto-derive playground paths from process.cwd() if not explicitly set.
+    // Layout: cwd = .../AGENTS/agent-shadow-worker → 2 levels up = common parent
+    //   mainRepoPath     = <parent>/agent-playground
+    //   workerWorktreePath = <parent>/agent-playground-<role>
+    //   shadowWorktreePath = <parent>/shadow-agent-playground-<role>
+    const grandparent = path.resolve(process.cwd(), '..', '..');
+    if (!config.mainRepoPath) {
+      config.mainRepoPath = path.join(grandparent, 'agent-playground');
+    }
+    if (!config.workerWorktreePath) {
+      config.workerWorktreePath = path.join(grandparent, `agent-playground-${config.role}`);
+    }
+    if (!config.shadowWorktreePath) {
+      config.shadowWorktreePath = path.join(grandparent, `shadow-agent-playground-${config.role}`);
+    }
+
+    return config;
   }
 
   /**
@@ -237,8 +281,8 @@ export class ShadowRoleLoader {
 
     return fs
       .readdirSync(this.configDir)
-      .filter((f) => f.endsWith('.json'))
-      .map((f) => f.replace('.json', ''));
+      .filter((f) => f.endsWith('.toml'))
+      .map((f) => f.replace('.toml', ''));
   }
 }
 

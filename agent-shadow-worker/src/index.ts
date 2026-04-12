@@ -5,7 +5,7 @@
  * Generic shadow agent for monitoring and backing up worker agent worktrees.
  * Uses BaseAgent for broker connection and ShadowRoleLoader for role configuration.
  *
- * Supports multiple roles (artist, programmer, designer) via config/roles/{role}.json.
+ * Supports multiple roles (artist, programmer, designer) via config/roles/{role}.toml.
  * Role is determined by AGENT_ROLE env var (for kadi run dev:artist) or config.toml default.
  *
  * Event Topics:
@@ -78,7 +78,7 @@ async function main(): Promise<void> {
   timer.start('main');
 
   try {
-    // Load role configuration from config/roles/{role}.json
+    // Load role configuration from config/roles/{role}.toml
     logger.info(agentId, `Loading shadow role configuration: ${roleName}`, timer.elapsed('main'));
     const projectRoot = path.resolve(__dirname, '..');
     const roleLoader = new ShadowRoleLoader(projectRoot);
@@ -91,12 +91,25 @@ async function main(): Promise<void> {
     logger.debug(agentId, `  Monitoring interval: ${roleConfig.monitoringInterval}ms`, timer.elapsed('main'));
 
     // Auto-create worktrees if they don't exist
-    const mainRepoPath = (roleConfig as any).mainRepoPath;
+    const mainRepoPath = roleConfig.mainRepoPath;
     if (mainRepoPath) {
       const { execSync } = await import('child_process');
+
+      // Auto-init main playground repo if missing
+      if (!fs.existsSync(mainRepoPath)) {
+        logger.info(agentId, `Initializing playground repo at ${mainRepoPath}...`, timer.elapsed('main'));
+        fs.mkdirSync(mainRepoPath, { recursive: true });
+        execSync('git init', { cwd: mainRepoPath, stdio: 'pipe' });
+        execSync('git commit --allow-empty -m "init: agent-playground"', {
+          cwd: mainRepoPath,
+          stdio: 'pipe',
+        });
+        logger.info(agentId, 'Playground repo initialized', timer.elapsed('main'));
+      }
+
       for (const [wtPath, branch] of [
-        [roleConfig.workerWorktreePath, roleConfig.workerBranch],
-        [roleConfig.shadowWorktreePath, roleConfig.shadowBranch],
+        [roleConfig.workerWorktreePath!, roleConfig.workerBranch],
+        [roleConfig.shadowWorktreePath!, roleConfig.shadowBranch],
       ] as const) {
         if (!fs.existsSync(wtPath)) {
           logger.info(agentId, `Worktree not found at ${wtPath} — creating...`, timer.elapsed('main'));
@@ -165,8 +178,8 @@ async function main(): Promise<void> {
     // Step 2: Create shadow agent with BaseAgent
     const agent = createShadowAgent({
       role: roleConfig.role,
-      workerWorktreePath: roleConfig.workerWorktreePath,
-      shadowWorktreePath: roleConfig.shadowWorktreePath,
+      workerWorktreePath: roleConfig.workerWorktreePath!,
+      shadowWorktreePath: roleConfig.shadowWorktreePath!,
       workerBranch: roleConfig.workerBranch,
       shadowBranch: roleConfig.shadowBranch,
       brokerUrl,
