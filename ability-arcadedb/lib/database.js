@@ -369,15 +369,17 @@ class DatabaseManager {
 
     async _ensureServerReady() {
         try {
+            const auth = Buffer.from(`${this.username}:${this.password}`).toString('base64');
             const response = await fetch(`http://${this.host}:${this.port}/api/v1/ready`, {
+                headers: { 'Authorization': `Basic ${auth}` },
                 signal: AbortSignal.timeout(3000)
             });
-            
+
             if (response.status !== 204) {
-                throw new Error('Server is not ready');
+                throw new Error(`Server is not ready (HTTP ${response.status})`);
             }
         } catch (error) {
-            throw new Error('Server is not accessible. Make sure the container is running.');
+            throw new Error(`Server is not accessible: ${error.message}`);
         }
     }
 

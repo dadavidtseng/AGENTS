@@ -8,8 +8,8 @@
 # Environment variables override any value (ARCADE_HOST, ARCADE_PORT, etc.).
 
 arcadedb:
-  host: vvrthcqsole5r31dilupkjuah0.ingress.hurricane.akash.pub
-  port: 80
+  host: arcadedb.dadavidtseng.com
+  port: 443
   container_name: kadi-arcadedb
   backup_retention_days: 30
   log_lines: 50

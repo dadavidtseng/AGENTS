@@ -1,6 +1,6 @@
 {
   "name": "ability-arcadedb",
-  "version": "0.1.5",
+  "version": "0.1.7",
   "description": "KADI ability wrapping ArcadeDB as 17 broker-callable tools (includes backup/restore with distributed file transfer)",
   "type": "module",
   "main": "dist/index.js",
@@ -51,7 +51,6 @@
     "clear": "node arcade-admin.js clear-databases",
     "clean-all": "node arcade-admin.js clean-all",
     "help": "node arcade-admin.js help",
-    "build": "tsc",
     "kadi:start": "node dist/index.js broker",
     "kadi:dev": "npx tsx src/index.ts",
     "test:all": "node test-runner.js",

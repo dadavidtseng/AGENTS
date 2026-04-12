@@ -412,9 +412,13 @@ class BackupManager {
         // In container mode, check HTTP readiness instead of Docker
         if (this.isContainerMode) {
             try {
+                const auth = Buffer.from(`${this.username}:${this.password}`).toString('base64');
                 const response = await fetch(
                     `http://${this.host}:${this.port}/api/v1/ready`,
-                    { signal: AbortSignal.timeout(5000) }
+                    {
+                        headers: { 'Authorization': `Basic ${auth}` },
+                        signal: AbortSignal.timeout(5000)
+                    }
                 );
                 if (response.status === 204 || response.ok) return;
             } catch { /* fall through */ }
@@ -560,7 +564,9 @@ class BackupManager {
             let attempts = 0;
             while (attempts < 60) {
                 try {
+                    const auth = Buffer.from(`${this.username}:${this.password}`).toString('base64');
                     const response = await fetch(`http://${this.host}:${this.port}/api/v1/ready`, {
+                        headers: { 'Authorization': `Basic ${auth}` },
                         signal: AbortSignal.timeout(3000)
                     });
                     if (response.status === 204 || response.ok) {
@@ -601,7 +607,9 @@ class BackupManager {
         let attempts = 0;
         while (attempts < 60) {
             try {
+                const auth = Buffer.from(`${this.username}:${this.password}`).toString('base64');
                 const response = await fetch(`http://${this.host}:${this.port}/api/v1/ready`, {
+                    headers: { 'Authorization': `Basic ${auth}` },
                     signal: AbortSignal.timeout(3000)
                 });
                 if (response.status === 204) {
