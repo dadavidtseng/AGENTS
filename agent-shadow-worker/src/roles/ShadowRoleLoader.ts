@@ -254,7 +254,7 @@ export class ShadowRoleLoader {
     // Layout: cwd = .../AGENTS/agent-shadow-worker → 2 levels up = common parent
     //   mainRepoPath     = <parent>/agent-playground
     //   workerWorktreePath = <parent>/agent-playground-<role>
-    //   shadowWorktreePath = <parent>/shadow-agent-playground-<role>
+    //   shadowWorktreePath = <parent>/agent-playground-shadow-<role>
     const grandparent = path.resolve(process.cwd(), '..', '..');
     if (!config.mainRepoPath) {
       config.mainRepoPath = path.join(grandparent, 'agent-playground');
@@ -263,7 +263,7 @@ export class ShadowRoleLoader {
       config.workerWorktreePath = path.join(grandparent, `agent-playground-${config.role}`);
     }
     if (!config.shadowWorktreePath) {
-      config.shadowWorktreePath = path.join(grandparent, `shadow-agent-playground-${config.role}`);
+      config.shadowWorktreePath = path.join(grandparent, `agent-playground-shadow-${config.role}`);
     }
 
     return config;

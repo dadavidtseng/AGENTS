@@ -19,9 +19,9 @@ NETWORKS = ["global"]
 
 [worktree]
 WORKER_PATH = "C:/GitHub/agent-playground-artist"
-SHADOW_PATH = "C:/GitHub/shadow-agent-playground-artist"
+SHADOW_PATH = "C:/GitHub/agent-playground-shadow-artist"
 WORKER_BRANCH = "agent-playground-artist"
-SHADOW_BRANCH = "shadow-agent-playground-artist"
+SHADOW_BRANCH = "agent-playground-shadow-artist"
 
 [secrets]
 VAULTS = ["anthropic", "model-manager"]

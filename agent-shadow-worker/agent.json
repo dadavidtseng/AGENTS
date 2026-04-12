@@ -49,7 +49,7 @@
             "AGENT_ROLE=programmer"
           ],
           "volumes": [
-            "~/shadow-agent-playground/programmer:/app/playground"
+            "~/agent-playground-shadow-programmer:/app/playground"
           ],
           "restart": "unless-stopped"
         }
@@ -74,7 +74,7 @@
             "AGENT_ROLE=artist"
           ],
           "volumes": [
-            "~/shadow-agent-playground/artist:/app/playground"
+            "~/agent-playground-shadow-artist:/app/playground"
           ],
           "restart": "unless-stopped"
         }
@@ -99,7 +99,7 @@
             "AGENT_ROLE=designer"
           ],
           "volumes": [
-            "~/shadow-agent-playground/designer:/app/playground"
+            "~/agent-playground-shadow-designer:/app/playground"
           ],
           "restart": "unless-stopped"
         }
@@ -120,21 +120,21 @@
           "image": "agent-shadow-worker:0.1.0",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:programmer"],
           "env": ["NODE_ENV=production", "AGENT_ROLE=programmer"],
-          "volumes": ["~/shadow-agent-playground/programmer:/app/playground"],
+          "volumes": ["~/agent-playground-shadow-programmer:/app/playground"],
           "restart": "unless-stopped"
         },
         "artist": {
           "image": "agent-shadow-worker:0.1.0",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:artist"],
           "env": ["NODE_ENV=production", "AGENT_ROLE=artist"],
-          "volumes": ["~/shadow-agent-playground/artist:/app/playground"],
+          "volumes": ["~/agent-playground-shadow-artist:/app/playground"],
           "restart": "unless-stopped"
         },
         "designer": {
           "image": "agent-shadow-worker:0.1.0",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:designer"],
           "env": ["NODE_ENV=production", "AGENT_ROLE=designer"],
-          "volumes": ["~/shadow-agent-playground/designer:/app/playground"],
+          "volumes": ["~/agent-playground-shadow-designer:/app/playground"],
           "restart": "unless-stopped"
         }
       },

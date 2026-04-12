@@ -2,7 +2,7 @@
 
 role = "artist"
 workerBranch = "agent-playground-artist"
-shadowBranch = "shadow-agent-playground-artist"
+shadowBranch = "agent-playground-shadow-artist"
 monitoringInterval = 5000
 debounceMs = 1000
 

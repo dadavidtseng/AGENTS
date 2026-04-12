@@ -2,7 +2,7 @@
 
 role = "programmer"
 workerBranch = "agent-playground-programmer"
-shadowBranch = "shadow-agent-playground-programmer"
+shadowBranch = "agent-playground-shadow-programmer"
 monitoringInterval = 5000
 debounceMs = 1000
 
