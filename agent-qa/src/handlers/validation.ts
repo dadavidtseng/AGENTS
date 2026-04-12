@@ -132,18 +132,15 @@ async function invokeVision<T>(
 // ============================================================================
 
 /**
- * Invoke a file-cloud tool — natively if available, otherwise via broker.
- * Strips the broker `cloud_` prefix for native invocation.
+ * Invoke a file-cloud tool via broker (ability-file-cloud runs as a separate service).
+ * The nativeFileCloud param is kept for signature compat but always null.
  */
 async function invokeFileCloud<T>(
   client: KadiClient,
-  nativeFileCloud: any | null,
+  _nativeFileCloud: any | null,
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<T> {
-  if (nativeFileCloud && toolName.startsWith('cloud_')) {
-    return await nativeFileCloud.invoke(toolName.slice(6), args);
-  }
   return await client.invokeRemote<T>(toolName, args);
 }
 
@@ -560,7 +557,7 @@ async function resolveCloudUri(client: KadiClient, nativeFileLocal: any | null, 
   const localTmp = `${SCREENSHOT_DIR}/_cloud_${Date.now()}.png`;
 
   try {
-    await invokeFileCloud(client, nativeFileCloud, 'cloud_cloud_download_file', {
+    await invokeFileCloud(client, nativeFileCloud, 'cloud-download', {
       provider,
       remotePath,
       localPath: localTmp,

@@ -5,13 +5,14 @@
   "entrypoint": "dist/index.js",
   "scripts": {
     "preflight": "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules')){console.error('Dependencies not installed. Run: npm install');process.exit(1)}console.log('✓ Dependencies OK')\"",
-    "setup": "npx tsc",
+    "setup": "npm run build",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "type-check": "tsc --noEmit",
-    "lint": "eslint src --ext .ts",
-    "test": "vitest"
+    "build": "npx tsc",
+    "type-check": "npx tsc --noEmit",
+    "lint": "npx eslint src --ext .ts",
+    "test": "npx vitest",
+    "clean": "rm -rf node_modules dist abilities agent-lock.json package-lock.json"
   },
   "build": {
     "default": {
@@ -19,6 +20,8 @@
       "cli": "latest",
       "run": [
         "npm ci --include=dev",
+        "kadi install kadi-secret",
+        "kadi install",
         "npx tsc",
         "npm prune --omit=dev"
       ],
@@ -27,16 +30,61 @@
       }
     }
   },
+  "deploy": {
+    "akash": {
+      "target": "akash",
+      "network": "mainnet",
+      "deposit": "10",
+      "blacklist": [
+        "akash1sevd2ymtty3dpq9ycxgkhuzzk4fe6mchqdwd4e",
+        "akash14w36hwrtuqqa3j92fa8ctcxlhjgvr3a0zpp7cj"
+      ],
+      "engine": "podman",
+      "services": {
+        "app": {
+          "image": "agent-qa:0.3.1",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start"],
+          "expose": [
+            {
+              "port": 3000,
+              "as": 3000,
+              "to": [{ "global": true }]
+            }
+          ],
+          "env": [
+            "NODE_ENV=production"
+          ],
+          "resources": {
+            "cpu": 0.5,
+            "memory": "512Mi",
+            "ephemeralStorage": "1Gi"
+          },
+          "pricing": { "amount": "500", "denom": "uact" }
+        }
+      },
+      "secrets": {
+        "vaults": [
+          {
+            "vault": "anthropic",
+            "required": ["ANTHROPIC_API_KEY"]
+          },
+          {
+            "vault": "model-manager",
+            "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"]
+          }
+        ],
+        "delivery": "broker"
+      }
+    }
+  },
   "abilities": {
     "secret-ability": "^0.9.4",
     "ability-file-local": "^0.1.1",
     "ability-eval": "*",
     "ability-vision": "*",
-    "ability-file-cloud": "*",
     "ability-file-remote": "*"
   },
   "brokers": {
-    "local": "ws://localhost:8080/kadi",
     "remote": "wss://broker.dadavidtseng.com/kadi"
   }
 }

@@ -8,9 +8,9 @@ ROLE = "qa"
 [logging]
 LEVEL = "debug"
 
-[broker.local]
-URL = "ws://localhost:8080/kadi"
-NETWORKS = ["qa", "quest", "git", "eval", "global"]
+#[broker.local]
+#URL = "ws://localhost:8080/kadi"
+#NETWORKS = ["qa", "quest", "git", "eval", "global"]
 
 [broker.remote]
 URL = "wss://broker.dadavidtseng.com/kadi"

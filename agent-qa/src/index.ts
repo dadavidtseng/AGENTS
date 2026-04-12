@@ -150,15 +150,6 @@ async function main(): Promise<void> {
     logger.warn(agentId, `Could not load ability-vision natively: ${err.message}`, timer.elapsed('main'));
   }
 
-  // Load ability-file-cloud natively (zero-latency cloud file ops, in-process)
-  let nativeFileCloud: any = null;
-  try {
-    nativeFileCloud = await baseAgent.client.loadNative('ability-file-cloud');
-    logger.info(agentId, 'Loaded ability-file-cloud natively', timer.elapsed('main'));
-  } catch (err: any) {
-    logger.warn(agentId, `Could not load ability-file-cloud natively: ${err.message}`, timer.elapsed('main'));
-  }
-
   // Load ability-file-remote natively (zero-latency remote file ops, in-process)
   let nativeFileRemote: any = null;
   try {
@@ -171,7 +162,7 @@ async function main(): Promise<void> {
   const client = baseAgent.client;
 
   // Register validation handler (subscribes to task.review_requested)
-  setupValidationHandler(client, baseAgent.providerManager, baseAgent.memoryService, nativeFileLocal, nativeEval, nativeVision, nativeFileCloud, nativeFileRemote);
+  setupValidationHandler(client, baseAgent.providerManager, baseAgent.memoryService, nativeFileLocal, nativeEval, nativeVision, null /* file-cloud via broker */, nativeFileRemote);
 
   if (baseAgent.providerManager) {
     logger.info(agentId, 'LLM semantic review enabled', timer.elapsed('main'));
