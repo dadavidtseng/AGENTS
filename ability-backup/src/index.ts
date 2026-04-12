@@ -64,21 +64,54 @@ function loadAgentJson(): Record<string, any> {
   return {};
 }
 
+/** Walk up from CWD looking for config.toml and extract broker URLs. */
+function loadBrokersFromConfigToml(): Record<string, string> {
+  let dir = process.cwd();
+  while (true) {
+    try {
+      const candidate = join(dir, 'config.toml');
+      const content = readFileSync(candidate, 'utf8');
+      const brokers: Record<string, string> = {};
+      // Simple TOML parser for [broker.*] sections with URL = "..."
+      const sectionRe = /\[broker\.(\w+)\]/g;
+      const urlRe = /URL\s*=\s*"([^"]+)"/;
+      let match;
+      while ((match = sectionRe.exec(content)) !== null) {
+        const name = match[1];
+        const rest = content.slice(match.index + match[0].length);
+        const urlMatch = rest.match(urlRe);
+        if (urlMatch) brokers[name] = urlMatch[1];
+      }
+      return brokers;
+    } catch {
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  }
+  return {};
+}
+
 function resolveBrokerUrl(): string {
   if (process.env.BROKER_URL) return process.env.BROKER_URL;
 
+  // 1. Try agent.json brokers
   const agent = loadAgentJson();
   const brokers = agent.brokers ?? {};
-
-  // Prefer remote → default (legacy) → local
   for (const key of ['remote', 'default', 'local']) {
     const entry = brokers[key];
     if (typeof entry === 'string') return entry;
     if (entry?.url) return entry.url;
   }
 
+  // 2. Try config.toml [broker.*] sections
+  const tomlBrokers = loadBrokersFromConfigToml();
+  for (const key of ['remote', 'default', 'local']) {
+    if (tomlBrokers[key]) return tomlBrokers[key];
+  }
+
   throw new Error(
-    'No broker URL found. Set BROKER_URL env var or add brokers.remote to agent.json.',
+    'No broker URL found. Add brokers.remote to agent.json or [broker.remote] to config.toml.',
   );
 }
 
