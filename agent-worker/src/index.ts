@@ -166,6 +166,8 @@ async function main(): Promise<void> {
         fs.mkdirSync(roleConfig.mainRepoPath, { recursive: true });
         const { execSync } = await import('child_process');
         execSync('git init', { cwd: roleConfig.mainRepoPath, stdio: 'pipe' });
+        execSync(`git config user.name "agent-worker"`, { cwd: roleConfig.mainRepoPath, stdio: 'pipe' });
+        execSync(`git config user.email "agent-worker@kadi.build"`, { cwd: roleConfig.mainRepoPath, stdio: 'pipe' });
         // Create initial commit so worktrees can branch from HEAD
         execSync('git commit --allow-empty -m "init: agent-playground"', {
           cwd: roleConfig.mainRepoPath,
@@ -184,6 +186,9 @@ async function main(): Promise<void> {
             stdio: 'pipe',
           });
           logger.info(agentId, `Worktree created (branch: ${branch})`, timer.elapsed('main'));
+          // Set per-worktree git identity for this role
+          execSync(`git config user.name "agent-worker-${roleConfig.role}"`, { cwd: roleConfig.worktreePath, stdio: 'pipe' });
+          execSync(`git config user.email "agent-worker-${roleConfig.role}@kadi.build"`, { cwd: roleConfig.worktreePath, stdio: 'pipe' });
         } catch {
           try {
             const branch = `agent-playground-${roleConfig.role}`;
@@ -193,6 +198,9 @@ async function main(): Promise<void> {
               stdio: 'pipe',
             });
             logger.info(agentId, 'Worktree created (existing branch)', timer.elapsed('main'));
+            // Set per-worktree git identity for this role
+            execSync(`git config user.name "agent-worker-${roleConfig.role}"`, { cwd: roleConfig.worktreePath, stdio: 'pipe' });
+            execSync(`git config user.email "agent-worker-${roleConfig.role}@kadi.build"`, { cwd: roleConfig.worktreePath, stdio: 'pipe' });
           } catch (retryError: any) {
             logger.error(agentId, `Failed to create worktree: ${retryError.message}`, timer.elapsed('main'));
             process.exit(1);
