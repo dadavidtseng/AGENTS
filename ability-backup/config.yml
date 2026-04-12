@@ -1,0 +1,28 @@
+# ability-backup configuration
+# =============================
+#
+# Non-sensitive settings only. Secrets (KADI_TUNNEL_TOKEN, DASHBOARD_USERNAME,
+# DASHBOARD_PASSWORD) are managed by secret-ability via the `backup` vault.
+#
+# This file is discovered via walk-up search from CWD.
+# Environment variables override any value (KADI_TUNNEL_*, BACKUP_*).
+
+# ── Tunnel Services ────────────────────────────────────────────────────
+# Used by the staging server to expose file downloads across the network
+# in distributed (Akash) deployments. Connects to the lab's frps server.
+# Token is in secrets.toml vault 'backup' → KADI_TUNNEL_TOKEN
+tunnel:
+  server_addr: kadi.build
+  tunnel_domain: tunnel.kadi.build
+  server_port: 7000
+  ssh_port: 2200
+  mode: frpc
+  transport: wss
+  wss_control_host: tunnel-control.kadi.build
+  agent_id: backup-ability
+
+# ── Backup Settings ───────────────────────────────────────────────────
+backup:
+  staging_dir: /tmp/kadi-staging
+  staging_port: 0
+  cloud_backup_path: /kadi-backups
