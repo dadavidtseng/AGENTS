@@ -77,8 +77,8 @@ const brokerUrl = hasLocal
   ? (process.env.KADI_BROKER_URL_LOCAL ?? cfg.string('broker.local.URL'))
   : (process.env.KADI_BROKER_URL_REMOTE ?? cfg.string('broker.remote.URL'));
 
-// For local broker, use role-specific networks; for remote-only, use remote networks
-const networks = hasLocal ? roleNetworks : cfg.strings('broker.remote.NETWORKS');
+// Always use role-specific networks for the primary broker connection
+const networks = roleNetworks;
 
 const additionalBrokerUrl = hasLocal && hasRemote
   ? (process.env.KADI_BROKER_URL_REMOTE ?? cfg.string('broker.remote.URL'))
