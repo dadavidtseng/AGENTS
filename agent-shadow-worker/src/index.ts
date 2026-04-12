@@ -100,8 +100,8 @@ async function main(): Promise<void> {
         logger.info(agentId, `Initializing playground repo at ${mainRepoPath}...`, timer.elapsed('main'));
         fs.mkdirSync(mainRepoPath, { recursive: true });
         execSync('git init', { cwd: mainRepoPath, stdio: 'pipe' });
-        execSync(`git config user.name "agent-shadow-worker"`, { cwd: mainRepoPath, stdio: 'pipe' });
-        execSync(`git config user.email "agent-shadow-worker@kadi.build"`, { cwd: mainRepoPath, stdio: 'pipe' });
+        execSync(`git config user.name "shadow-agent"`, { cwd: mainRepoPath, stdio: 'pipe' });
+        execSync(`git config user.email "shadow-agent@dadavidtseng.com"`, { cwd: mainRepoPath, stdio: 'pipe' });
         execSync('git commit --allow-empty -m "init: agent-playground"', {
           cwd: mainRepoPath,
           stdio: 'pipe',
@@ -119,17 +119,15 @@ async function main(): Promise<void> {
             execSync(`git worktree add "${wtPath}" -b "${branch}"`, { cwd: mainRepoPath, stdio: 'pipe' });
             logger.info(agentId, `Worktree created: ${wtPath} (branch: ${branch})`, timer.elapsed('main'));
             // Set per-worktree git identity
-            const agentName = wtPath.includes('shadow-') ? `shadow-agent-${roleConfig.role}` : `agent-worker-${roleConfig.role}`;
-            execSync(`git config user.name "${agentName}"`, { cwd: wtPath, stdio: 'pipe' });
-            execSync(`git config user.email "${agentName}@kadi.build"`, { cwd: wtPath, stdio: 'pipe' });
+            execSync(`git config user.name "shadow-agent-${roleConfig.role}"`, { cwd: wtPath, stdio: 'pipe' });
+            execSync(`git config user.email "shadow-agent-${roleConfig.role}@dadavidtseng.com"`, { cwd: wtPath, stdio: 'pipe' });
           } catch {
             try {
               execSync(`git worktree add "${wtPath}" "${branch}"`, { cwd: mainRepoPath, stdio: 'pipe' });
               logger.info(agentId, `Worktree created (existing branch): ${wtPath}`, timer.elapsed('main'));
               // Set per-worktree git identity
-              const agentName = wtPath.includes('shadow-') ? `shadow-agent-${roleConfig.role}` : `agent-worker-${roleConfig.role}`;
-              execSync(`git config user.name "${agentName}"`, { cwd: wtPath, stdio: 'pipe' });
-              execSync(`git config user.email "${agentName}@kadi.build"`, { cwd: wtPath, stdio: 'pipe' });
+              execSync(`git config user.name "shadow-agent-${roleConfig.role}"`, { cwd: wtPath, stdio: 'pipe' });
+              execSync(`git config user.email "shadow-agent-${roleConfig.role}@dadavidtseng.com"`, { cwd: wtPath, stdio: 'pipe' });
             } catch (retryError: any) {
               logger.error(agentId, `Failed to create worktree: ${retryError.message}`, timer.elapsed('main'));
               process.exit(1);
