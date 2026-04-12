@@ -37,7 +37,7 @@ const RoleConfigSchema = z.object({
   capabilities: z.array(z.string().min(1)).min(1, 'At least one capability is required'),
   maxConcurrentTasks: z.number().int().min(1).max(10, 'maxConcurrentTasks must be between 1 and 10'),
   mainRepoPath: z.string().min(1).optional(),
-  worktreePath: z.string().min(1, 'worktreePath is required'),
+  worktreePath: z.string().min(1).optional(),
   eventTopic: z.string().min(1, 'eventTopic is required'),
   commitFormat: z.string().min(1, 'commitFormat is required'),
   provider: ProviderConfigSchema.optional(),
@@ -69,7 +69,7 @@ export interface RoleConfig {
   capabilities: string[];
   maxConcurrentTasks: number;
   mainRepoPath?: string;
-  worktreePath: string;
+  worktreePath?: string;
   eventTopic: string;
   commitFormat: string;
   provider?: ProviderConfig;
@@ -132,6 +132,8 @@ export class RoleLoader {
 
   /**
    * Load and validate a role configuration by name.
+   * Paths (mainRepoPath, worktreePath) are auto-derived from process.cwd()
+   * unless explicitly set in the TOML file.
    */
   loadRole(roleName: string): RoleConfig {
     const filePath = path.join(this.configDir, `${roleName}.toml`);
@@ -151,10 +153,10 @@ export class RoleLoader {
         role: cfg.string('role'),
         capabilities: cfg.strings('capabilities'),
         maxConcurrentTasks: cfg.number('maxConcurrentTasks'),
-        worktreePath: cfg.string('worktreePath'),
         eventTopic: cfg.string('eventTopic'),
         commitFormat: cfg.string('commitFormat'),
         ...(cfg.has('mainRepoPath') && { mainRepoPath: cfg.string('mainRepoPath') }),
+        ...(cfg.has('worktreePath') && { worktreePath: cfg.string('worktreePath') }),
         ...(cfg.has('tools') && { tools: cfg.strings('tools') }),
         ...(cfg.has('networks') && { networks: cfg.strings('networks') }),
         ...(cfg.has('provider.model') || cfg.has('provider.temperature') || cfg.has('provider.maxTokens') ? {
@@ -189,7 +191,23 @@ export class RoleLoader {
       );
     }
 
-    return rawConfig as unknown as RoleConfig;
+    const config = rawConfig as unknown as RoleConfig;
+
+    // Auto-derive playground paths from process.cwd() if not explicitly set.
+    // Layout: cwd = .../AGENTS/agent-worker → 2 levels up = common parent
+    //   mainRepoPath = <parent>/agent-playground
+    //   worktreePath = <parent>/agent-playground-<role>
+    if (!config.mainRepoPath || !config.worktreePath) {
+      const grandparent = path.resolve(process.cwd(), '..', '..');
+      if (!config.mainRepoPath) {
+        config.mainRepoPath = path.join(grandparent, 'agent-playground');
+      }
+      if (!config.worktreePath) {
+        config.worktreePath = path.join(grandparent, `agent-playground-${config.role}`);
+      }
+    }
+
+    return config;
   }
 
   /**

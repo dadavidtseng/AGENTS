@@ -3,8 +3,6 @@
 role = "designer"
 capabilities = ["ui-design", "ux-design", "css", "responsive-layout", "wireframing", "prototyping"]
 maxConcurrentTasks = 1
-mainRepoPath = "/mnt/c/GitHub/agent-playground"
-worktreePath = "/mnt/c/GitHub/agent-playground-designer"
 eventTopic = "task"
 commitFormat = "feat: create design for task {taskId}"
 tools = ["git_git_", "ability_file_"]

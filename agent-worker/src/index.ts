@@ -160,6 +160,20 @@ async function main(): Promise<void> {
 
     // Auto-create git worktree if it doesn't exist
     if (roleConfig.mainRepoPath && roleConfig.worktreePath) {
+      // Auto-init main playground repo if missing
+      if (!fs.existsSync(roleConfig.mainRepoPath)) {
+        logger.info(agentId, `Initializing playground repo at ${roleConfig.mainRepoPath}...`, timer.elapsed('main'));
+        fs.mkdirSync(roleConfig.mainRepoPath, { recursive: true });
+        const { execSync } = await import('child_process');
+        execSync('git init', { cwd: roleConfig.mainRepoPath, stdio: 'pipe' });
+        // Create initial commit so worktrees can branch from HEAD
+        execSync('git commit --allow-empty -m "init: agent-playground"', {
+          cwd: roleConfig.mainRepoPath,
+          stdio: 'pipe',
+        });
+        logger.info(agentId, 'Playground repo initialized', timer.elapsed('main'));
+      }
+
       if (!fs.existsSync(roleConfig.worktreePath)) {
         logger.info(agentId, `Creating worktree at ${roleConfig.worktreePath}...`, timer.elapsed('main'));
         try {
@@ -217,7 +231,7 @@ async function main(): Promise<void> {
 
       // Worker-specific fields
       role: roleConfig.role as 'artist' | 'designer' | 'programmer',
-      worktreePath: roleConfig.worktreePath,
+      worktreePath: roleConfig.worktreePath!,
       claudeModel: primaryModel,
       capabilities: roleConfig.capabilities,
       customBehaviors: {

@@ -3,8 +3,6 @@
 role = "artist"
 capabilities = ["file-creation", "image-generation", "creative-content", "art", "illustration", "design"]
 maxConcurrentTasks = 1
-mainRepoPath = "/mnt/c/GitHub/agent-playground"
-worktreePath = "/mnt/c/GitHub/agent-playground-artist"
 eventTopic = "task"
 commitFormat = "feat: create artwork for task {taskId}"
 tools = ["git_git_", "ability_file_"]
