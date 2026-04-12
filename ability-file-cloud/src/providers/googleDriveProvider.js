@@ -1001,6 +1001,94 @@ class GoogleDriveProvider {
   }
 
   // ============================================================================
+  // URL TRANSFER HELPERS
+  // ============================================================================
+
+  /**
+   * Get a direct download URL for a file.
+   * Returns a webContentLink (direct download) for files under 25MB,
+   * or an export link for Google Docs types.
+   */
+  async getDownloadUrl(remotePath) {
+    const fileId = await this.getFileId(remotePath);
+    const response = await this.makeRequest(
+      `/files/${fileId}?fields=id,name,mimeType,size,webContentLink`
+    );
+
+    // webContentLink is a direct download link (works for non-Google-Docs files)
+    if (response.webContentLink) {
+      return {
+        url: response.webContentLink,
+        metadata: { id: response.id, name: response.name, mimeType: response.mimeType, size: response.size },
+      };
+    }
+
+    // For Google Docs types, use export link (PDF by default)
+    const exportMimeMap = {
+      'application/vnd.google-apps.document': 'application/pdf',
+      'application/vnd.google-apps.spreadsheet': 'text/csv',
+      'application/vnd.google-apps.presentation': 'application/pdf',
+    };
+    const exportMime = exportMimeMap[response.mimeType];
+    if (exportMime) {
+      return {
+        url: `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=${encodeURIComponent(exportMime)}`,
+        metadata: { id: response.id, name: response.name, mimeType: response.mimeType, exportMimeType: exportMime },
+        note: 'Google Docs file — URL requires Authorization header',
+      };
+    }
+
+    // Fallback: alt=media URL (requires auth header)
+    return {
+      url: `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+      metadata: { id: response.id, name: response.name, mimeType: response.mimeType },
+      note: 'URL requires Authorization header',
+    };
+  }
+
+  // ============================================================================
+  // OAUTH SETUP HELPERS
+  // ============================================================================
+
+  static generateAuthUrl(clientId, redirectUri = 'http://localhost:8080/callback') {
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: 'https://www.googleapis.com/auth/drive.file',
+      access_type: 'offline',
+      prompt: 'consent',
+    });
+    return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  }
+
+  static async exchangeCodeForTokens(clientId, clientSecret, code, redirectUri = 'http://localhost:8080/callback') {
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Google token exchange failed: ${response.status} - ${errorText}`);
+    }
+
+    const tokenData = await response.json();
+    return {
+      accessToken: tokenData.access_token,
+      refreshToken: tokenData.refresh_token,
+      expiresIn: tokenData.expires_in,
+    };
+  }
+
+  // ============================================================================
   // ERROR HANDLING HELPERS
   // ============================================================================
 

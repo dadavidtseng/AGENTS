@@ -1,6 +1,6 @@
 {
   "name": "ability-file-cloud",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "module",
   "description": "Cloud file operations ability - Dropbox, Google Drive, Box",
   "scripts": {

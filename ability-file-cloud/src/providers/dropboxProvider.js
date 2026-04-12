@@ -215,6 +215,27 @@ class DropboxProvider {
   }
 
   // ============================================================================
+  // URL TRANSFER HELPERS
+  // ============================================================================
+
+  /**
+   * Get a temporary download URL for a file (valid for ~4 hours).
+   * Uses Dropbox /files/get_temporary_link API.
+   */
+  async getDownloadUrl(remotePath) {
+    remotePath = this.normalizePath(remotePath);
+    const response = await this.makeRequest('/files/get_temporary_link', {
+      method: 'POST',
+      body: JSON.stringify({ path: remotePath }),
+    });
+    return {
+      url: response.link,
+      expiresAt: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(), // ~4 hours
+      metadata: response.metadata,
+    };
+  }
+
+  // ============================================================================
   // OAUTH SETUP HELPERS
   // ============================================================================
 

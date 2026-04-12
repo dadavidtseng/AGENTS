@@ -2,6 +2,6 @@
 # Secrets go in secrets.toml (encrypted vault)
 
 [broker.local]
-URL = "ws://localhost:8080/kadi"
+URL = "wss://broker.dadavidtseng.com/kadi"
 NETWORKS = ["file"]
-MODE = "native"
+MODE = "broker"

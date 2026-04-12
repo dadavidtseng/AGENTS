@@ -3,6 +3,7 @@ import { GoogleDriveProvider } from './providers/googleDriveProvider.js';
 import { BoxProvider } from './providers/boxProvider.js';
 import path from 'path';
 import fs from 'fs';
+import fetch from 'node-fetch';
 
 export class CloudStorageManager {
   constructor(config) {
@@ -295,5 +296,215 @@ export class CloudStorageManager {
 
     await walk(directory);
     return files;
+  }
+
+  // ============================================================================
+  // URL TRANSFER METHODS
+  // ============================================================================
+
+  /**
+   * Get a temporary download URL for a file in cloud storage.
+   */
+  async getDownloadUrl(serviceName, remotePath) {
+    const provider = this.getProvider(serviceName);
+    return await provider.getDownloadUrl(remotePath);
+  }
+
+  /**
+   * Download a file from a URL and upload it to cloud storage.
+   * Streams the content through a temp file to avoid memory issues with large files.
+   */
+  async uploadFromUrl(serviceName, sourceUrl, remotePath, authHeader, createFolders) {
+    const provider = this.getProvider(serviceName);
+    const os = await import('os');
+    const tmpFile = path.join(os.default.tmpdir(), `cloud-upload-${Date.now()}-${path.basename(remotePath)}`);
+
+    try {
+      // Download from source URL to temp file
+      const headers = {};
+      if (authHeader) headers['Authorization'] = authHeader;
+
+      const response = await fetch(sourceUrl, { headers });
+      if (!response.ok) {
+        throw new Error(`Failed to download from source URL: ${response.status} ${response.statusText}`);
+      }
+
+      const fileStream = fs.createWriteStream(tmpFile);
+      await new Promise((resolve, reject) => {
+        response.body.pipe(fileStream);
+        response.body.on('error', reject);
+        fileStream.on('finish', resolve);
+      });
+
+      // Create parent folders if requested
+      if (createFolders !== false) {
+        const dir = path.dirname(remotePath);
+        if (dir && dir !== '/' && dir !== '.') {
+          try { await provider.createFolder(dir); } catch (_e) { /* ignore if exists */ }
+        }
+      }
+
+      // Upload temp file to cloud
+      const result = await provider.uploadFile(tmpFile, remotePath);
+      return result;
+    } finally {
+      // Clean up temp file
+      try { await fs.promises.unlink(tmpFile); } catch (_e) { /* ignore */ }
+    }
+  }
+
+  /**
+   * Download a file from cloud storage and PUT it to a target URL.
+   */
+  async downloadToUrl(serviceName, remotePath, targetUrl, authHeader) {
+    const provider = this.getProvider(serviceName);
+    const os = await import('os');
+    const tmpFile = path.join(os.default.tmpdir(), `cloud-download-${Date.now()}-${path.basename(remotePath)}`);
+
+    try {
+      // Download from cloud to temp file
+      await provider.downloadFile(remotePath, tmpFile);
+
+      // Read and PUT to target URL
+      const fileContent = await fs.promises.readFile(tmpFile);
+      const headers = { 'Content-Type': 'application/octet-stream' };
+      if (authHeader) headers['Authorization'] = authHeader;
+
+      const response = await fetch(targetUrl, {
+        method: 'PUT',
+        headers,
+        body: fileContent,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to upload to target URL: ${response.status} ${response.statusText}`);
+      }
+
+      return { uploaded: true, targetUrl, size: fileContent.length };
+    } finally {
+      try { await fs.promises.unlink(tmpFile); } catch (_e) { /* ignore */ }
+    }
+  }
+
+  // ============================================================================
+  // OAUTH TOKEN MANAGEMENT METHODS
+  // ============================================================================
+
+  /** Provider class map for static method access */
+  static providerClasses = {
+    dropbox: DropboxProvider,
+    googledrive: GoogleDriveProvider,
+    box: BoxProvider,
+  };
+
+  /**
+   * Check token health for one or all providers.
+   */
+  async getTokenStatus(serviceName, testConnection) {
+    const providers = serviceName
+      ? { [serviceName]: this.getProvider(serviceName) }
+      : this.providers;
+
+    const statuses = {};
+    for (const [name, provider] of Object.entries(providers)) {
+      const status = {
+        configured: true,
+        hasAccessToken: !!provider.accessToken,
+        hasRefreshToken: !!provider.refreshToken,
+        tokenExpiry: provider.tokenExpiry ? new Date(provider.tokenExpiry).toISOString() : null,
+        isExpired: provider.tokenExpiry ? Date.now() > provider.tokenExpiry : null,
+      };
+
+      if (testConnection) {
+        try {
+          await provider.testConnection();
+          status.connectionOk = true;
+        } catch (err) {
+          status.connectionOk = false;
+          status.connectionError = err.message;
+        }
+      }
+
+      statuses[name] = status;
+    }
+
+    return { providers: statuses };
+  }
+
+  /**
+   * Force refresh the OAuth access token for a provider.
+   */
+  async refreshProviderToken(serviceName, testAfterRefresh) {
+    const provider = this.getProvider(serviceName);
+
+    if (!provider.refreshToken || !provider.clientId || !provider.clientSecret) {
+      throw new Error(`${serviceName} does not have refresh token credentials configured`);
+    }
+
+    await provider.refreshAccessToken();
+
+    const result = {
+      refreshed: true,
+      newExpiry: provider.tokenExpiry ? new Date(provider.tokenExpiry).toISOString() : null,
+    };
+
+    if (testAfterRefresh) {
+      try {
+        await provider.testConnection();
+        result.connectionOk = true;
+      } catch (err) {
+        result.connectionOk = false;
+        result.connectionError = err.message;
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Generate an OAuth authorization URL for a provider.
+   */
+  generateAuthUrl(serviceName, callbackUrl) {
+    const ProviderClass = CloudStorageManager.providerClasses[serviceName?.toLowerCase()];
+    if (!ProviderClass) {
+      throw new Error(`Unknown provider: ${serviceName}`);
+    }
+    if (!ProviderClass.generateAuthUrl) {
+      throw new Error(`${serviceName} does not support OAuth authorization URL generation`);
+    }
+
+    const clientId = this.config.get(`${serviceName.toUpperCase()}_CLIENT_ID`)
+      || this.config.get(`${serviceName === 'googledrive' ? 'GOOGLE' : serviceName.toUpperCase()}_CLIENT_ID`);
+
+    if (!clientId) {
+      throw new Error(`No client ID configured for ${serviceName}`);
+    }
+
+    const url = ProviderClass.generateAuthUrl(clientId, callbackUrl);
+    return { url, provider: serviceName };
+  }
+
+  /**
+   * Exchange an OAuth authorization code for tokens.
+   */
+  async exchangeCode(serviceName, code, callbackUrl) {
+    const ProviderClass = CloudStorageManager.providerClasses[serviceName?.toLowerCase()];
+    if (!ProviderClass) {
+      throw new Error(`Unknown provider: ${serviceName}`);
+    }
+    if (!ProviderClass.exchangeCodeForTokens) {
+      throw new Error(`${serviceName} does not support OAuth code exchange`);
+    }
+
+    const prefix = serviceName === 'googledrive' ? 'GOOGLE' : serviceName.toUpperCase();
+    const clientId = this.config.get(`${prefix}_CLIENT_ID`);
+    const clientSecret = this.config.get(`${prefix}_CLIENT_SECRET`);
+
+    if (!clientId || !clientSecret) {
+      throw new Error(`No client credentials configured for ${serviceName}`);
+    }
+
+    const tokens = await ProviderClass.exchangeCodeForTokens(clientId, clientSecret, code, callbackUrl);
+    return { provider: serviceName, ...tokens };
   }
 }

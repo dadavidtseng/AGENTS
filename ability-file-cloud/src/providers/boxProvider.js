@@ -974,6 +974,72 @@ class BoxProvider {
   }
 
   // ============================================================================
+  // URL TRANSFER HELPERS
+  // ============================================================================
+
+  /**
+   * Get a download URL for a file.
+   * Box provides a direct download URL via the /files/:id/content endpoint.
+   */
+  async getDownloadUrl(remotePath) {
+    const fileId = await this.getFileId(remotePath);
+    // Box /files/:id?fields=download_url returns the direct download URL
+    const response = await this.makeRequest(`/files/${fileId}?fields=id,name,size,download_url`);
+
+    if (response.download_url) {
+      return {
+        url: response.download_url,
+        metadata: { id: response.id, name: response.name, size: response.size },
+      };
+    }
+
+    // Fallback: use the content endpoint (requires auth header)
+    return {
+      url: `${this.baseUrl}/files/${fileId}/content`,
+      metadata: { id: response.id, name: response.name, size: response.size },
+      note: 'URL requires Authorization header',
+    };
+  }
+
+  // ============================================================================
+  // OAUTH SETUP HELPERS
+  // ============================================================================
+
+  static generateAuthUrl(clientId, redirectUri = 'http://localhost:8080/callback') {
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+    });
+    return `https://account.box.com/api/oauth2/authorize?${params.toString()}`;
+  }
+
+  static async exchangeCodeForTokens(clientId, clientSecret, code, redirectUri = 'http://localhost:8080/callback') {
+    const response = await fetch('https://api.box.com/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+        grant_type: 'authorization_code',
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Box token exchange failed: ${response.status} - ${errorText}`);
+    }
+
+    const tokenData = await response.json();
+    return {
+      accessToken: tokenData.access_token,
+      refreshToken: tokenData.refresh_token,
+      expiresIn: tokenData.expires_in,
+    };
+  }
+
+  // ============================================================================
   // ERROR HANDLING HELPERS
   // ============================================================================
 

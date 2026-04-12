@@ -1,9 +1,15 @@
 {
   "name": "ability-file-cloud",
   "type": "ability",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Cloud file operations - Dropbox, Google Drive, Box",
   "entrypoint": "dist/index.js",
+  "abilities": {
+    "secret-ability": "*"
+  },
+  "brokers": {
+    "remote": "wss://broker.dadavidtseng.com/kadi"
+  },
   "scripts": {
     "preflight": "node --version",
     "setup": "npm install && npm run build",
