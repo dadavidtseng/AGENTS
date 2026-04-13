@@ -1,6 +1,6 @@
 {
   "name": "ability-eval",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "Evaluation engine ability - code diffs, test results, logs, behavior traces analysis",
   "scripts": {
@@ -12,6 +12,7 @@
   "license": "Apache License 2.0",
   "dependencies": {
     "@kadi.build/core": "*",
+    "agents-library": "*",
     "tsx": "^4.21.0"
   },
   "devDependencies": {

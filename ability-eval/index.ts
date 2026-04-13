@@ -10,6 +10,8 @@ import fs from 'fs';
 import path from 'path';
 import https from 'https';
 import { KadiClient, z } from '@kadi.build/core';
+import { readConfig } from 'agents-library';
+import type { Config } from 'agents-library';
 
 // ============================================================================
 // Vault Credential Loading
@@ -39,16 +41,28 @@ async function loadVaultCredentials(): Promise<{ baseUrl?: string; apiKey?: stri
 }
 
 // ============================================================================
-// Configuration
+// Configuration — Priority: env var > config.toml > default
 // ============================================================================
+
+let cfg: Config | null = null;
+try {
+  cfg = readConfig();
+} catch {
+  // config.toml not found — use defaults
+}
 
 const _vault = await loadVaultCredentials();
 const MODEL_MANAGER_BASE_URL = (
   process.env.MODEL_MANAGER_BASE_URL || _vault.baseUrl || 'http://localhost:3000'
 ).replace(/\/$/, '');
 const MODEL_MANAGER_API_KEY = process.env.MODEL_MANAGER_API_KEY || _vault.apiKey || '';
-const EVAL_MODEL = process.env.EVAL_MODEL || 'gpt-4o';
-const MAX_TOKENS = parseInt(process.env.EVAL_MAX_TOKENS || '4096', 10);
+const EVAL_MODEL = process.env.EVAL_MODEL
+  || (cfg?.has('model.EVAL_MODEL') ? cfg.string('model.EVAL_MODEL') : null)
+  || 'gpt-5-mini';
+const MAX_TOKENS = parseInt(
+  process.env.EVAL_MAX_TOKENS
+  || (cfg?.has('model.MAX_TOKENS') ? String(cfg.number('model.MAX_TOKENS')) : '')
+  || '4096', 10);
 const TIMEOUT_MS = parseInt(process.env.EVAL_TIMEOUT_MS || '120000', 10);
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });

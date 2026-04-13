@@ -1,7 +1,7 @@
 {
   "name": "agent-lead",
   "type": "agent",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "entrypoint": "dist/index.js",
   "scripts": {
     "preflight": "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules')){console.error('Dependencies not installed. Run: npm install');process.exit(1)}console.log('✓ Dependencies OK')\"",
@@ -48,7 +48,7 @@
       "engine": "podman",
       "services": {
         "app": {
-          "image": "agent-lead:0.3.0",
+          "image": "agent-lead:0.3.1",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:programmer"],
           "expose": [
             {
@@ -59,7 +59,8 @@
           ],
           "env": [
             "NODE_ENV=production",
-            "AGENT_ROLE=programmer"
+            "AGENT_ROLE=programmer",
+            "REPO_PATH=/root/agent-playground"
           ],
           "resources": {
             "cpu": 0.5,
@@ -94,7 +95,7 @@
       "engine": "podman",
       "services": {
         "app": {
-          "image": "agent-lead:0.3.0",
+          "image": "agent-lead:0.3.1",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:artist"],
           "expose": [
             {
@@ -105,7 +106,8 @@
           ],
           "env": [
             "NODE_ENV=production",
-            "AGENT_ROLE=artist"
+            "AGENT_ROLE=artist",
+            "REPO_PATH=/root/agent-playground"
           ],
           "resources": {
             "cpu": 0.5,
@@ -140,7 +142,7 @@
       "engine": "podman",
       "services": {
         "app": {
-          "image": "agent-lead:0.3.0",
+          "image": "agent-lead:0.3.1",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:designer"],
           "expose": [
             {
@@ -151,7 +153,8 @@
           ],
           "env": [
             "NODE_ENV=production",
-            "AGENT_ROLE=designer"
+            "AGENT_ROLE=designer",
+            "REPO_PATH=/root/agent-playground"
           ],
           "resources": {
             "cpu": 0.5,
@@ -186,7 +189,7 @@
       "engine": "podman",
       "services": {
         "programmer": {
-          "image": "agent-lead:0.3.0",
+          "image": "agent-lead:0.3.1",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:programmer"],
           "expose": [
             {
@@ -197,7 +200,8 @@
           ],
           "env": [
             "NODE_ENV=production",
-            "AGENT_ROLE=programmer"
+            "AGENT_ROLE=programmer",
+            "REPO_PATH=/root/agent-playground"
           ],
           "resources": {
             "cpu": 0.5,
@@ -207,7 +211,7 @@
           "pricing": { "amount": "500", "denom": "uact" }
         },
         "artist": {
-          "image": "agent-lead:0.3.0",
+          "image": "agent-lead:0.3.1",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:artist"],
           "expose": [
             {
@@ -218,7 +222,8 @@
           ],
           "env": [
             "NODE_ENV=production",
-            "AGENT_ROLE=artist"
+            "AGENT_ROLE=artist",
+            "REPO_PATH=/root/agent-playground"
           ],
           "resources": {
             "cpu": 0.5,
@@ -228,7 +233,7 @@
           "pricing": { "amount": "500", "denom": "uact" }
         },
         "designer": {
-          "image": "agent-lead:0.3.0",
+          "image": "agent-lead:0.3.1",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:designer"],
           "expose": [
             {
@@ -239,7 +244,8 @@
           ],
           "env": [
             "NODE_ENV=production",
-            "AGENT_ROLE=designer"
+            "AGENT_ROLE=designer",
+            "REPO_PATH=/root/agent-playground"
           ],
           "resources": {
             "cpu": 0.5,
