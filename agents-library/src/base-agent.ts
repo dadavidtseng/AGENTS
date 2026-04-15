@@ -32,7 +32,7 @@ import { ProviderManager } from './providers/provider-manager.js';
 import { AnthropicProvider } from './providers/anthropic-provider.js';
 import { ModelManagerProvider } from './providers/model-manager-provider.js';
 import { MemoryService } from './memory/memory-service.js';
-import { logger } from './utils/logger.js';
+import { logger, setLogTransport } from './utils/logger.js';
 import { timer } from './utils/timer.js';
 import type { LLMProvider, ProviderConfig } from './providers/types.js';
 
@@ -228,6 +228,18 @@ export class BaseAgent {
       await this.client.connect();
       this.connected = true;
       logger.info(this.tag, `Connected to ${brokerCount} broker(s)`, timer.elapsed(this.timerKey));
+
+      // Register broker log transport (fire-and-forget, info+ only)
+      setLogTransport((level, module, message, data) => {
+        if (!this.connected) return;
+        this.client.publish('log.agent', {
+          agentId: this.config.agentId,
+          agentRole: this.config.agentRole,
+          level, module, message,
+          timestamp: new Date().toISOString(),
+          ...(data !== undefined && { data: String(data) }),
+        }, { broker: 'default', network: 'global' }).catch(() => {});
+      });
     } catch (error: any) {
       logger.error(this.tag, `Failed to connect to broker: ${error.message || String(error)}`, timer.elapsed(this.timerKey), error);
       throw error;
@@ -295,6 +307,9 @@ export class BaseAgent {
    */
   async shutdown(): Promise<void> {
     logger.info(this.tag, `Shutting down ${this.config.agentId}...`, timer.elapsed(this.timerKey));
+
+    // Clear broker log transport before disconnect
+    setLogTransport(null);
 
     // Dispose ProviderManager (stops health checks)
     if (this.providerManager) {

@@ -85,7 +85,7 @@ export {
 } from './base-agent.js';
 export { KadiEventPublisher, validateTopicPattern } from './kadi-event-publisher.js';
 export type { PublisherConfig } from './kadi-event-publisher.js';
-export { logger, setLogLevel, setAgentTag, MODULE_AGENT, MODULE_SLACK_BOT, MODULE_DISCORD_BOT, MODULE_TASK_HANDLER, MODULE_TOOLS } from './utils/logger.js';
+export { logger, setLogLevel, setAgentTag, setLogTransport, MODULE_AGENT, MODULE_SLACK_BOT, MODULE_DISCORD_BOT, MODULE_TASK_HANDLER, MODULE_TOOLS } from './utils/logger.js';
 export { timer, type Timer } from './utils/timer.js';
 export { isWsl, toNativePath } from './utils/path-utils.js';
 export { loadVaultCredentials, loadModelManagerCredentials, type VaultCredentials, type ModelManagerCredentials } from './utils/vault.js';

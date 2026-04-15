@@ -52,6 +52,20 @@ export function setAgentTag(name: string): void {
   MODULE_AGENT = name;
 }
 
+// ── Log transport (broker forwarding) ────────────────────────────────
+
+type LogTransport = (level: string, module: string, message: string, data?: any) => void;
+let logTransport: LogTransport | null = null;
+
+/**
+ * Register an external log transport (e.g. broker publish).
+ * Called once by BaseAgent after connect(). Pass null to clear.
+ * The transport is fire-and-forget — errors are silently swallowed.
+ */
+export function setLogTransport(transport: LogTransport | null): void {
+  logTransport = transport;
+}
+
 /**
  * ANSI Color Codes for Terminal Output
  *
@@ -158,6 +172,7 @@ class Logger {
         if (data) {
             console.log(data);
         }
+        if (logTransport) { try { logTransport('info', module, message, data); } catch {} }
     }
 
     /**
@@ -176,6 +191,7 @@ class Logger {
         if (data) {
             console.warn(data);
         }
+        if (logTransport) { try { logTransport('warn', module, message, data); } catch {} }
     }
 
     /**
@@ -206,12 +222,11 @@ class Logger {
         if (data) {
             console.error(data);
         }
+        if (logTransport) { try { logTransport('error', module, message, error instanceof Error ? error.message : error); } catch {} }
     }
 
     /**
      * Log debug message
-     *
-     * Used for detailed diagnostic information during development
      *
      * @param module - Module name
      * @param message - Log message
