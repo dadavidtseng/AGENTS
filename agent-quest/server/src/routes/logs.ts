@@ -31,7 +31,7 @@ export interface LogEntry {
   level: LogLevel;
   message: string;
   timestamp: string;
-  source: 'observer' | 'websocket' | 'system';
+  source: 'observer' | 'websocket' | 'system' | 'broker';
 }
 
 // ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ const buffer = new Map<string, LogEntry[]>();
 /** Listeners waiting for new entries (agentId → callbacks) */
 const followers = new Map<string, Set<(entry: LogEntry) => void>>();
 
-function pushEntry(agentId: string, level: LogLevel, message: string, source: LogEntry['source'] = 'observer') {
+export function pushEntry(agentId: string, level: LogLevel, message: string, source: LogEntry['source'] = 'observer') {
   const entry: LogEntry = {
     id: ++entryCounter,
     agentId,
@@ -257,7 +257,7 @@ logRoutes.get('/:agentId/logs', (req: Request, res: Response) => {
   // Send historical entries
   const history = getEntries(agentId, tail, level);
   for (const entry of history) {
-    res.write(`data: ${JSON.stringify(entry)}\n\n`);
+    res.write(`event: log\ndata: ${JSON.stringify(entry)}\n\n`);
   }
 
   // Send a marker so the client knows history is done
@@ -273,7 +273,7 @@ logRoutes.get('/:agentId/logs', (req: Request, res: Response) => {
 
   const removeFollower = addFollower(agentId, (entry) => {
     if (LOG_LEVEL_PRIORITY[entry.level] >= minPriority) {
-      res.write(`data: ${JSON.stringify(entry)}\n\n`);
+      res.write(`event: log\ndata: ${JSON.stringify(entry)}\n\n`);
     }
   });
 

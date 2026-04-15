@@ -1,16 +1,19 @@
 /**
- * LogsPage — Real-time container log viewer.
+ * LogsPage — Real-time log viewer with two modes:
+ *  1. Container Logs — streams from Docker/Podman containers via SSE
+ *  2. Agent Logs — streams from KĀDI agents via broker log forwarding
  *
- * Streams logs from Podman containers via SSE (GET /api/containers/:name/logs).
  * Features:
- *  - Container selector (sidebar pills)
- *  - "All" mode merges streams from every container
+ *  - Tab switcher: Containers | Agent Logs
+ *  - Sidebar selector (containers or agents)
+ *  - "All" mode merges streams
  *  - Level filter, full-text search, auto-scroll
- *  - Color-coded by container + level
+ *  - Color-coded by source + level
  *  - Export filtered logs to .txt
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useObserverContext } from '../contexts/ObserverContext';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -115,7 +118,11 @@ function useContainers(pollInterval = 15_000) {
         const data = await res.json();
         if (!cancelled) {
           setContainers(data.containers ?? []);
-          setError(null);
+          if (data.unavailable) {
+            setError(data.reason ?? 'Container runtime not available');
+          } else {
+            setError(null);
+          }
         }
       } catch (err: any) {
         if (!cancelled) setError(err.message);
@@ -264,10 +271,268 @@ function useAllContainerLogs(containerNames: string[], opts?: { tail?: number })
 }
 
 // ---------------------------------------------------------------------------
-// Component
+// Hook: agent log SSE stream
 // ---------------------------------------------------------------------------
 
-export function LogsPage() {
+interface AgentLogLine {
+  id: number;
+  agentId: string;
+  timestamp: string;
+  level: 'debug' | 'info' | 'warn' | 'error';
+  message: string;
+}
+
+function useAgentLogs(agentId: string | null, tail = 200) {
+  const [lines, setLines] = useState<AgentLogLine[]>([]);
+  const [connected, setConnected] = useState(false);
+
+  useEffect(() => {
+    if (!agentId) {
+      setLines([]);
+      setConnected(false);
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+
+    async function stream() {
+      try {
+        const res = await fetch(`/api/agents/${encodeURIComponent(agentId!)}/logs?follow=true&tail=${tail}`, {
+          signal: controller.signal,
+        });
+        if (!res.ok || !res.body) return;
+        setConnected(true);
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let currentEvent: string | null = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done || cancelled) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split('\n');
+          buffer = parts.pop() ?? '';
+
+          for (const line of parts) {
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7).trim();
+            } else if (line.startsWith('data: ') && currentEvent === 'log') {
+              try {
+                const entry = JSON.parse(line.slice(6));
+                if (!cancelled) {
+                  setLines((prev) => {
+                    const next = [...prev, {
+                      id: ++globalId,
+                      agentId: entry.agentId ?? agentId!,
+                      timestamp: entry.timestamp ?? new Date().toISOString(),
+                      level: entry.level ?? 'info',
+                      message: entry.message ?? '',
+                    }];
+                    return next.length > MAX_LINES ? next.slice(-MAX_LINES) : next;
+                  });
+                }
+              } catch { /* skip malformed */ }
+              currentEvent = null;
+            }
+          }
+        }
+      } catch {
+        /* abort or network error */
+      } finally {
+        if (!cancelled) setConnected(false);
+      }
+    }
+
+    stream();
+    return () => { cancelled = true; controller.abort(); };
+  }, [agentId, tail]);
+
+  return { lines, connected };
+}
+
+// ---------------------------------------------------------------------------
+// Component: Agent Logs View
+// ---------------------------------------------------------------------------
+
+function AgentLogsView() {
+  const { agents: observerAgents } = useObserverContext();
+  const agents = useMemo(
+    () => observerAgents.filter((a) => a.type === 'agent').sort((a, b) => a.name.localeCompare(b.name)),
+    [observerAgents],
+  );
+
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+  const { lines, connected } = useAgentLogs(selectedAgent);
+
+  const [levelFilter, setLevelFilter] = useState<LevelFilter>('all');
+  const [search, setSearch] = useState('');
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const [pinned, setPinned] = useState(true);
+
+  const filteredLines = useMemo(() => {
+    return lines.filter((l) => {
+      if (levelFilter !== 'all' && l.level !== levelFilter) return false;
+      if (search && !l.message.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    });
+  }, [lines, levelFilter, search]);
+
+  useEffect(() => {
+    if (pinned && bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [filteredLines.length, pinned]);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setPinned(el.scrollHeight - el.scrollTop - el.clientHeight < 60);
+  }, []);
+
+  const colorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    agents.forEach((a, i) => map.set(a.name, CONTAINER_COLORS[i % CONTAINER_COLORS.length]));
+    return map;
+  }, [agents]);
+
+  return (
+    <>
+      {agents.length === 0 && (
+        <div className="px-4 py-3 rounded-lg bg-yellow/10 border border-yellow/20 text-sm text-yellow">
+          No agents connected. Agent logs appear when agents publish via the broker.
+        </div>
+      )}
+
+      <div className="flex gap-4">
+        {/* Sidebar — agent pills */}
+        <div className="w-48 shrink-0 space-y-1 max-h-[calc(100vh-240px)] overflow-y-auto">
+          {agents.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => setSelectedAgent(a.name)}
+              className={`w-full text-left font-mono text-[0.7rem] px-3 py-2 rounded-lg border transition-colors cursor-pointer ${
+                selectedAgent === a.name
+                  ? 'bg-white/10 border-white/20 text-text-primary'
+                  : 'border-border text-text-secondary hover:bg-white/5'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <span className={`w-1.5 h-1.5 rounded-full ${a.status === 'active' ? 'bg-green' : 'bg-red'}`} />
+                <span className={colorMap.get(a.name) ?? 'text-text-secondary'}>{a.name}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {/* Main log area */}
+        <div className="flex-1 min-w-0 bg-[#0a0a0a] rounded-xl border border-border overflow-hidden">
+          {/* Toolbar */}
+          <div className="flex flex-wrap items-center gap-3 px-4 py-2.5 bg-bg-elevated border-b border-border">
+            <div className="flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green animate-pulse' : 'bg-red'}`} />
+              <span className="font-mono text-[0.65rem] text-text-secondary">
+                {connected ? 'Live' : selectedAgent ? 'Connecting...' : 'Select an agent'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1">
+              {(['all', 'info', 'warn', 'error'] as LevelFilter[]).map((lvl) => {
+                const active = levelFilter === lvl;
+                const colors: Record<string, string> = {
+                  all: active ? 'bg-white/10 border-white/20 text-text-primary' : 'border-border text-text-secondary',
+                  info: active ? 'bg-blue/10 border-blue/40 text-blue' : 'border-border text-text-tertiary',
+                  warn: active ? 'bg-yellow/10 border-yellow/40 text-yellow' : 'border-border text-text-tertiary',
+                  error: active ? 'bg-red/10 border-red/40 text-red' : 'border-border text-text-tertiary',
+                };
+                return (
+                  <button
+                    key={lvl}
+                    type="button"
+                    onClick={() => setLevelFilter(lvl)}
+                    className={`font-mono text-[0.6rem] px-2 py-0.5 rounded-full border transition-colors cursor-pointer ${colors[lvl]}`}
+                  >
+                    {lvl === 'all' ? 'All' : lvl.charAt(0).toUpperCase() + lvl.slice(1)}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="w-px h-4 bg-border" />
+
+            <div className="relative flex-1 min-w-[140px] max-w-[280px]">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search logs..."
+                className="w-full font-mono text-[0.65rem] bg-transparent border border-border rounded px-2 py-1 pl-6 text-text-secondary placeholder:text-text-tertiary outline-none focus:border-blue/40 transition-colors"
+              />
+              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[0.6rem] text-text-tertiary pointer-events-none">Q</span>
+            </div>
+
+            <div className="flex-1" />
+
+            <span className="font-mono text-[0.6rem] text-text-tertiary">
+              {filteredLines.length}/{lines.length}
+            </span>
+
+            <button
+              type="button"
+              onClick={() => { setPinned(true); bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }}
+              className={`font-mono text-[0.6rem] px-2 py-0.5 rounded border transition-colors cursor-pointer ${
+                pinned ? 'border-border text-text-tertiary' : 'border-blue/20 text-blue bg-blue/10'
+              }`}
+            >
+              {pinned ? 'Auto-scroll' : 'Scroll to bottom'}
+            </button>
+          </div>
+
+          {/* Log output */}
+          <div
+            ref={scrollRef}
+            onScroll={handleScroll}
+            className="max-h-[calc(100vh-280px)] overflow-y-auto overflow-x-hidden p-4 font-mono text-[0.7rem] leading-relaxed"
+          >
+            {!selectedAgent && (
+              <p className="text-text-tertiary">Select an agent from the sidebar to view logs.</p>
+            )}
+
+            {selectedAgent && filteredLines.length === 0 && lines.length === 0 && (
+              <p className="text-text-tertiary animate-pulse">
+                {connected ? 'Waiting for log output...' : 'Connecting...'}
+              </p>
+            )}
+
+            {filteredLines.map((line) => (
+              <div key={line.id} className="flex gap-2 py-[1px] hover:bg-white/[0.02]">
+                <span className="text-text-tertiary shrink-0 select-none w-[85px]">
+                  {formatTime(line.timestamp)}
+                </span>
+                <span className={`shrink-0 w-7 text-center select-none ${LEVEL_STYLES[line.level] ?? 'text-text-secondary'}`}>
+                  {LEVEL_TAG[line.level] ?? '???'}
+                </span>
+                <span className="text-text-secondary break-all whitespace-pre-wrap">{line.message}</span>
+              </div>
+            ))}
+
+            <div ref={bottomRef} />
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Component: Container Logs View (original)
+// ---------------------------------------------------------------------------
+
+function ContainerLogsView() {
   // Container list
   const { containers, error: containerError } = useContainers();
   const containerNames = useMemo(() => containers.map((c) => c.name), [containers]);
@@ -339,21 +604,11 @@ export function LogsPage() {
   }, [search]);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
-          Container Logs
-        </h1>
-        <p className="mt-1 text-sm text-text-secondary">
-          Real-time log streaming from Podman containers
-        </p>
-      </div>
-
+    <>
       {/* Error banner */}
       {containerError && (
         <div className="px-4 py-3 rounded-lg bg-red/10 border border-red/20 text-sm text-red">
-          Cannot reach Podman: {containerError}. Is the Podman machine running?
+          {containerError}
         </div>
       )}
 
@@ -538,6 +793,48 @@ export function LogsPage() {
           </div>
         </div>
       </div>
+    </>
+  );
+}
+// ---------------------------------------------------------------------------
+
+type LogTab = 'containers' | 'agents';
+
+export function LogsPage() {
+  const [tab, setTab] = useState<LogTab>('containers');
+
+  return (
+    <div className="space-y-6">
+      {/* Header + tabs */}
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-text-primary">Logs</h1>
+        <p className="mt-1 text-sm text-text-secondary">
+          Real-time log streaming from containers and agents
+        </p>
+
+        {/* Tab switcher */}
+        <div className="mt-4 flex gap-1">
+          {([
+            { key: 'containers' as LogTab, label: 'Containers' },
+            { key: 'agents' as LogTab, label: 'Agent Logs' },
+          ]).map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              className={`font-mono text-[0.75rem] px-4 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                tab === key
+                  ? 'bg-white/10 border-white/20 text-text-primary'
+                  : 'border-border text-text-secondary hover:bg-white/5'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === 'containers' ? <ContainerLogsView /> : <AgentLogsView />}
     </div>
   );
 }

@@ -8,6 +8,8 @@
 
 import type { KadiClient, BrokerEvent } from '@kadi.build/core';
 import { broadcastEvent, type WsEventName } from './websocket.js';
+import { pushEntry } from './routes/logs.js';
+import type { LogLevel } from './routes/logs.js';
 
 // ---------------------------------------------------------------------------
 // Topic → WsEventName mapping
@@ -64,4 +66,15 @@ export function setupBrokerEventBridge(client: KadiClient): void {
 
     console.log(`[agent-quest] Subscribed to broker pattern: ${pattern}`);
   }
+
+  // Subscribe to agent log forwarding (fire-and-forget from agents-library logger)
+  client.subscribe('log.*', (event: BrokerEvent) => {
+    const d = event.data as any;
+    if (event.channel !== 'log.agent') return;
+    if (!d?.agentId || !d?.message) return;
+    const level = (['info', 'warn', 'error'].includes(d.level) ? d.level : 'info') as LogLevel;
+    const prefix = d.module ? `[${d.module}] ` : '';
+    pushEntry(d.agentId, level, `${prefix}${d.message}`, 'broker');
+  });
+  console.log('[agent-quest] Subscribed to log.* for log forwarding');
 }
