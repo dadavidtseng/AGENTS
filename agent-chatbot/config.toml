@@ -6,13 +6,13 @@ ID = "agent-chatbot"
 ROLE = "chatbot"
 VERSION = "0.1.0"
 
-[broker.local]
-URL = "ws://localhost:8080/kadi"
-NETWORKS = ["chatbot"]
-
-#[broker.remote]
-#URL = "wss://broker.dadavidtseng.com/kadi"
+#[broker.local]
+#URL = "ws://localhost:8080/kadi"
 #NETWORKS = ["chatbot"]
+
+[broker.remote]
+URL = "wss://broker.kadi.build/kadi"
+NETWORKS = ["chatbot"]
 
 [bot.discord]
 ENABLED = true

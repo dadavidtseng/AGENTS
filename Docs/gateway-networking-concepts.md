@@ -17,12 +17,12 @@ Every service on the internet is a process listening on an IP + port. A machine 
 DNS (Domain Name System) is a global phonebook:
 
 ```
-broker.dadavidtseng.info → 64.23.168.129
+broker.dadavidtseng.com → 64.23.168.129
 ```
 
 A domain is just a name that resolves to an IP. Your registrar (Gandi) holds these records.
 
-**Wildcard record** (`*.dadavidtseng.info → 64.23.168.129`) means any undefined subdomain points to the same IP. Explicit records (like `mcp`, `www`) take priority over the wildcard.
+**Wildcard record** (`*.dadavidtseng.com → 64.23.168.129`) means any undefined subdomain points to the same IP. Explicit records (like `mcp`, `www`) take priority over the wildcard.
 
 ## DDNS — for when your IP changes
 
@@ -40,24 +40,24 @@ Browsers have defaults:
 - `http://` → port 80
 - `https://` → port 443
 
-When you type `https://broker.dadavidtseng.info`, the browser connects to `64.23.168.129:443`. No port needed in the URL because 443 is implied.
+When you type `https://broker.dadavidtseng.com`, the browser connects to `64.23.168.129:443`. No port needed in the URL because 443 is implied.
 
-If you exposed kadi-broker directly, users would need `https://broker.dadavidtseng.info:8080` — ugly, and you'd need separate TLS certs for each service.
+If you exposed kadi-broker directly, users would need `https://broker.dadavidtseng.com:8080` — ugly, and you'd need separate TLS certs for each service.
 
 ## Gateway / Reverse Proxy — the traffic cop
 
 Caddy (kadi-gateway) sits on ports 80/443 and routes traffic based on the **hostname** in the request:
 
 ```
-Browser request: GET https://broker.dadavidtseng.info/health
+Browser request: GET https://broker.dadavidtseng.com/health
                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
                       Host header
 
 Caddy receives on :443, reads the Host header, looks up its config:
 
-  broker.dadavidtseng.info  → forward to kadi-broker:8080
-  rabbit.dadavidtseng.info  → forward to kadi-rabbit:15672
-  chatbot.dadavidtseng.info → forward to agent-chatbot:3000
+  broker.dadavidtseng.com  → forward to kadi-broker:8080
+  rabbit.dadavidtseng.com  → forward to kadi-rabbit:15672
+  chatbot.dadavidtseng.com → forward to agent-chatbot:3000
 ```
 
 One IP, one port (443), many services. That's the whole point of a reverse proxy.
@@ -82,7 +82,7 @@ In kadi-gateway's `config.json`:
 { "subdomain": "broker", "upstream": "kadi-broker:8080" }
 ```
 
-Any request to `broker.dadavidtseng.info` → proxy to `kadi-broker:8080`.
+Any request to `broker.dadavidtseng.com` → proxy to `kadi-broker:8080`.
 
 Tunnel wildcard example:
 ```json
@@ -92,7 +92,7 @@ Tunnel wildcard example:
 ## URL — putting it all together
 
 ```
-https://broker.dadavidtseng.info:443/api/admin/observer
+https://broker.dadavidtseng.com:443/api/admin/observer
 │       │                        │   │
 │       │                        │   └─ Path (route within the service)
 │       │                        └─ Port (443 = default for https, usually omitted)
@@ -109,7 +109,7 @@ Internet
 ┌─────────────────────────────────────────────────┐
 │  64.23.168.129 (DigitalOcean VPS)               │
 │                                                  │
-│  *.dadavidtseng.info → this IP (DNS wildcard)   │
+│  *.dadavidtseng.com → this IP (DNS wildcard)   │
 │                                                  │
 │  ┌──────────────────────────────────────────┐   │
 │  │  Caddy (kadi-gateway) :80 / :443         │   │

@@ -11,13 +11,13 @@ VERSION = "0.3.4"
 [logging]
 LEVEL = "debug"
 
-[broker.local]
-URL = "ws://localhost:8080/kadi"
-NETWORKS = ["chatbot", "quest","producer", "file", "global"]
+#[broker.local]
+#URL = "ws://localhost:8080/kadi"
+#NETWORKS = ["chatbot", "quest","producer", "file", "global"]
 
-#[broker.remote]
-#URL = "wss://broker.dadavidtseng.com/kadi"
-#NETWORKS = ["chatbot", "quest", "producer", "file", "global"]
+[broker.remote]
+URL = "wss://broker.kadi.build/kadi"
+NETWORKS = ["chatbot", "quest", "producer", "file", "global", "voice-services"]
 
 [bot]
 TOOL_TIMEOUT_MS = 10000

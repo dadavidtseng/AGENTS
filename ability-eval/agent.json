@@ -1,7 +1,7 @@
 {
   "name": "ability-eval",
   "type": "ability",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Evaluation engine ability - code diffs, test results, logs, behavior traces analysis",
   "entrypoint": "dist/index.js",
   "scripts": {

@@ -1,7 +1,7 @@
 {
   "name": "agent-qa",
   "type": "agent",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "entrypoint": "dist/index.js",
   "scripts": {
     "preflight": "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules')){console.error('Dependencies not installed. Run: npm install');process.exit(1)}console.log('✓ Dependencies OK')\"",
@@ -42,7 +42,7 @@
       "engine": "podman",
       "services": {
         "app": {
-          "image": "agent-qa:0.3.1",
+          "image": "agent-qa:0.3.2",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start"],
           "expose": [
             {
@@ -78,8 +78,8 @@
     }
   },
   "abilities": {
-    "secret-ability": "^0.9.4",
-    "ability-file-local": "^0.1.1",
+    "secret-ability": "*",
+    "ability-file-local": "*",
     "ability-eval": "*",
     "ability-vision": "*",
     "ability-file-remote": "*"

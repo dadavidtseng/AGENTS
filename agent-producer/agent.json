@@ -1,7 +1,7 @@
 {
   "name": "agent-producer",
   "type": "agent",
-  "version": "0.3.18",
+  "version": "0.3.20",
   "entrypoint": "dist/index.js",
   "scripts": {
     "setup": "npm run build",
@@ -26,7 +26,7 @@
       ],
       "env": {
         "NODE_ENV": "production"
-
+      }
     }
   },
   "deploy": {
@@ -41,7 +41,7 @@
       "engine": "podman",
       "services": {
         "app": {
-          "image": "agent-producer:0.3.18",
+          "image": "agent-producer:0.3.20",
           "command": ["sh", "-c", "kadi secret receive --vault whatever && kadi run start"],
           "expose": [
             {

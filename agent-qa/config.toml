@@ -14,7 +14,7 @@ LEVEL = "debug"
 
 [broker.remote]
 URL = "wss://broker.dadavidtseng.com/kadi"
-NETWORKS = ["global"]
+NETWORKS = ["qa", "quest", "git", "eval", "global"]
 
 [provider]
 PRIMARY = "model-manager"

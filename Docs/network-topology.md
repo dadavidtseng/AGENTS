@@ -20,9 +20,9 @@ graph TB
     end
 
     subgraph DO["DO VPS (64.23.168.129)"]
-        RB[kadi-broker<br/>broker.dadavidtseng.info]
+        RB[kadi-broker<br/>broker.dadavidtseng.com]
         GW[kadi-gateway / Caddy<br/>TLS + reverse proxy]
-        DOCS[agent-docs<br/>docs.dadavidtseng.info]
+        DOCS[agent-docs<br/>docs.dadavidtseng.com]
 
         subgraph WORKERS["Workers (~/agent-playground/)"]
             WP[agent-worker<br/>programmer]
@@ -41,9 +41,9 @@ graph TB
     end
 
     subgraph AKASH["Akash Network"]
-        ARC[ability-arcadedb<br/>arcadedb.dadavidtseng.info]
-        AQ[agent-quest<br/>quest.dadavidtseng.info]
-        AE[agent-expert<br/>expert.dadavidtseng.info]
+        ARC[ability-arcadedb<br/>arcadedb.dadavidtseng.com]
+        AQ[agent-quest<br/>quest.dadavidtseng.com]
+        AE[agent-expert<br/>expert.dadavidtseng.com]
         AP[agent-producer]
         AC[agent-chatbot]
         AL[agent-lead ×3]
@@ -81,7 +81,7 @@ Two kadi-broker instances serve different purposes:
 
 | Broker | URL | Location | Purpose |
 |--------|-----|----------|---------|
-| **Remote** | `wss://broker.dadavidtseng.info/kadi` | DO VPS | Production hub. All deployed agents (Akash, DO, local) connect here for cross-deployment communication. |
+| **Remote** | `wss://broker.dadavidtseng.com/kadi` | DO VPS | Production hub. All deployed agents (Akash, DO, local) connect here for cross-deployment communication. |
 | **Local** | `ws://localhost:8080/kadi` | Developer machine | Development/testing. Low-latency local-to-local (e.g., agent-builder ↔ DaemonAgent). Offline-capable. |
 
 **Dual-broker pattern**: agent-builder and DaemonAgent connect to **both** brokers:
@@ -92,7 +92,7 @@ Most agents declare both in `agent.json`:
 ```json
 {
   "brokers": {
-    "default": "wss://broker.dadavidtseng.info/kadi",
+    "default": "wss://broker.dadavidtseng.com/kadi",
     "local": "ws://localhost:8080/kadi"
   }
 }
@@ -105,7 +105,7 @@ graph LR
         LB((kadi-broker<br/>local))
     end
 
-    subgraph REMOTE_BROKER["Remote Broker (wss://broker.dadavidtseng.info)"]
+    subgraph REMOTE_BROKER["Remote Broker (wss://broker.dadavidtseng.com)"]
         direction TB
         RB((kadi-broker<br/>remote))
     end
@@ -135,9 +135,9 @@ Stable, always-on infrastructure and worker compute.
 
 | Service | Subdomain | Type |
 |---------|-----------|------|
-| **kadi-broker** | `broker.dadavidtseng.info` | WebSocket broker |
-| **kadi-gateway** (Caddy) | `*.dadavidtseng.info` | TLS + reverse proxy + static files |
-| **agent-docs** (static) | `docs.dadavidtseng.info` | Caddy `file_server` (CI rsyncs `dist/`) |
+| **kadi-broker** | `broker.dadavidtseng.com` | WebSocket broker |
+| **kadi-gateway** (Caddy) | `*.dadavidtseng.com` | TLS + reverse proxy + static files |
+| **agent-docs** (static) | `docs.dadavidtseng.com` | Caddy `file_server` (CI rsyncs `dist/`) |
 | **agent-worker-programmer** | — | Connects to remote broker |
 | **agent-worker-artist** | — | Connects to remote broker |
 | **agent-worker-designer** | — | Connects to remote broker |
@@ -162,9 +162,9 @@ Compute workloads, frequently redeployed (iterating on agent logic).
 
 | Service | Reverse Proxy via kadi-gateway? | Subdomain |
 |---------|-------------------------------|-----------|
-| **ability-arcadedb** | Yes | `arcadedb.dadavidtseng.info` |
-| **agent-quest** (dashboard) | Yes | `quest.dadavidtseng.info` |
-| **agent-expert** (web UI + LLM) | Yes | `expert.dadavidtseng.info` |
+| **ability-arcadedb** | Yes | `arcadedb.dadavidtseng.com` |
+| **agent-quest** (dashboard) | Yes | `quest.dadavidtseng.com` |
+| **agent-expert** (web UI + LLM) | Yes | `expert.dadavidtseng.com` |
 | **agent-producer** | No (broker-only) | — |
 | **agent-chatbot** | No (broker + Discord/Slack APIs) | — |
 | **agent-lead** (×3 roles) | No (broker-only, event-driven) | — |
@@ -522,7 +522,7 @@ agent-chatbot (Akash)
 agent-producer (Akash)
   ──subscribe──▶ creates quest plan (LLM)
   ▼
-User approves via agent-quest dashboard (quest.dadavidtseng.info)
+User approves via agent-quest dashboard (quest.dadavidtseng.com)
   ▼
 agent-producer
   ──publish──▶ quest.tasks_ready
@@ -594,7 +594,7 @@ DaemonAgent registers tools on the remote broker, enabling remote workers to int
 
 ```
 DaemonAgent (Local, Windows PC)
-  ├── Connects to: wss://broker.dadavidtseng.info/kadi + ws://localhost:8080/kadi
+  ├── Connects to: wss://broker.dadavidtseng.com/kadi + ws://localhost:8080/kadi
   ├── Networks: utility, global
   ├── Tools:
   │   ├── daemon_create_script(path, content)   → writes to Run/Data/Scripts/
@@ -634,9 +634,9 @@ C4Context
     }
 
     Boundary(akash, "Akash Network") {
-        System(arcadedb, "ability-arcadedb", "arcadedb.dadavidtseng.info")
-        System(quest, "agent-quest", "quest.dadavidtseng.info")
-        System(expert, "agent-expert", "expert.dadavidtseng.info")
+        System(arcadedb, "ability-arcadedb", "arcadedb.dadavidtseng.com")
+        System(quest, "agent-quest", "quest.dadavidtseng.com")
+        System(expert, "agent-expert", "expert.dadavidtseng.com")
         System(producer, "agent-producer", "Quest orchestration")
         System(chatbot, "agent-chatbot", "Discord/Slack")
         System(lead, "agent-lead ×3", "Task assignment")
@@ -699,15 +699,15 @@ DaemonAgent repo clone (3 worktrees): ~500 MB–1 GB disk. 60 GB disk is suffici
 
 ## 11. DNS & Reverse Proxy
 
-Wildcard DNS: `*.dadavidtseng.info → 64.23.168.129` (Gandi)
+Wildcard DNS: `*.dadavidtseng.com → 64.23.168.129` (Gandi)
 
 | Subdomain | Target | Caddy Config |
 |-----------|--------|-------------|
-| `broker.dadavidtseng.info` | kadi-broker (Docker, kadi-net) | `reverse_proxy kadi-broker:8080` |
-| `rabbit.dadavidtseng.info` | RabbitMQ (Docker, kadi-net) | `reverse_proxy kadi-rabbit:15672` |
-| `docs.dadavidtseng.info` | Static files (`/srv/docs`) | `file_server` + `encode gzip` |
-| `arcadedb.dadavidtseng.info` | Akash ingress | `reverse_proxy` + `header_up Host` |
-| `quest.dadavidtseng.info` | Akash ingress (planned) | `reverse_proxy` + `header_up Host` |
-| `expert.dadavidtseng.info` | Akash ingress (planned) | `reverse_proxy` + `header_up Host` |
+| `broker.dadavidtseng.com` | kadi-broker (Docker, kadi-net) | `reverse_proxy kadi-broker:8080` |
+| `rabbit.dadavidtseng.com` | RabbitMQ (Docker, kadi-net) | `reverse_proxy kadi-rabbit:15672` |
+| `docs.dadavidtseng.com` | Static files (`/srv/docs`) | `file_server` + `encode gzip` |
+| `arcadedb.dadavidtseng.com` | Akash ingress | `reverse_proxy` + `header_up Host` |
+| `quest.dadavidtseng.com` | Akash ingress (planned) | `reverse_proxy` + `header_up Host` |
+| `expert.dadavidtseng.com` | Akash ingress (planned) | `reverse_proxy` + `header_up Host` |
 
 Caddy auto-provisions HTTPS via Let's Encrypt for all subdomains.

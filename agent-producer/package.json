@@ -1,6 +1,6 @@
 {
   "name": "agent-producer",
-  "version": "0.3.18",
+  "version": "0.3.20",
   "description": "Agent orchestrator - KĀDI agent for coordinating worker agents via KĀDI protocol",
   "type": "module",
   "main": "dist/index.js",
