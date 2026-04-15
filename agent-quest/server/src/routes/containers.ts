@@ -1,19 +1,20 @@
 /**
- * Container Log Streaming Routes — Podman container management + SSE log stream.
+ * Container Log Streaming Routes — Docker/Podman container management + SSE log stream.
  *
  * GET /api/containers           — List running containers
- * GET /api/containers/:name/logs — SSE stream of container logs (podman logs -f)
+ * GET /api/containers/:name/logs — SSE stream of container logs (docker/podman logs -f)
  *
- * Podman runs in WSL; commands are invoked via `wsl podman ...` on Windows
- * or `podman ...` directly when running inside WSL/Linux.
+ * On Windows, commands are invoked via `wsl podman ...`.
+ * On Linux, defaults to `docker`, falls back to `podman`.
  *
  * Environment:
- *  - PODMAN_CMD: Override the podman command (default: auto-detect wsl vs native)
+ *  - CONTAINER_CMD: Override the container command (default: auto-detect docker vs podman)
  */
 
 import { Router, type Request, type Response } from 'express';
-import { spawn, type ChildProcess } from 'child_process';
+import { spawn, execSync, type ChildProcess } from 'child_process';
 import os from 'os';
+import { logger, MODULE_AGENT, timer } from 'agents-library';
 
 export const containerRoutes = Router();
 
@@ -27,28 +28,53 @@ function stripAnsi(str: string): string {
   return str.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '');
 }
 
+/** Check if a container runtime is functional (not just installed). */
+function runtimeWorks(cmd: string): boolean {
+  try {
+    execSync(`${cmd} ps --format json`, { stdio: 'pipe', timeout: 5000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Cached runtime detection result. */
+let _cachedRuntime: { cmd: string; prefix: string[] } | null = null;
+
 /**
- * Build the command + args to invoke podman.
- * On Windows, use `wsl podman`; otherwise use `podman` directly.
+ * Build the command + args to invoke the container runtime.
+ * Priority: CONTAINER_CMD env var → auto-detect (docker or podman) → wsl podman (Windows).
  */
-function podmanCommand(): { cmd: string; prefix: string[] } {
-  const override = process.env.PODMAN_CMD;
+function containerCommand(): { cmd: string; prefix: string[] } {
+  if (_cachedRuntime) return _cachedRuntime;
+
+  const override = process.env.CONTAINER_CMD;
   if (override) {
-    return { cmd: override, prefix: [] };
+    _cachedRuntime = { cmd: override, prefix: [] };
+    return _cachedRuntime;
   }
   if (os.platform() === 'win32') {
-    return { cmd: 'wsl', prefix: ['podman'] };
+    _cachedRuntime = { cmd: 'wsl', prefix: ['podman'] };
+    return _cachedRuntime;
   }
-  return { cmd: 'podman', prefix: [] };
+  // Linux: auto-detect — try docker first, then podman (check if runtime actually works)
+  if (runtimeWorks('docker')) {
+    _cachedRuntime = { cmd: 'docker', prefix: [] };
+  } else if (runtimeWorks('podman')) {
+    _cachedRuntime = { cmd: 'podman', prefix: [] };
+  } else {
+    _cachedRuntime = { cmd: 'docker', prefix: [] }; // will fail gracefully
+  }
+  return _cachedRuntime;
 }
 
 /**
  * Spawn a podman command and collect stdout + stderr into a single string.
  * Rejects on non-zero exit or timeout.
  */
-function execPodman(args: string[], timeoutMs = 10_000): Promise<string> {
+function execContainer(args: string[], timeoutMs = 10_000): Promise<string> {
   return new Promise((resolve, reject) => {
-    const { cmd, prefix } = podmanCommand();
+    const { cmd, prefix } = containerCommand();
     const child = spawn(cmd, [...prefix, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
 
     let out = '';
@@ -93,30 +119,45 @@ interface ContainerInfo {
 
 containerRoutes.get('/', async (_req: Request, res: Response) => {
   try {
-    const raw = await execPodman([
+    const raw = await execContainer([
       'ps', '--format', 'json',
     ]);
 
-    const containers: unknown[] = JSON.parse(raw);
+    // Docker outputs one JSON object per line (NDJSON); Podman outputs a JSON array.
+    let containers: unknown[];
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('[')) {
+      // Podman: JSON array
+      containers = JSON.parse(trimmed);
+    } else {
+      // Docker: one JSON object per line
+      containers = trimmed
+        .split('\n')
+        .filter(line => line.trim())
+        .map(line => JSON.parse(line));
+    }
 
     const result: ContainerInfo[] = containers.map((c: any) => ({
-      id: (c.Id ?? '').slice(0, 12),
-      name: Array.isArray(c.Names) ? c.Names[0] : (c.Names ?? c.Id ?? ''),
+      id: (c.Id ?? c.ID ?? '').slice(0, 12),
+      name: Array.isArray(c.Names) ? c.Names[0] : (c.Names ?? c.Id ?? c.ID ?? ''),
       image: c.Image ?? '',
       status: c.Status ?? '',
       state: c.State ?? '',
-      ports: (c.Ports ?? []).map((p: any) =>
-        p.host_port ? `${p.host_port}→${p.container_port}/${p.protocol}` : `${p.container_port}/${p.protocol}`,
-      ),
+      ports: Array.isArray(c.Ports)
+        ? c.Ports.map((p: any) =>
+            p.host_port ? `${p.host_port}→${p.container_port}/${p.protocol}` : `${p.container_port}/${p.protocol}`,
+          )
+        : typeof c.Ports === 'string' ? [c.Ports] : [],
       created: c.CreatedAt ?? '',
     }));
 
     res.json({ containers: result });
   } catch (err: any) {
-    console.error('[containers] Failed to list:', err.message);
-    res.status(503).json({
-      error: 'Cannot reach Podman. Is it running?',
-      detail: err.message,
+    logger.warn(MODULE_AGENT, `[containers] No container runtime available: ${err.message}`, timer.elapsed('main'));
+    res.json({
+      containers: [],
+      unavailable: true,
+      reason: 'No container runtime (docker/podman) available. Container logs are not supported in this environment.',
     });
   }
 });
@@ -147,8 +188,8 @@ containerRoutes.get('/:name/logs', (req: Request, res: Response) => {
     'X-Accel-Buffering': 'no',
   });
 
-  // Build podman logs command
-  const { cmd, prefix } = podmanCommand();
+  // Build container logs command
+  const { cmd, prefix } = containerCommand();
   const args = [
     ...prefix,
     'logs',

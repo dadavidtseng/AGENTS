@@ -1,6 +1,6 @@
 {
   "name": "agent-quest",
-  "version": "0.3.7",
+  "version": "0.3.9",
   "description": "KĀDI Agent for Quest Dashboard - React frontend with Express backend for quest/task management via KĀDI broker",
   "private": true,
   "type": "module",

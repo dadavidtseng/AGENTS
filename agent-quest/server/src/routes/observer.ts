@@ -17,6 +17,7 @@
 
 import { Router, type Request, type Response } from 'express';
 import { Readable } from 'stream';
+import { logger, MODULE_AGENT, timer } from 'agents-library';
 import { getBrokerUrls, secrets } from '../kadi-agent.js';
 
 export const observerRoutes = Router();
@@ -51,6 +52,9 @@ observerRoutes.get('/', async (req: Request, res: Response) => {
   const brokers = getAllBrokerBases();
   const password = secrets['OBSERVER_PASSWORD'] ?? '';
 
+  logger.info(MODULE_AGENT, `[observer-proxy] Brokers: ${brokers.map(b => `${b.name}=${b.httpBase}`).join(', ')}`, timer.elapsed('main'));
+  logger.info(MODULE_AGENT, `[observer-proxy] OBSERVER_PASSWORD: ${password ? 'set (' + password.length + ' chars)' : 'NOT SET'}`, timer.elapsed('main'));
+
   // Prepare upstream requests
   const abortControllers = brokers.map(() => new AbortController());
 
@@ -77,14 +81,14 @@ observerRoutes.get('/', async (req: Request, res: Response) => {
         });
 
         if (!upstream.ok) {
-          console.warn(`[observer-proxy] Broker ${name} returned ${upstream.status}`);
+          logger.warn(MODULE_AGENT, `[observer-proxy] Broker ${name} returned ${upstream.status}`, timer.elapsed('main'));
           return null;
         }
 
         return { name, upstream };
       } catch (err) {
         if (err instanceof Error && err.name !== 'AbortError') {
-          console.warn(`[observer-proxy] Failed to connect to broker ${name}:`, err.message);
+          logger.warn(MODULE_AGENT, `[observer-proxy] Failed to connect to broker ${name}: ${err instanceof Error ? err.message : err}`, timer.elapsed('main'));
         }
         return null;
       }
@@ -92,7 +96,7 @@ observerRoutes.get('/', async (req: Request, res: Response) => {
 
     const upstreams = (await Promise.all(upstreamPromises)).filter((u) => u !== null);
 
-    console.log(`[observer-proxy] Connected to ${upstreams.length}/${brokers.length} brokers:`, upstreams.map(u => u.name).join(', '));
+    logger.info(MODULE_AGENT, `[observer-proxy] Connected to ${upstreams.length}/${brokers.length} brokers: ${upstreams.map(u => u.name).join(', ')}`, timer.elapsed('main'));
 
     if (upstreams.length === 0) {
       res.status(502).json({ error: 'Failed to connect to any broker' });
@@ -141,11 +145,7 @@ observerRoutes.get('/', async (req: Request, res: Response) => {
                 }
               }
 
-              console.log(`[observer-proxy] Forwarding event from broker ${name}:`, {
-                event: currentEvent,
-                brokerName: data.brokerName,
-                agentCount: data.agents?.length || 0,
-              });
+              logger.debug(MODULE_AGENT, `[observer-proxy] Forwarding event from broker ${name}: event=${currentEvent}, agents=${data.agents?.length || 0}`, timer.elapsed('main'));
 
               // Re-serialize and send
               res.write(`data: ${JSON.stringify(data)}\n`);
@@ -163,7 +163,7 @@ observerRoutes.get('/', async (req: Request, res: Response) => {
 
       readable.on('error', (err: Error) => {
         if (err.name === 'AbortError') return;
-        console.error(`[observer-proxy] Stream error from ${name}:`, err.message);
+        logger.error(MODULE_AGENT, `[observer-proxy] Stream error from ${name}: ${err.message}`, timer.elapsed('main'));
       });
       
       return readable;
@@ -182,7 +182,7 @@ observerRoutes.get('/', async (req: Request, res: Response) => {
   } catch (err: unknown) {
     if (err instanceof Error && err.name === 'AbortError') return;
 
-    console.error('[observer-proxy] Failed to connect to brokers:', (err as Error).message);
+    logger.error(MODULE_AGENT, `[observer-proxy] Failed to connect to brokers: ${(err as Error).message}`, timer.elapsed('main'));
     if (!res.headersSent) {
       res.status(502).json({
         error: 'Failed to connect to broker observer endpoints',

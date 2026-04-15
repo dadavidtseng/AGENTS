@@ -110,11 +110,12 @@ app.get('/api/health', (_req: Request, res: Response) => {
 app.get('/api/tools', async (_req: Request, res: Response) => {
   const toolMap = new Map<string, { name: string; description?: string; inputSchema?: unknown }>();
 
-  // Source: mcp-server-quest direct endpoint
+  // Source: mcp-server-quest direct endpoint (configurable URL for remote deployments)
   const questPort = process.env.MCP_QUEST_PORT ?? '3100';
   const questPrefix = process.env.MCP_QUEST_PREFIX ?? 'quest_';
+  const questToolsUrl = process.env.MCP_QUEST_TOOLS_URL ?? `http://localhost:${questPort}/tools`;
   try {
-    const resp = await fetch(`http://localhost:${questPort}/tools`);
+    const resp = await fetch(questToolsUrl);
     if (resp.ok) {
       const data = (await resp.json()) as any;
       const tools = data?.tools ?? [];

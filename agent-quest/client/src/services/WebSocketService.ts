@@ -57,8 +57,21 @@ export interface WebSocketServiceOptions {
   maxEventHistory?: number;
 }
 
+/**
+ * Derive WebSocket URL from the current page location.
+ * - https://quest.dadavidtseng.com → wss://quest.dadavidtseng.com/ws
+ * - http://localhost:5173 (Vite dev) → ws://localhost:5173/ws
+ * - http://localhost:8888 → ws://localhost:8888/ws
+ * - SSR / non-browser → fallback to localhost:8888
+ */
+function deriveWsUrl(): string {
+  if (typeof window === 'undefined') return 'ws://localhost:8888/ws';
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${window.location.host}/ws`;
+}
+
 const DEFAULTS: Required<WebSocketServiceOptions> = {
-  url: 'ws://localhost:8888/ws',
+  url: deriveWsUrl(),
   maxReconnectAttempts: Infinity,
   initialReconnectDelay: 1_000,
   maxReconnectDelay: 30_000,

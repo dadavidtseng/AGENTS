@@ -1,7 +1,7 @@
 {
   "name": "agent-quest",
   "type": "agent",
-  "version": "0.3.7",
+  "version": "0.3.9",
   "entrypoint": "dist/index.js",
   "scripts": {
     "preflight": "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules')){console.error('Dependencies not installed. Run: npm install');process.exit(1)}console.log('✓ Dependencies OK')\"",
@@ -47,7 +47,7 @@
       "engine": "podman",
       "services": {
         "app": {
-          "image": "agent-quest:0.3.7",
+          "image": "agent-quest:0.3.9",
           "command": ["sh", "-c", "kadi secret receive --vault observer && kadi run start"],
           "expose": [
             {

@@ -243,6 +243,8 @@ export class ObserverService {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
+      console.log(`[observer] SSE response: ${response.status}, content-type: ${response.headers.get('content-type')}`);
+
       if (!response.body) {
         throw new Error('Response body is null — SSE not supported');
       }
@@ -262,6 +264,7 @@ export class ObserverService {
   private async processStream(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
     const decoder = new TextDecoder();
     let buffer = '';
+    let currentEvent: string | null = null;
 
     try {
       while (true) {
@@ -276,14 +279,13 @@ export class ObserverService {
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
 
-        let currentEvent: string | null = null;
-
         for (const line of lines) {
           if (line.startsWith('event: ')) {
             currentEvent = line.slice(7).trim();
           } else if (line.startsWith('data: ') && currentEvent) {
             try {
               const data = JSON.parse(line.slice(6));
+              console.log(`[observer] Received event: ${currentEvent}, agents: ${data.agents?.length ?? '?'}, networks: ${data.networks?.length ?? '?'}`);
               this.handleEvent(currentEvent, data);
             } catch {
               console.warn('[observer] Failed to parse event data');
@@ -551,8 +553,10 @@ export class ObserverService {
   }
 
   private notifySnapshot(): void {
+    // Shallow copy so React detects the new reference and re-renders
+    const copy = { ...this._snapshot };
     for (const handler of this.snapshotListeners) {
-      try { handler(this._snapshot); } catch { /* ignore */ }
+      try { handler(copy); } catch { /* ignore */ }
     }
   }
 }
