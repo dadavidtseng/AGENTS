@@ -1,7 +1,7 @@
 {
   "name": "agent-lead",
   "type": "agent",
-  "version": "0.3.1",
+  "version": "0.3.3",
   "entrypoint": "dist/index.js",
   "scripts": {
     "preflight": "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules')){console.error('Dependencies not installed. Run: npm install');process.exit(1)}console.log('✓ Dependencies OK')\"",
@@ -48,7 +48,7 @@
       "engine": "podman",
       "services": {
         "app": {
-          "image": "agent-lead:0.3.1",
+          "image": "agent-lead:0.3.3",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:programmer"],
           "expose": [
             {
@@ -95,7 +95,7 @@
       "engine": "podman",
       "services": {
         "app": {
-          "image": "agent-lead:0.3.1",
+          "image": "agent-lead:0.3.3",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:artist"],
           "expose": [
             {
@@ -142,7 +142,7 @@
       "engine": "podman",
       "services": {
         "app": {
-          "image": "agent-lead:0.3.1",
+          "image": "agent-lead:0.3.3",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:designer"],
           "expose": [
             {
@@ -189,7 +189,7 @@
       "engine": "podman",
       "services": {
         "programmer": {
-          "image": "agent-lead:0.3.1",
+          "image": "agent-lead:0.3.3",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:programmer"],
           "expose": [
             {
@@ -211,7 +211,7 @@
           "pricing": { "amount": "500", "denom": "uact" }
         },
         "artist": {
-          "image": "agent-lead:0.3.1",
+          "image": "agent-lead:0.3.3",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:artist"],
           "expose": [
             {
@@ -233,7 +233,7 @@
           "pricing": { "amount": "500", "denom": "uact" }
         },
         "designer": {
-          "image": "agent-lead:0.3.1",
+          "image": "agent-lead:0.3.3",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:designer"],
           "expose": [
             {
@@ -271,7 +271,8 @@
     }
   },
   "abilities": {
-    "secret-ability": "*"
+    "secret-ability": "*",
+    "ability-file-local": "*"
   },
   "brokers": {
     "remote": "wss://broker.dadavidtseng.com/kadi"

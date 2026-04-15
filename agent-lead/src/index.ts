@@ -214,10 +214,19 @@ async function main(): Promise<void> {
 
   const client = baseAgent.client;
 
+  // Load ability-file-local natively (zero-latency file ops for conflict resolution)
+  let nativeFileLocal: Awaited<ReturnType<KadiClient['loadNative']>> | null = null;
+  try {
+    nativeFileLocal = await client.loadNative('ability-file-local');
+    logger.info(agentId, 'Loaded ability-file-local natively', timer.elapsed('main'));
+  } catch (err: any) {
+    logger.warn(agentId, `Could not load ability-file-local: ${err.message}`, timer.elapsed('main'));
+  }
+
   // Subscribe to all event handlers
   await setupTaskReceptionHandler(client, roleName, agentName);
   await setupTaskVerificationHandler(client, roleName, agentName, baseAgent.providerManager);
-  await setupPrWorkflowHandler(client, roleName, agentName, baseAgent.providerManager, baseAgent.memoryService);
+  await setupPrWorkflowHandler(client, roleName, agentName, baseAgent.providerManager, baseAgent.memoryService, nativeFileLocal);
   await setupQuestCleanupHandler(client, roleName, agentName);
 
   // Register with quest server and start heartbeat

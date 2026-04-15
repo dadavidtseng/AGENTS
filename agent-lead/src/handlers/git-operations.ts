@@ -7,6 +7,7 @@
  * - Escalate complex conflicts to HUMAN via agent-producer
  *
  * All git operations are performed via mcp-server-git invokeRemote calls.
+ * File I/O (conflict resolution) uses ability-file-local via loadNative.
  *
  * @module handlers/git-operations
  */
@@ -14,6 +15,9 @@
 import { logger, MODULE_AGENT, timer } from 'agents-library';
 import type { ProviderManager, Message } from 'agents-library';
 import type { KadiClient } from '@kadi.build/core';
+
+/** Native ability handle returned by KadiClient.loadNative() */
+type NativeAbility = Awaited<ReturnType<KadiClient['loadNative']>>;
 
 // ============================================================================
 // Types
@@ -263,37 +267,29 @@ function classifyConflict(filePath: string): 'ours' | 'theirs' | null {
 
 /**
  * Read a file's content from the working tree (with conflict markers if mid-merge).
+ * Uses ability-file-local via loadNative (in-process, zero-latency).
  */
-async function readFileContent(client: KadiClient, repoPath: string, filePath: string): Promise<string | null> {
+async function readFileContent(
+  nativeFileLocal: NativeAbility | null | undefined,
+  repoPath: string,
+  filePath: string,
+): Promise<string | null> {
+  const fullPath = `${repoPath}/${filePath}`;
+  if (!nativeFileLocal) {
+    logger.warn(MODULE_AGENT, `  No file ability — cannot read ${filePath}`, timer.elapsed('main'));
+    return null;
+  }
   try {
-    logger.info(MODULE_AGENT, `  Attempting to read ${filePath} with encoding=text`, timer.elapsed('main'));
-    // Force text encoding to read conflict markers (even for binary-detected files like .svg)
-    const result = await client.invokeRemote<{
-      content: Array<{ type: string; text: string }>;
-    }>('read_file', { filePath: `${repoPath}/${filePath}`, encoding: 'text' });
-
-    logger.info(MODULE_AGENT, `  read_file returned, checking response structure`, timer.elapsed('main'));
-    const text = result?.content?.[0]?.text;
-    if (!text) {
-      logger.warn(MODULE_AGENT, `  No text in MCP wrapper, trying direct response`, timer.elapsed('main'));
-      // Response might be direct JSON instead of MCP-wrapped
-      const direct = result as any;
-      if (direct.success && direct.content) {
-        logger.info(MODULE_AGENT, `  Found content in direct response, length: ${direct.content.length}`, timer.elapsed('main'));
-        return direct.content;
-      }
-      logger.warn(MODULE_AGENT, `  No content found: ${JSON.stringify(result).slice(0, 200)}`, timer.elapsed('main'));
-      return null;
+    logger.info(MODULE_AGENT, `  Reading ${filePath} via native ability`, timer.elapsed('main'));
+    const result = await nativeFileLocal.invoke('read_file', { filePath: fullPath, encoding: 'text' }) as {
+      success?: boolean; content?: string;
+    };
+    if (result?.success && result.content) {
+      logger.info(MODULE_AGENT, `  Read ${filePath}, length: ${result.content.length}`, timer.elapsed('main'));
+      return result.content;
     }
-
-    try {
-      const parsed = JSON.parse(text);
-      logger.info(MODULE_AGENT, `  Parsed response, keys: ${Object.keys(parsed).join(', ')}`, timer.elapsed('main'));
-      return parsed.content ?? parsed.text ?? text;
-    } catch {
-      logger.info(MODULE_AGENT, `  Response is plain text, length: ${text.length}`, timer.elapsed('main'));
-      return text;
-    }
+    logger.warn(MODULE_AGENT, `  read_file returned no content for ${filePath}`, timer.elapsed('main'));
+    return null;
   } catch (err: any) {
     logger.warn(MODULE_AGENT, `  readFileContent failed for ${filePath}: ${err.message}`, timer.elapsed('main'));
     return null;
@@ -302,14 +298,17 @@ async function readFileContent(client: KadiClient, repoPath: string, filePath: s
 
 /**
  * Write resolved content to a file in the working tree.
+ * Uses ability-file-local via loadNative (in-process, zero-latency).
  */
 async function writeFileContent(
-  client: KadiClient, repoPath: string, filePath: string, content: string,
+  nativeFileLocal: NativeAbility | null | undefined,
+  repoPath: string,
+  filePath: string,
+  content: string,
 ): Promise<void> {
-  await client.invokeRemote('create_file', {
-    filePath: `${repoPath}/${filePath}`,
-    content,
-  });
+  const fullPath = `${repoPath}/${filePath}`;
+  if (!nativeFileLocal) throw new Error('No file ability — cannot write file');
+  await nativeFileLocal.invoke('create_file', { filePath: fullPath, content });
 }
 
 /**
@@ -323,8 +322,9 @@ async function llmMergeConflict(
   repoPath: string,
   filePath: string,
   providerManager: ProviderManager,
+  nativeFileLocal?: NativeAbility | null,
 ): Promise<boolean> {
-  const conflictContent = await readFileContent(client, repoPath, filePath);
+  const conflictContent = await readFileContent(nativeFileLocal, repoPath, filePath);
   if (!conflictContent) {
     logger.warn(MODULE_AGENT, `  LLM merge skipped for ${filePath}: could not read file content`, timer.elapsed('main'));
     return false;
@@ -359,7 +359,7 @@ async function llmMergeConflict(
       return false;
     }
 
-    await writeFileContent(client, repoPath, filePath, resolved);
+    await writeFileContent(nativeFileLocal, repoPath, filePath, resolved);
     await stageFiles(client, repoPath, [filePath]);
 
     logger.info(MODULE_AGENT, `  LLM-resolved ${filePath}`, timer.elapsed('main'));
@@ -379,6 +379,7 @@ async function resolveConflicts(
   repoPath: string,
   conflictedFiles: string[],
   providerManager?: ProviderManager | null,
+  nativeFileLocal?: NativeAbility | null,
 ): Promise<ConflictResolutionResult> {
   const autoResolved: string[] = [];
   const escalated: string[] = [];
@@ -406,7 +407,7 @@ async function resolveConflicts(
       }
     } else if (providerManager) {
       // Try LLM-based merge before escalating
-      const resolved = await llmMergeConflict(client, repoPath, file, providerManager);
+      const resolved = await llmMergeConflict(client, repoPath, file, providerManager, nativeFileLocal);
       if (resolved) {
         autoResolved.push(file);
       } else {
@@ -487,6 +488,7 @@ export async function mergeTaskBranch(
   agentId: string,
   targetBranch?: string,
   providerManager?: ProviderManager | null,
+  nativeFileLocal?: NativeAbility | null,
 ): Promise<MergeOperationResult> {
   logger.info(
     MODULE_AGENT,
@@ -530,7 +532,7 @@ export async function mergeTaskBranch(
   );
 
   // Attempt auto-resolution (pattern-based + LLM fallback)
-  const resolution = await resolveConflicts(client, repoPath, conflictedFiles, providerManager);
+  const resolution = await resolveConflicts(client, repoPath, conflictedFiles, providerManager, nativeFileLocal);
 
   if (resolution.resolved) {
     // All conflicts resolved — commit

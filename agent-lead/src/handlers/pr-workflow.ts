@@ -19,6 +19,9 @@ import type { KadiClient } from '@kadi.build/core';
 import { KadiEventSchema } from 'agents-library';
 import { mergeTaskBranch } from './git-operations.js';
 
+/** Native ability handle returned by KadiClient.loadNative() */
+type NativeAbility = Awaited<ReturnType<KadiClient['loadNative']>>;
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -419,6 +422,7 @@ async function handleVerificationComplete(
   event: unknown,
   providerManager?: ProviderManager | null,
   memoryService?: MemoryService,
+  nativeFileLocal?: NativeAbility | null,
 ): Promise<PrWorkflowResult | null> {
   const eventData = (event as any)?.data || event;
 
@@ -550,6 +554,7 @@ async function handleVerificationComplete(
       agentId,
       stagingBranch,
       providerManager,
+      nativeFileLocal,
     );
 
     if (!mergeResult.merge.success) {
@@ -673,6 +678,7 @@ export async function setupPrWorkflowHandler(
   agentId: string,
   providerManager?: ProviderManager | null,
   memoryService?: MemoryService,
+  nativeFileLocal?: NativeAbility | null,
 ): Promise<void> {
   logger.info(
     MODULE_AGENT,
@@ -682,7 +688,7 @@ export async function setupPrWorkflowHandler(
 
   await client.subscribe(TOPIC, async (event: unknown) => {
     try {
-      await handleVerificationComplete(client, agentId, event, providerManager, memoryService);
+      await handleVerificationComplete(client, agentId, event, providerManager, memoryService, nativeFileLocal);
     } catch (err: any) {
       logger.error(
         MODULE_AGENT,
