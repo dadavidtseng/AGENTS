@@ -5,7 +5,7 @@
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { AgentModel } from '../../models/agentModel.js';
-import type { Agent, AgentRole } from '../../types';
+import type { Agent, AgentRole } from '../../types/index.js';
 
 /**
  * Tool definition for MCP protocol

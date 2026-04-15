@@ -5,7 +5,7 @@
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { QuestModel } from '../../models/questModel.js';
-import type { QuestStatus } from '../../types';
+import type { QuestStatus } from '../../types/index.js';
 
 /**
  * Tool definition for MCP protocol

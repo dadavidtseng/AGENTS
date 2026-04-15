@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { QuestModel } from '../../models/questModel.js';
 import { TaskModel } from '../../models/taskModel.js';
-import type { Task } from '../../types';
+import type { Task } from '../../types/index.js';
 
 /**
  * Tool definition for MCP protocol

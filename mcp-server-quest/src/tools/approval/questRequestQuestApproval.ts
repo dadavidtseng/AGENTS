@@ -6,7 +6,7 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { QuestModel } from '../../models/questModel.js';
 import { ApprovalModel } from '../../models/approvalModel.js';
-import type { Platform } from '../../types';
+import type { Platform } from '../../types/index.js';
 
 /**
  * Tool definition for MCP protocol
@@ -100,8 +100,6 @@ function generateApprovalMessage(
   design: string,
   platform: Platform
 ) {
-  const limits = PLATFORM_LIMITS[platform];
-
   // Summary (always short)
   const summary = `Quest: ${questName}\n\nDescription: ${description}`;
 

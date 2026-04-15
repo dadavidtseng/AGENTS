@@ -5,7 +5,7 @@
 
 import { readFile, writeFile, rename } from 'fs/promises';
 import { join } from 'path';
-import { Agent, AgentStatus, AgentRole } from '../types';
+import { Agent, AgentStatus, AgentRole } from '../types/index.js';
 import { config } from '../utils/config.js';
 import { broadcastAgentRegistered, broadcastAgentStatusChanged } from '../events/broadcast.js';
 
@@ -273,7 +273,7 @@ export class AgentModel {
         throw new Error(`Agent not found: ${agentId}`);
       }
 
-      agent.currentTasks = agent.currentTasks.filter((id) => id !== taskId);
+      agent.currentTasks = agent.currentTasks.filter((id: string) => id !== taskId);
 
       if (agent.currentTasks.length < agent.maxConcurrentTasks && agent.status === 'busy') {
         agent.status = 'available';
