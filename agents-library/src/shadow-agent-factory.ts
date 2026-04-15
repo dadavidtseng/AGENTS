@@ -358,16 +358,17 @@ export class BaseShadowAgent {
   async stop(): Promise<void> {
     logger.info(MODULE_AGENT, `Stopping shadow agent for role: ${this.role}`, timer.elapsed('shadow-factory'));
 
-    // Unsubscribe from broker file events
-    if (this.fileEventHandler) {
-      logger.info(MODULE_AGENT, 'Unsubscribing from file.changed events...', timer.elapsed('shadow-factory'));
+    // Unsubscribe from native file events and stop watcher
+    if (this.fileEventHandler && this.nativeFileLocal) {
+      logger.info(MODULE_AGENT, 'Removing file.changed listener...', timer.elapsed('shadow-factory'));
+      this.nativeFileLocal.off('file.changed', this.fileEventHandler);
       try {
-        await (this.client as any).unsubscribe('file.changed', this.fileEventHandler);
+        await this.nativeFileLocal.invoke('unwatch_folder', { watchId: `shadow-${this.role}` });
       } catch {
-        // Best-effort unsubscribe — may not be supported in all KadiClient versions
+        // Best-effort unwatch
       }
       this.fileEventHandler = null;
-      logger.info(MODULE_AGENT, 'File event subscription removed', timer.elapsed('shadow-factory'));
+      logger.info(MODULE_AGENT, 'File event listener removed', timer.elapsed('shadow-factory'));
     }
 
     // Clear all pending debounce timers
@@ -393,11 +394,11 @@ export class BaseShadowAgent {
   }
 
   /**
-   * Subscribe to file.changed broker events from ability-file-local
+   * Subscribe to file.changed events from ability-file-local (native transport)
    *
-   * Instead of using chokidar directly (unreliable on /mnt/c/ in WSL containers),
-   * the shadow agent subscribes to `file.changed` events published by ability-file-local
-   * which runs on the host where filesystem events work natively.
+   * ability-file-local uses chokidar internally and emits events via client.emit().
+   * When loaded via loadNative(), these events are delivered through the native
+   * transport's local event map — accessed via loadedAbility.on(), NOT broker subscribe.
    *
    * Event payload from ability-file-local:
    *   { watchId: string, event: 'add'|'change'|'unlink', path: string }
@@ -406,11 +407,16 @@ export class BaseShadowAgent {
    * then debounces and creates shadow backup commits.
    */
   protected async setupBrokerFileEventSubscription(): Promise<void> {
-    logger.info(MODULE_AGENT, `Subscribing to file.changed broker events for: ${this.workerWorktreePath}`, timer.elapsed('shadow-factory'));
+    if (!this.nativeFileLocal) {
+      logger.warn(MODULE_AGENT, 'ability-file-local not loaded natively — file watcher disabled', timer.elapsed('shadow-factory'));
+      return;
+    }
+
+    logger.info(MODULE_AGENT, `Setting up file.changed listener for: ${this.workerWorktreePath}`, timer.elapsed('shadow-factory'));
 
     const handler = async (event: unknown) => {
       try {
-        const data = ((event as any)?.data || event) as {
+        const data = (event as any) as {
           watchId?: string;
           event?: string;
           path?: string;
@@ -439,7 +445,7 @@ export class BaseShadowAgent {
           : eventType === 'unlink' ? 'Deleted'
           : 'Modified';
 
-        logger.info(MODULE_AGENT, `📁 Broker file event: ${operation} ${relativePath}`, timer.elapsed('shadow-factory'));
+        logger.info(MODULE_AGENT, `File event: ${operation} ${relativePath}`, timer.elapsed('shadow-factory'));
 
         // Debounce to avoid rapid-fire commits
         if (this.debounceMap.has(filePath)) {
@@ -458,23 +464,20 @@ export class BaseShadowAgent {
       }
     };
 
+    // Listen on the native transport's event bus (NOT broker pub/sub)
+    this.nativeFileLocal.on('file.changed', handler);
     this.fileEventHandler = handler;
-    await this.client.subscribe('file.changed', handler);
-    logger.info(MODULE_AGENT, 'Subscribed to file.changed broker events', timer.elapsed('shadow-factory'));
+    logger.info(MODULE_AGENT, 'Listening for file.changed via native ability-file-local', timer.elapsed('shadow-factory'));
 
-    // Invoke ability-file-local's watch_folder to start emitting file.changed events
-    if (this.nativeFileLocal) {
-      try {
-        await this.nativeFileLocal.invoke('watch_folder', {
-          folderPath: this.workerWorktreePath,
-          watchId: `shadow-${this.role}`,
-        });
-        logger.info(MODULE_AGENT, `Started file watcher via native ability-file-local for: ${this.workerWorktreePath}`, timer.elapsed('shadow-factory'));
-      } catch (err: any) {
-        logger.warn(MODULE_AGENT, `Could not start native file watcher: ${err.message}`, timer.elapsed('shadow-factory'));
-      }
-    } else {
-      logger.warn(MODULE_AGENT, 'ability-file-local not loaded natively — file watcher disabled (broker fallback not available)', timer.elapsed('shadow-factory'));
+    // Start chokidar watcher inside ability-file-local
+    try {
+      await this.nativeFileLocal.invoke('watch_folder', {
+        folderPath: this.workerWorktreePath,
+        watchId: `shadow-${this.role}`,
+      });
+      logger.info(MODULE_AGENT, `File watcher started for: ${this.workerWorktreePath}`, timer.elapsed('shadow-factory'));
+    } catch (err: any) {
+      logger.warn(MODULE_AGENT, `Could not start file watcher: ${err.message}`, timer.elapsed('shadow-factory'));
     }
   }
 
