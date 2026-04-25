@@ -1,0 +1,17 @@
+{
+  "name": "ability-log",
+  "type": "ability",
+  "version": "0.1.2",
+  "description": "Persistent log and event storage — ArcadeDB backed, batch insert, query, auto-prune",
+  "entrypoint": "dist/src/index.js",
+  "scripts": {
+    "preflight": "node --version",
+    "setup": "npm install && npm run build",
+    "build": "npx tsc",
+    "start": "node dist/src/index.js",
+    "dev": "npx tsx src/index.ts",
+    "serve": "npx tsx src/index.ts stdio",
+    "serve:broker": "npx tsx src/index.ts broker",
+    "clean": "rm -rf node_modules agent-lock.json package-lock.json dist"
+  }
+}
