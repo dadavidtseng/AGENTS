@@ -1,7 +1,7 @@
 {
   "name": "agent-worker",
   "type": "agent",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "entrypoint": "dist/index.js",
   "scripts": {
     "preflight": "node --version",
@@ -42,7 +42,7 @@
       "engine": "docker",
       "services": {
         "app": {
-          "image": "agent-worker:0.3.2",
+          "image": "agent-worker:0.3.3",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start:programmer"],
           "env": [
             "NODE_ENV=production",
@@ -70,7 +70,7 @@
       "engine": "docker",
       "services": {
         "app": {
-          "image": "agent-worker:0.3.2",
+          "image": "agent-worker:0.3.3",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start:artist"],
           "env": [
             "NODE_ENV=production",
@@ -98,7 +98,7 @@
       "engine": "docker",
       "services": {
         "app": {
-          "image": "agent-worker:0.3.2",
+          "image": "agent-worker:0.3.3",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start:designer"],
           "env": [
             "NODE_ENV=production",
@@ -126,21 +126,21 @@
       "engine": "docker",
       "services": {
         "programmer": {
-          "image": "agent-worker:0.3.2",
+          "image": "agent-worker:0.3.3",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start:programmer"],
           "env": ["NODE_ENV=production", "AGENT_ROLE=programmer", "ARCADE_HOST=arcadedb.dadavidtseng.com", "ARCADE_PORT=443"],
           "volumes": ["~/agent-playground/programmer:/app/playground"],
           "restart": "unless-stopped"
         },
         "artist": {
-          "image": "agent-worker:0.3.2",
+          "image": "agent-worker:0.3.3",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start:artist"],
           "env": ["NODE_ENV=production", "AGENT_ROLE=artist", "ARCADE_HOST=arcadedb.dadavidtseng.com", "ARCADE_PORT=443"],
           "volumes": ["~/agent-playground/artist:/app/playground"],
           "restart": "unless-stopped"
         },
         "designer": {
-          "image": "agent-worker:0.3.2",
+          "image": "agent-worker:0.3.3",
           "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start:designer"],
           "env": ["NODE_ENV=production", "AGENT_ROLE=designer", "ARCADE_HOST=arcadedb.dadavidtseng.com", "ARCADE_PORT=443"],
           "volumes": ["~/agent-playground/designer:/app/playground"],

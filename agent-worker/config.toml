@@ -10,7 +10,7 @@ VERSION = "1.0.0"
 LEVEL = "info"
 
 [broker.local]
-URL = "ws://localhost:8080/kadi"
+URL = "wss://broker.dadavidtseng.com/kadi"
 NETWORKS = ["programmer", "git", "qa", "file", "utility", "quest", "global"]
 
 #[broker.remote]
