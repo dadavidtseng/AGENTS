@@ -369,8 +369,8 @@ export class BaseWorkerAgent extends BaseAgent {
   /**
    * Override BaseAgent.connect() to load native abilities after broker connection.
    */
-  async connect(): Promise<void> {
-    await super.connect();
+  async connect(vaultCredentials?: Record<string, string>): Promise<void> {
+    await super.connect(vaultCredentials);
 
     // Load ability-file-local natively (zero-latency file ops, in-process)
     try {
