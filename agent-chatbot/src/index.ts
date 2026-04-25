@@ -190,7 +190,7 @@ class ChatbotAgent {
       if (this.discordClient) this.discordClient.destroy();
       if (this.slackListener) await this.slackListener.stop();
     });
-    await baseAgent.connect();
+    await baseAgent.connect(vault);
 
     // Ready
     logger.info(agentId, `Ready (${timer.elapsed('main')})`, timer.elapsed('main'));

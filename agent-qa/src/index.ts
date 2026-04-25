@@ -121,7 +121,7 @@ async function main(): Promise<void> {
   };
 
   const baseAgent = new BaseAgent(baseAgentConfig);
-  await baseAgent.connect();
+  await baseAgent.connect(vault);
 
   // Load ability-file-local natively (zero-latency file ops, in-process)
   let nativeFileLocal: any = null;

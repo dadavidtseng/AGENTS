@@ -249,7 +249,7 @@ async function main(): Promise<void> {
     });
 
     // Single connect() — inherited from BaseAgent
-    await workerAgent.connect();
+    await workerAgent.connect(vault);
 
     // Apply role config and start (subscribes to events, no reconnect)
     workerAgent.applyRoleConfig(roleConfig);

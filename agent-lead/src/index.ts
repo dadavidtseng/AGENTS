@@ -210,7 +210,7 @@ async function main(): Promise<void> {
   };
 
   const baseAgent = new BaseAgent(baseAgentConfig);
-  await baseAgent.connect();
+  await baseAgent.connect(vault);
 
   const client = baseAgent.client;
 

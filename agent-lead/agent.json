@@ -1,7 +1,7 @@
 {
   "name": "agent-lead",
   "type": "agent",
-  "version": "0.3.3",
+  "version": "0.3.5",
   "entrypoint": "dist/index.js",
   "scripts": {
     "preflight": "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules')){console.error('Dependencies not installed. Run: npm install');process.exit(1)}console.log('✓ Dependencies OK')\"",
@@ -48,8 +48,8 @@
       "engine": "podman",
       "services": {
         "app": {
-          "image": "agent-lead:0.3.3",
-          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:programmer"],
+          "image": "agent-lead:0.3.5",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start:programmer"],
           "expose": [
             {
               "port": 3000,
@@ -60,7 +60,9 @@
           "env": [
             "NODE_ENV=production",
             "AGENT_ROLE=programmer",
-            "REPO_PATH=/root/agent-playground"
+            "REPO_PATH=/root/agent-playground",
+            "ARCADE_HOST=arcadedb.dadavidtseng.com",
+            "ARCADE_PORT=443"
           ],
           "resources": {
             "cpu": 0.5,
@@ -79,6 +81,10 @@
           {
             "vault": "model-manager",
             "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"]
+          },
+          {
+            "vault": "arcadedb",
+            "required": ["ARCADE_USERNAME", "ARCADE_PASSWORD"]
           }
         ],
         "delivery": "broker"
@@ -95,8 +101,8 @@
       "engine": "podman",
       "services": {
         "app": {
-          "image": "agent-lead:0.3.3",
-          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:artist"],
+          "image": "agent-lead:0.3.5",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start:artist"],
           "expose": [
             {
               "port": 3000,
@@ -107,7 +113,9 @@
           "env": [
             "NODE_ENV=production",
             "AGENT_ROLE=artist",
-            "REPO_PATH=/root/agent-playground"
+            "REPO_PATH=/root/agent-playground",
+            "ARCADE_HOST=arcadedb.dadavidtseng.com",
+            "ARCADE_PORT=443"
           ],
           "resources": {
             "cpu": 0.5,
@@ -126,6 +134,10 @@
           {
             "vault": "model-manager",
             "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"]
+          },
+          {
+            "vault": "arcadedb",
+            "required": ["ARCADE_USERNAME", "ARCADE_PASSWORD"]
           }
         ],
         "delivery": "broker"
@@ -142,8 +154,8 @@
       "engine": "podman",
       "services": {
         "app": {
-          "image": "agent-lead:0.3.3",
-          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:designer"],
+          "image": "agent-lead:0.3.5",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start:designer"],
           "expose": [
             {
               "port": 3000,
@@ -154,7 +166,9 @@
           "env": [
             "NODE_ENV=production",
             "AGENT_ROLE=designer",
-            "REPO_PATH=/root/agent-playground"
+            "REPO_PATH=/root/agent-playground",
+            "ARCADE_HOST=arcadedb.dadavidtseng.com",
+            "ARCADE_PORT=443"
           ],
           "resources": {
             "cpu": 0.5,
@@ -173,6 +187,10 @@
           {
             "vault": "model-manager",
             "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"]
+          },
+          {
+            "vault": "arcadedb",
+            "required": ["ARCADE_USERNAME", "ARCADE_PASSWORD"]
           }
         ],
         "delivery": "broker"
@@ -189,8 +207,8 @@
       "engine": "podman",
       "services": {
         "programmer": {
-          "image": "agent-lead:0.3.3",
-          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:programmer"],
+          "image": "agent-lead:0.3.5",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start:programmer"],
           "expose": [
             {
               "port": 3000,
@@ -201,7 +219,9 @@
           "env": [
             "NODE_ENV=production",
             "AGENT_ROLE=programmer",
-            "REPO_PATH=/root/agent-playground"
+            "REPO_PATH=/root/agent-playground",
+            "ARCADE_HOST=arcadedb.dadavidtseng.com",
+            "ARCADE_PORT=443"
           ],
           "resources": {
             "cpu": 0.5,
@@ -211,8 +231,8 @@
           "pricing": { "amount": "500", "denom": "uact" }
         },
         "artist": {
-          "image": "agent-lead:0.3.3",
-          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:artist"],
+          "image": "agent-lead:0.3.5",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start:artist"],
           "expose": [
             {
               "port": 3000,
@@ -223,7 +243,9 @@
           "env": [
             "NODE_ENV=production",
             "AGENT_ROLE=artist",
-            "REPO_PATH=/root/agent-playground"
+            "REPO_PATH=/root/agent-playground",
+            "ARCADE_HOST=arcadedb.dadavidtseng.com",
+            "ARCADE_PORT=443"
           ],
           "resources": {
             "cpu": 0.5,
@@ -233,8 +255,8 @@
           "pricing": { "amount": "500", "denom": "uact" }
         },
         "designer": {
-          "image": "agent-lead:0.3.3",
-          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:designer"],
+          "image": "agent-lead:0.3.5",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start:designer"],
           "expose": [
             {
               "port": 3000,
@@ -245,7 +267,9 @@
           "env": [
             "NODE_ENV=production",
             "AGENT_ROLE=designer",
-            "REPO_PATH=/root/agent-playground"
+            "REPO_PATH=/root/agent-playground",
+            "ARCADE_HOST=arcadedb.dadavidtseng.com",
+            "ARCADE_PORT=443"
           ],
           "resources": {
             "cpu": 0.5,
@@ -264,6 +288,10 @@
           {
             "vault": "model-manager",
             "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"]
+          },
+          {
+            "vault": "arcadedb",
+            "required": ["ARCADE_USERNAME", "ARCADE_PASSWORD"]
           }
         ],
         "delivery": "broker"
@@ -272,7 +300,8 @@
   },
   "abilities": {
     "secret-ability": "*",
-    "ability-file-local": "*"
+    "ability-file-local": "*",
+    "ability-log": "*"
   },
   "brokers": {
     "remote": "wss://broker.dadavidtseng.com/kadi"

@@ -1,7 +1,7 @@
 {
   "name": "agent-chatbot",
   "type": "agent",
-  "version": "0.1.4",
+  "version": "0.1.6",
   "entrypoint": "dist/index.js",
   "scripts": {
     "preflight": "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules')){console.error('Dependencies not installed. Run: npm install');process.exit(1)}console.log('✓ Dependencies OK')\"",
@@ -30,10 +30,11 @@
     }
   },
   "abilities": {
-    "secret-ability": "*"
+    "secret-ability": "*",
+    "ability-log": "^0.1.2"
   },
   "deploy": {
-    "akash-mainnet": {
+    "akash": {
       "target": "akash",
       "network": "mainnet",
       "deposit": "10",
@@ -44,8 +45,12 @@
       "engine": "podman",
       "services": {
         "app": {
-          "image": "agent-chatbot:0.1.4",
-          "command": ["sh", "-c", "kadi secret receive --vault chatbot && kadi run start"],
+          "image": "agent-chatbot:0.1.6",
+          "command": [
+            "sh",
+            "-c",
+            "kadi secret receive --vault chatbot --vault arcadedb && kadi run start"
+          ],
           "expose": [
             {
               "port": 3000,
@@ -58,14 +63,19 @@
             }
           ],
           "env": [
-            "NODE_ENV=production"
+            "NODE_ENV=production",
+            "ARCADE_HOST=arcadedb.dadavidtseng.com",
+            "ARCADE_PORT=443"
           ],
           "resources": {
             "cpu": 0.5,
             "memory": "512Mi",
             "ephemeralStorage": "1Gi"
           },
-          "pricing": { "amount": "500", "denom": "uact" }
+          "pricing": {
+            "amount": "500",
+            "denom": "uact"
+          }
         }
       },
       "secrets": {
@@ -76,6 +86,13 @@
               "DISCORD_TOKEN",
               "SLACK_BOT_TOKEN",
               "SLACK_SIGNING_SECRET"
+            ]
+          },
+          {
+            "vault": "arcadedb",
+            "required": [
+              "ARCADE_USERNAME",
+              "ARCADE_PASSWORD"
             ]
           }
         ],

@@ -1,6 +1,6 @@
 {
   "name": "agent-qa",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "QA agent - KĀDI agent-qa for automated testing, code review, and quality verification",
   "type": "module",
   "main": "dist/index.js",

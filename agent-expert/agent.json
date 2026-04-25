@@ -5,7 +5,8 @@
   "description": "AGENTS developer assistant — answers questions, writes TDDs, provides guides",
   "entrypoint": "dist/index.js",
   "abilities": {
-    "secret-ability": "*"
+    "secret-ability": "*",
+    "ability-log": "*"
   },
   "brokers": {
     "remote": "wss://broker.dadavidtseng.com/kadi"
@@ -50,7 +51,7 @@
       "services": {
         "app": {
           "image": "agent-expert:0.1.0",
-          "command": ["sh", "-c", "kadi secret receive --vault model-manager && kadi run start"],
+          "command": ["sh", "-c", "kadi secret receive --vault model-manager --vault arcadedb && kadi run start"],
           "expose": [
             {
               "port": 3000,
@@ -59,7 +60,9 @@
             }
           ],
           "env": [
-            "NODE_ENV=production"
+            "NODE_ENV=production",
+            "ARCADE_HOST=arcadedb.dadavidtseng.com",
+            "ARCADE_PORT=443"
           ],
           "resources": {
             "cpu": 0.5,
@@ -74,6 +77,10 @@
           {
             "vault": "model-manager",
             "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"]
+          },
+          {
+            "vault": "arcadedb",
+            "required": ["ARCADE_USERNAME", "ARCADE_PASSWORD"]
           }
         ],
         "delivery": "broker"

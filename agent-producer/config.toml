@@ -16,7 +16,7 @@ LEVEL = "debug"
 #NETWORKS = ["chatbot", "quest","producer", "file", "global"]
 
 [broker.remote]
-URL = "wss://broker.kadi.build/kadi"
+URL = "wss://broker.dadavidtseng.com/kadi"
 NETWORKS = ["chatbot", "quest", "producer", "file", "global", "voice-services"]
 
 [bot]
@@ -34,7 +34,14 @@ USER_ID = "1438685741751210025"
 DATA_PATH = "./data/memory"
 
 [secrets]
-VAULTS = ["anthropic", "model-manager"]
+VAULTS = ["anthropic", "model-manager", "arcadedb"]
+KEYS = ["MODEL_MANAGER_BASE_URL", "MODEL_MANAGER_API_KEY", "ANTHROPIC_API_KEY", "ARCADE_USERNAME", "ARCADE_PASSWORD"]
+
+[arcadedb]
+HOST = "arcadedb.dadavidtseng.com"
+PORT = 443
+USERNAME = "root"
+DATABASE = "agents_logs"
 
 [provider]
 PRIMARY = "model-manager"

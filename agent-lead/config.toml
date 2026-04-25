@@ -33,8 +33,14 @@ DATA_PATH = "./data/memory"
 PATH = "/mnt/c/GitHub/agent-playground"
 
 [secrets]
-VAULTS = ["anthropic", "model-manager"]
-KEYS = ["ANTHROPIC_API_KEY", "MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"]
+VAULTS = ["anthropic", "model-manager", "arcadedb"]
+KEYS = ["ANTHROPIC_API_KEY", "MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL", "ARCADE_USERNAME", "ARCADE_PASSWORD"]
+
+[arcadedb]
+HOST = "arcadedb.dadavidtseng.com"
+PORT = 443
+USERNAME = "root"
+DATABASE = "agents_logs"
 
 # Per-role network configuration
 # kadi run start:artist → AGENT_ROLE=artist → reads [roles.artist.NETWORKS]

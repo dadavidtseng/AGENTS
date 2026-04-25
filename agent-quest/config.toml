@@ -21,5 +21,11 @@ URL = "wss://broker.dadavidtseng.com/kadi"
 NETWORKS = ["quest", "global"]
 
 [secrets]
-VAULTS = ["observer"]
-KEYS = ["OBSERVER_PASSWORD"]
+VAULTS = ["observer", "arcadedb"]
+KEYS = ["OBSERVER_PASSWORD", "ARCADE_USERNAME", "ARCADE_PASSWORD"]
+
+[arcadedb]
+HOST = "arcadedb.dadavidtseng.com"
+PORT = 443
+USERNAME = "root"
+DATABASE = "agents_logs"

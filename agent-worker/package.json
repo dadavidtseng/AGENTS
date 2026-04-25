@@ -1,6 +1,6 @@
 {
   "name": "agent-worker",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Generic worker agent for KĀDI multi-agent system (supports artist, programmer, designer roles via config)",
   "type": "module",
   "main": "dist/index.js",

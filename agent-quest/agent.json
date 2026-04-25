@@ -48,7 +48,11 @@
       "services": {
         "app": {
           "image": "agent-quest:0.3.9",
-          "command": ["sh", "-c", "kadi secret receive --vault observer && kadi run start"],
+          "command": [
+            "sh",
+            "-c",
+            "kadi secret receive --vault observer --vault arcadedb && kadi run start"
+          ],
           "expose": [
             {
               "port": 8888,
@@ -61,21 +65,35 @@
             }
           ],
           "env": [
-            "NODE_ENV=production"
+            "NODE_ENV=production",
+            "ARCADE_HOST=arcadedb.dadavidtseng.com",
+            "ARCADE_PORT=443"
           ],
           "resources": {
             "cpu": 0.5,
             "memory": "512Mi",
             "ephemeralStorage": "1Gi"
           },
-          "pricing": { "amount": "500", "denom": "uact" }
+          "pricing": {
+            "amount": "500",
+            "denom": "uact"
+          }
         }
       },
       "secrets": {
         "vaults": [
           {
             "vault": "observer",
-            "required": ["OBSERVER_PASSWORD"]
+            "required": [
+              "OBSERVER_PASSWORD"
+            ]
+          },
+          {
+            "vault": "arcadedb",
+            "required": [
+              "ARCADE_USERNAME",
+              "ARCADE_PASSWORD"
+            ]
           }
         ],
         "delivery": "broker"
@@ -90,6 +108,7 @@
     "global"
   ],
   "abilities": {
-    "secret-ability": "*"
+    "secret-ability": "*",
+    "ability-log": "^0.1.2"
   }
 }

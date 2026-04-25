@@ -206,7 +206,7 @@ async function main(): Promise<void> {
         });
 
         // Step 2: Connect to broker
-        await baseAgent.connect();
+        await baseAgent.connect(vault);
 
         // Step 3: Initialize LLM-dependent services
         if (llmEnabled && baseAgent.providerManager) {

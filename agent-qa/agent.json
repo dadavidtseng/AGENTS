@@ -1,7 +1,7 @@
 {
   "name": "agent-qa",
   "type": "agent",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "entrypoint": "dist/index.js",
   "scripts": {
     "preflight": "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules')){console.error('Dependencies not installed. Run: npm install');process.exit(1)}console.log('✓ Dependencies OK')\"",
@@ -42,8 +42,8 @@
       "engine": "podman",
       "services": {
         "app": {
-          "image": "agent-qa:0.3.2",
-          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start"],
+          "image": "agent-qa:0.3.3",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start"],
           "expose": [
             {
               "port": 3000,
@@ -52,7 +52,9 @@
             }
           ],
           "env": [
-            "NODE_ENV=production"
+            "NODE_ENV=production",
+            "ARCADE_HOST=arcadedb.dadavidtseng.com",
+            "ARCADE_PORT=443"
           ],
           "resources": {
             "cpu": 0.5,
@@ -71,6 +73,10 @@
           {
             "vault": "model-manager",
             "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"]
+          },
+          {
+            "vault": "arcadedb",
+            "required": ["ARCADE_USERNAME", "ARCADE_PASSWORD"]
           }
         ],
         "delivery": "broker"
@@ -82,7 +88,8 @@
     "ability-file-local": "*",
     "ability-eval": "*",
     "ability-vision": "*",
-    "ability-file-remote": "*"
+    "ability-file-remote": "*",
+    "ability-log": "*"
   },
   "brokers": {
     "remote": "wss://broker.dadavidtseng.com/kadi"

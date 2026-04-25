@@ -27,3 +27,13 @@ EXE_PATH = "C:/GitHub/DaemonAgent/Run/DaemonAgent_Debug_x64.exe"
 WORKING_DIR = "C:/GitHub/DaemonAgent/Run"
 READY_TIMEOUT_MS = 30000
 KILL_TIMEOUT_MS = 5000
+
+[secrets]
+VAULTS = ["arcadedb"]
+KEYS = ["ARCADE_USERNAME", "ARCADE_PASSWORD"]
+
+[arcadedb]
+HOST = "arcadedb.dadavidtseng.com"
+PORT = 443
+USERNAME = "root"
+DATABASE = "agents_logs"

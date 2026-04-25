@@ -1,7 +1,7 @@
 {
   "name": "agent-producer",
   "type": "agent",
-  "version": "0.3.20",
+  "version": "0.3.22",
   "entrypoint": "dist/index.js",
   "scripts": {
     "setup": "npm run build",
@@ -30,7 +30,7 @@
     }
   },
   "deploy": {
-    "akash-mainnet": {
+    "akash": {
       "target": "akash",
       "network": "mainnet",
       "deposit": "10",
@@ -41,8 +41,12 @@
       "engine": "podman",
       "services": {
         "app": {
-          "image": "agent-producer:0.3.20",
-          "command": ["sh", "-c", "kadi secret receive --vault whatever && kadi run start"],
+          "image": "agent-producer:0.3.22",
+          "command": [
+            "sh",
+            "-c",
+            "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start"
+          ],
           "expose": [
             {
               "port": 3000,
@@ -55,25 +59,42 @@
             }
           ],
           "env": [
-            "NODE_ENV=production"
+            "NODE_ENV=production",
+            "ARCADE_HOST=arcadedb.dadavidtseng.com",
+            "ARCADE_PORT=443"
           ],
           "resources": {
             "cpu": 0.5,
             "memory": "512Mi",
             "ephemeralStorage": "1Gi"
           },
-          "pricing": { "amount": "500", "denom": "uact" }
+          "pricing": {
+            "amount": "500",
+            "denom": "uact"
+          }
         }
       },
       "secrets": {
         "vaults": [
           {
             "vault": "anthropic",
-            "required": ["ANTHROPIC_API_KEY"]
+            "required": [
+              "ANTHROPIC_API_KEY"
+            ]
           },
           {
             "vault": "model-manager",
-            "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"]
+            "required": [
+              "MODEL_MANAGER_API_KEY",
+              "MODEL_MANAGER_BASE_URL"
+            ]
+          },
+          {
+            "vault": "arcadedb",
+            "required": [
+              "ARCADE_USERNAME",
+              "ARCADE_PASSWORD"
+            ]
           }
         ],
         "delivery": "broker"
@@ -81,7 +102,8 @@
     }
   },
   "abilities": {
-    "secret-ability": "*"
+    "secret-ability": "*",
+    "ability-log": "^0.1.2"
   },
   "brokers": {
     "remote": "wss://broker.dadavidtseng.com/kadi"

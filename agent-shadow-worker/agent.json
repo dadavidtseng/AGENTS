@@ -1,7 +1,7 @@
 {
   "name": "agent-shadow-worker",
   "type": "agent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "entrypoint": "dist/index.js",
   "scripts": {
     "preflight": "node -e \"const fs=require('fs');if(!fs.existsSync('node_modules')){console.error('Dependencies not installed. Run: npm install');process.exit(1)}console.log('✓ Dependencies OK')\"",
@@ -42,11 +42,13 @@
       "engine": "docker",
       "services": {
         "app": {
-          "image": "agent-shadow-worker:0.1.0",
-          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:programmer"],
+          "image": "agent-shadow-worker:0.1.1",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start:programmer"],
           "env": [
             "NODE_ENV=production",
-            "AGENT_ROLE=programmer"
+            "AGENT_ROLE=programmer",
+            "ARCADE_HOST=arcadedb.dadavidtseng.com",
+            "ARCADE_PORT=443"
           ],
           "volumes": [
             "~/agent-playground-shadow-programmer:/app/playground"
@@ -57,7 +59,8 @@
       "secrets": {
         "vaults": [
           { "vault": "anthropic", "required": ["ANTHROPIC_API_KEY"] },
-          { "vault": "model-manager", "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"] }
+          { "vault": "model-manager", "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"] },
+          { "vault": "arcadedb", "required": ["ARCADE_USERNAME", "ARCADE_PASSWORD"] }
         ],
         "delivery": "broker"
       }
@@ -67,11 +70,13 @@
       "engine": "docker",
       "services": {
         "app": {
-          "image": "agent-shadow-worker:0.1.0",
-          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:artist"],
+          "image": "agent-shadow-worker:0.1.1",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start:artist"],
           "env": [
             "NODE_ENV=production",
-            "AGENT_ROLE=artist"
+            "AGENT_ROLE=artist",
+            "ARCADE_HOST=arcadedb.dadavidtseng.com",
+            "ARCADE_PORT=443"
           ],
           "volumes": [
             "~/agent-playground-shadow-artist:/app/playground"
@@ -82,7 +87,8 @@
       "secrets": {
         "vaults": [
           { "vault": "anthropic", "required": ["ANTHROPIC_API_KEY"] },
-          { "vault": "model-manager", "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"] }
+          { "vault": "model-manager", "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"] },
+          { "vault": "arcadedb", "required": ["ARCADE_USERNAME", "ARCADE_PASSWORD"] }
         ],
         "delivery": "broker"
       }
@@ -92,11 +98,13 @@
       "engine": "docker",
       "services": {
         "app": {
-          "image": "agent-shadow-worker:0.1.0",
-          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:designer"],
+          "image": "agent-shadow-worker:0.1.1",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start:designer"],
           "env": [
             "NODE_ENV=production",
-            "AGENT_ROLE=designer"
+            "AGENT_ROLE=designer",
+            "ARCADE_HOST=arcadedb.dadavidtseng.com",
+            "ARCADE_PORT=443"
           ],
           "volumes": [
             "~/agent-playground-shadow-designer:/app/playground"
@@ -107,7 +115,8 @@
       "secrets": {
         "vaults": [
           { "vault": "anthropic", "required": ["ANTHROPIC_API_KEY"] },
-          { "vault": "model-manager", "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"] }
+          { "vault": "model-manager", "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"] },
+          { "vault": "arcadedb", "required": ["ARCADE_USERNAME", "ARCADE_PASSWORD"] }
         ],
         "delivery": "broker"
       }
@@ -117,23 +126,23 @@
       "engine": "docker",
       "services": {
         "programmer": {
-          "image": "agent-shadow-worker:0.1.0",
-          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:programmer"],
-          "env": ["NODE_ENV=production", "AGENT_ROLE=programmer"],
+          "image": "agent-shadow-worker:0.1.1",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start:programmer"],
+          "env": ["NODE_ENV=production", "AGENT_ROLE=programmer", "ARCADE_HOST=arcadedb.dadavidtseng.com", "ARCADE_PORT=443"],
           "volumes": ["~/agent-playground-shadow-programmer:/app/playground"],
           "restart": "unless-stopped"
         },
         "artist": {
-          "image": "agent-shadow-worker:0.1.0",
-          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:artist"],
-          "env": ["NODE_ENV=production", "AGENT_ROLE=artist"],
+          "image": "agent-shadow-worker:0.1.1",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start:artist"],
+          "env": ["NODE_ENV=production", "AGENT_ROLE=artist", "ARCADE_HOST=arcadedb.dadavidtseng.com", "ARCADE_PORT=443"],
           "volumes": ["~/agent-playground-shadow-artist:/app/playground"],
           "restart": "unless-stopped"
         },
         "designer": {
-          "image": "agent-shadow-worker:0.1.0",
-          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager && kadi run start:designer"],
-          "env": ["NODE_ENV=production", "AGENT_ROLE=designer"],
+          "image": "agent-shadow-worker:0.1.1",
+          "command": ["sh", "-c", "kadi secret receive --vault anthropic --vault model-manager --vault arcadedb && kadi run start:designer"],
+          "env": ["NODE_ENV=production", "AGENT_ROLE=designer", "ARCADE_HOST=arcadedb.dadavidtseng.com", "ARCADE_PORT=443"],
           "volumes": ["~/agent-playground-shadow-designer:/app/playground"],
           "restart": "unless-stopped"
         }
@@ -141,7 +150,8 @@
       "secrets": {
         "vaults": [
           { "vault": "anthropic", "required": ["ANTHROPIC_API_KEY"] },
-          { "vault": "model-manager", "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"] }
+          { "vault": "model-manager", "required": ["MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL"] },
+          { "vault": "arcadedb", "required": ["ARCADE_USERNAME", "ARCADE_PASSWORD"] }
         ],
         "delivery": "broker"
       }
@@ -149,7 +159,8 @@
   },
   "abilities": {
     "secret-ability": "*",
-    "ability-file-local": "^0.1.1"
+    "ability-file-local": "^0.1.1",
+    "ability-log": "*"
   },
   "brokers": {
     "local": "ws://localhost:8080/kadi",

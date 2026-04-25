@@ -11,7 +11,7 @@ VERSION = "0.1.0"
 #NETWORKS = ["chatbot"]
 
 [broker.remote]
-URL = "wss://broker.kadi.build/kadi"
+URL = "wss://broker.dadavidtseng.com/kadi"
 NETWORKS = ["chatbot"]
 
 [bot.discord]
@@ -28,5 +28,11 @@ HTTP_PORT = 3700
 LEVEL = "debug"
 
 [secrets]
-VAULTS = ["chatbot"]
-KEYS = ["DISCORD_TOKEN", "SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET"]
+VAULTS = ["chatbot", "arcadedb"]
+KEYS = ["DISCORD_TOKEN", "SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET", "ARCADE_USERNAME", "ARCADE_PASSWORD"]
+
+[arcadedb]
+HOST = "arcadedb.dadavidtseng.com"
+PORT = 443
+USERNAME = "root"
+DATABASE = "agents_logs"

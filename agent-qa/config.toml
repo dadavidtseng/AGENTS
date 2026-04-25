@@ -30,4 +30,11 @@ MODEL = "claude-haiku-4-5-20251001"
 DATA_PATH = "./data/memory"
 
 [secrets]
-VAULTS = ["anthropic", "model-manager"]
+VAULTS = ["anthropic", "model-manager", "arcadedb"]
+KEYS = ["ANTHROPIC_API_KEY", "MODEL_MANAGER_API_KEY", "MODEL_MANAGER_BASE_URL", "ARCADE_USERNAME", "ARCADE_PASSWORD"]
+
+[arcadedb]
+HOST = "arcadedb.dadavidtseng.com"
+PORT = 443
+USERNAME = "root"
+DATABASE = "agents_logs"

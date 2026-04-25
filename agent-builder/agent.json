@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "description": "KADI agent for game lifecycle management - shutdown, rebuild (MSBuild), and relaunch DaemonAgent",
   "entrypoint": "dist/index.js",
+  "abilities": {
+    "ability-log": "*"
+  },
   "scripts": {
     "preflight": "node --version",
     "setup": "npm install && npm run build",

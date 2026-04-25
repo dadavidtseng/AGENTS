@@ -13,7 +13,7 @@
  * @module agent-builder
  */
 
-import { BaseAgent, readConfig, setLogLevel, setAgentTag, logger, timer } from 'agents-library';
+import { BaseAgent, readConfig, loadVaultCredentials, setLogLevel, setAgentTag, logger, timer } from 'agents-library';
 import type { BaseAgentConfig } from 'agents-library';
 import { registerAllTools } from './tools/index.js';
 
@@ -111,7 +111,8 @@ async function main(): Promise<void> {
     });
 
     // Step 2: Connect to broker
-    await baseAgent.connect();
+    const vault = await loadVaultCredentials();
+    await baseAgent.connect(vault);
 
     // Ready
     logger.info(agentId, `Ready (${timer.elapsed('main')})`, timer.elapsed('main'));

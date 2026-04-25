@@ -1,6 +1,6 @@
 {
   "name": "shadow-agent-worker",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Generic shadow agent for KĀDI multi-agent system (supports artist, programmer, designer roles via config)",
   "type": "module",
   "main": "dist/index.js",

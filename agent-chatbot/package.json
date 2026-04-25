@@ -1,6 +1,6 @@
 {
   "name": "agent-chatbot",
-  "version": "0.1.4",
+  "version": "0.1.6",
   "description": "KĀDI agent for chat platform integration - listens for mentions and sends messages across Discord and Slack",
   "type": "module",
   "main": "dist/index.js",

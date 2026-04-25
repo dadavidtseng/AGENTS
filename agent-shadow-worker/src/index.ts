@@ -172,7 +172,7 @@ async function main(): Promise<void> {
     const baseAgent = new BaseAgent(baseAgentConfig);
 
     // Step 1: Connect to broker
-    await baseAgent.connect();
+    await baseAgent.connect(vault);
 
     // Step 1b: Load ability-file-local natively (for watch_folder)
     let nativeFileLocal: any = null;
