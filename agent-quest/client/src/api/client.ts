@@ -288,6 +288,48 @@ export class ApiClient {
   }
 
   // -------------------------------------------------------------------------
+  // Event history (ArcadeDB-backed)
+  // -------------------------------------------------------------------------
+
+  async getEvents(params?: {
+    after?: string;
+    before?: string;
+    type?: string;
+    agent?: string;
+    limit?: number;
+  }): Promise<{ events: Array<Record<string, unknown>>; count: number; hasMore: boolean }> {
+    const qs = new URLSearchParams();
+    if (params?.after) qs.append('after', params.after);
+    if (params?.before) qs.append('before', params.before);
+    if (params?.type) qs.append('type', params.type);
+    if (params?.agent) qs.append('agent', params.agent);
+    if (params?.limit) qs.append('limit', String(params.limit));
+
+    const url = qs.toString()
+      ? `${API_BASE}/events?${qs.toString()}`
+      : `${API_BASE}/events`;
+
+    const response = await this.fetchWithTimeout(url);
+    return this.parseJSON(response);
+  }
+
+  async getAgentLogs(agentId: string, params?: {
+    after?: string;
+    level?: string;
+    limit?: number;
+  }): Promise<{ entries: Array<Record<string, unknown>>; count: number; hasMore: boolean }> {
+    const qs = new URLSearchParams({ format: 'json' });
+    if (params?.after) qs.append('after', params.after);
+    if (params?.level) qs.append('level', params.level);
+    if (params?.limit) qs.append('limit', String(params.limit));
+
+    const response = await this.fetchWithTimeout(
+      `${API_BASE}/agents/${encodeURIComponent(agentId)}/logs?${qs.toString()}`,
+    );
+    return this.parseJSON(response);
+  }
+
+  // -------------------------------------------------------------------------
   // Health
   // -------------------------------------------------------------------------
 

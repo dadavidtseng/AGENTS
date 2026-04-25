@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useObserverContext } from '../contexts/ObserverContext';
 import { wsService } from '../services/WebSocketService';
+import { apiClient } from '../api/client';
 import { EventTimeline, type TimelineEvent } from '../components/EventTimeline';
 
 // ---------------------------------------------------------------------------
@@ -45,19 +46,43 @@ export function EventsPage() {
   const [agentFilter, setAgentFilter] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Load event history from WebSocketService on mount
+  // Load event history from ArcadeDB on mount, fallback to WS history
   useEffect(() => {
-    const history = wsService.getEventHistory();
-    const timelineEvents: TimelineEvent[] = history.map((stored) => ({
-      id: stored.id,
-      type: stored.message.event,
-      timestamp: stored.message.timestamp ?? stored.receivedAt,
-      data: stored.message.data,
-      agent: typeof stored.message.data === 'object' && stored.message.data !== null
-        ? (stored.message.data as Record<string, unknown>).agentId as string | undefined
-        : undefined,
-    }));
-    setEvents(timelineEvents);
+    let cancelled = false;
+
+    async function loadHistory() {
+      try {
+        const { events: dbEvents } = await apiClient.getEvents({ limit: 200 });
+        if (cancelled) return;
+
+        // DB returns newest-first, reverse for timeline (oldest-first)
+        const timelineEvents: TimelineEvent[] = dbEvents.reverse().map((e, i) => ({
+          id: i,
+          type: (e.type as string) ?? 'unknown',
+          timestamp: (e.timestamp as string) ?? new Date().toISOString(),
+          data: e.data ? JSON.parse(e.data as string) : {},
+          agent: (e.agentId as string) || undefined,
+        }));
+        setEvents(timelineEvents);
+      } catch {
+        // Fallback to in-memory WS history if DB is unavailable
+        if (cancelled) return;
+        const history = wsService.getEventHistory();
+        const timelineEvents: TimelineEvent[] = history.map((stored) => ({
+          id: stored.id,
+          type: stored.message.event,
+          timestamp: stored.message.timestamp ?? stored.receivedAt,
+          data: stored.message.data,
+          agent: typeof stored.message.data === 'object' && stored.message.data !== null
+            ? (stored.message.data as Record<string, unknown>).agentId as string | undefined
+            : undefined,
+        }));
+        setEvents(timelineEvents);
+      }
+    }
+
+    loadHistory();
+    return () => { cancelled = true; };
   }, []);
 
   // Subscribe to new WebSocket events

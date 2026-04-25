@@ -293,6 +293,10 @@ function useAgentLogs(agentId: string | null, tail = 200) {
       return;
     }
 
+    // Clear previous agent's logs when switching
+    setLines([]);
+    setConnected(false);
+
     let cancelled = false;
     const controller = new AbortController();
 
