@@ -18,7 +18,7 @@
 
 import { BaseAgent, readConfig, loadVaultCredentials } from 'agents-library';
 import type { BaseAgentConfig } from 'agents-library';
-import type { KadiClient } from '@kadi.build/core';
+import type { KadiClient, LoadedAbility } from '@kadi.build/core';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -80,6 +80,24 @@ export const baseAgent = new BaseAgent(baseAgentConfig);
 export const client: KadiClient = baseAgent.client;
 
 // ---------------------------------------------------------------------------
+// ability-log (loaded after broker connect)
+// ---------------------------------------------------------------------------
+
+/** ability-log instance for persistent log/event storage. null until connect(). */
+export let abilityLog: LoadedAbility | null = null;
+
+/** Load ability-log via loadNative. Called from bootstrap after broker connect. */
+export async function loadAbilityLog(): Promise<void> {
+  try {
+    abilityLog = await client.loadNative('ability-log');
+    console.log('[agent-quest] ability-log loaded for persistent storage');
+  } catch (err: any) {
+    console.warn(`[agent-quest] ability-log not available: ${err.message}`);
+    console.warn('[agent-quest] Event/log persistence will be disabled');
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Broker URL helpers
 // ---------------------------------------------------------------------------
 
@@ -116,8 +134,9 @@ export class QuestAgentClient {
 
   async connect(): Promise<void> {
     // Load vault secrets before connecting
+    let vaultSecrets: Record<string, string> = {};
     try {
-      const vaultSecrets = await loadVaultCredentials();
+      vaultSecrets = await loadVaultCredentials();
       Object.assign(_secrets, vaultSecrets);
       const loaded = Object.keys(vaultSecrets).length;
       if (loaded > 0) {
@@ -130,7 +149,7 @@ export class QuestAgentClient {
     const brokers = getBrokerUrls();
     const brokerList = brokers.map(b => `${b.name}:${b.url}`).join(', ');
     console.log(`[agent-quest] Connecting to KĀDI broker(s): ${brokerList}`);
-    await baseAgent.connect();
+    await baseAgent.connect(vaultSecrets);
     this.connected = true;
     console.log('[agent-quest] Connected to KĀDI broker(s)');
   }

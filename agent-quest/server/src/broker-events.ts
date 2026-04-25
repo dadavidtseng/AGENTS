@@ -10,6 +10,7 @@ import type { KadiClient, BrokerEvent } from '@kadi.build/core';
 import { broadcastEvent, type WsEventName } from './websocket.js';
 import { pushEntry } from './routes/logs.js';
 import type { LogLevel } from './routes/logs.js';
+import { abilityLog } from './kadi-agent.js';
 
 // ---------------------------------------------------------------------------
 // Topic → WsEventName mapping
@@ -62,6 +63,16 @@ export function setupBrokerEventBridge(client: KadiClient): void {
 
       console.log(`[agent-quest] Broker event ${event.channel} → ws ${wsEvent}`);
       broadcastEvent(wsEvent, event.data);
+
+      // Persist system event to ArcadeDB via ability-log
+      if (abilityLog) {
+        abilityLog.invoke('event_write', {
+          type: wsEvent,
+          agentId: (event.data as any)?.agentId ?? '',
+          data: JSON.stringify(event.data),
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
+      }
     });
 
     console.log(`[agent-quest] Subscribed to broker pattern: ${pattern}`);

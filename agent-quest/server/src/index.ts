@@ -12,7 +12,8 @@ import { observerRoutes } from './routes/observer.js';
 import { logRoutes, startLogCapture } from './routes/logs.js';
 import { containerRoutes } from './routes/containers.js';
 import { webhookRoutes } from './routes/webhook.js';
-import { QuestAgentClient, cfg, client } from './kadi-agent.js';
+import { eventRoutes } from './routes/events.js';
+import { QuestAgentClient, cfg, client, loadAbilityLog } from './kadi-agent.js';
 import { setupBrokerEventBridge } from './broker-events.js';
 
 
@@ -93,6 +94,7 @@ app.use('/api/agents', logRoutes);
 app.use('/api/containers', containerRoutes);
 app.use('/api/observer', observerRoutes);
 app.use('/api/webhook', webhookRoutes);
+app.use('/api/events', eventRoutes);
 
 // Health check
 app.get('/api/health', (_req: Request, res: Response) => {
@@ -198,6 +200,7 @@ async function bootstrap(): Promise<void> {
   try {
     await kadiClient.connect();
     setupBrokerEventBridge(client);
+    await loadAbilityLog();
   } catch (err) {
     console.warn('[agent-quest] Failed to connect to KĀDI broker:', (err as Error).message);
     console.warn('[agent-quest] Server will start without broker — routes will return 503');

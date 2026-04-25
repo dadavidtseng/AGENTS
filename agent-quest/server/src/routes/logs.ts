@@ -15,7 +15,7 @@
  */
 
 import { Router, type Request, type Response } from 'express';
-import { cfg, secrets, getBrokerUrls } from '../kadi-agent.js';
+import { cfg, secrets, getBrokerUrls, abilityLog } from '../kadi-agent.js';
 
 export const logRoutes = Router();
 
@@ -229,13 +229,45 @@ function processObserverEvent(event: string, dataStr: string): void {
  * GET /api/agents/:agentId/logs
  *
  * Query params:
+ *  - format: "json" for paginated DB query, omit for SSE stream (default)
  *  - tail: number of historical entries (default 100)
  *  - follow: "true" to keep connection open for live streaming (default "true")
  *  - level: minimum log level filter (debug|info|warn|error)
+ *  - after: ISO timestamp — return entries after this time (json format only)
+ *  - limit: max results for json format (default 100, max 500)
  */
-logRoutes.get('/:agentId/logs', (req: Request, res: Response) => {
+logRoutes.get('/:agentId/logs', async (req: Request, res: Response) => {
   const agentId = String(req.params.agentId);
-  const tail = Math.min(parseInt(String(req.query.tail ?? '100')), MAX_ENTRIES_PER_AGENT);
+  const format = String(req.query.format ?? 'sse');
+
+  // JSON format — query ArcadeDB via ability-log
+  if (format === 'json') {
+    if (!abilityLog) {
+      res.status(503).json({ error: 'ability-log not available — log persistence disabled' });
+      return;
+    }
+
+    const params: Record<string, unknown> = { agentId };
+    if (req.query.level) params.level = String(req.query.level);
+    if (req.query.after) params.after = String(req.query.after);
+    if (req.query.limit) params.limit = Math.min(parseInt(String(req.query.limit), 10) || 100, 500);
+
+    try {
+      const result = await abilityLog.invoke('log_query', params);
+      const data = typeof result === 'string' ? JSON.parse(result) : result;
+      res.json({
+        entries: data.entries ?? [],
+        count: data.count ?? 0,
+        hasMore: (data.count ?? 0) >= (params.limit ?? 100),
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message ?? 'Failed to query logs' });
+    }
+    return;
+  }
+
+  // SSE format (default) — ArcadeDB primary, ring buffer for observer events
+  const tail = Math.min(parseInt(String(req.query.tail ?? '200')), MAX_ENTRIES_PER_AGENT);
   const follow = String(req.query.follow ?? 'true') !== 'false';
   const levelParam = req.query.level ? String(req.query.level) : undefined;
   const level = levelParam as LogLevel | undefined;
@@ -254,36 +286,136 @@ logRoutes.get('/:agentId/logs', (req: Request, res: Response) => {
     'X-Accel-Buffering': 'no',
   });
 
-  // Send historical entries
-  const history = getEntries(agentId, tail, level);
-  for (const entry of history) {
-    res.write(`event: log\ndata: ${JSON.stringify(entry)}\n\n`);
+  let closed = false;
+  let lastTimestamp = '';
+
+  // --- Phase 1: Send historical entries ---
+  // Try ArcadeDB first, fall back to ring buffer
+  if (abilityLog) {
+    try {
+      const params: Record<string, unknown> = { agentId, limit: tail };
+      if (level) params.level = level;
+      const result = await Promise.race([
+        abilityLog.invoke('log_query', params),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('ArcadeDB query timeout (5s)')), 5000)),
+      ]);
+      const data = typeof result === 'string' ? JSON.parse(result) : result;
+      const entries: any[] = (data as any).entries ?? [];
+
+      // log_query returns newest-first (ORDER BY timestamp DESC) — reverse for chronological SSE
+      entries.reverse();
+
+      for (const entry of entries) {
+        const logEntry: LogEntry = {
+          id: ++entryCounter,
+          agentId: entry.agentId ?? agentId,
+          level: entry.level ?? 'info',
+          message: entry.module ? `[${entry.module}] ${entry.message}` : (entry.message ?? ''),
+          timestamp: entry.timestamp ?? '',
+          source: entry.source ?? 'agent',
+        };
+        res.write(`event: log\ndata: ${JSON.stringify(logEntry)}\n\n`);
+        if (entry.timestamp && entry.timestamp > lastTimestamp) {
+          lastTimestamp = entry.timestamp;
+        }
+      }
+
+      res.write(`event: history-end\ndata: ${JSON.stringify({ count: entries.length, source: 'arcadedb' })}\n\n`);
+    } catch (err: any) {
+      console.warn(`[logs] ArcadeDB history query failed: ${err.message}, falling back to ring buffer`);
+      sendRingBufferHistory();
+    }
+  } else {
+    sendRingBufferHistory();
   }
 
-  // Send a marker so the client knows history is done
-  res.write(`event: history-end\ndata: ${JSON.stringify({ count: history.length })}\n\n`);
+  function sendRingBufferHistory() {
+    const history = getEntries(agentId, tail, level);
+    for (const entry of history) {
+      res.write(`event: log\ndata: ${JSON.stringify(entry)}\n\n`);
+      if (entry.timestamp > lastTimestamp) lastTimestamp = entry.timestamp;
+    }
+    res.write(`event: history-end\ndata: ${JSON.stringify({ count: history.length, source: 'ringbuffer' })}\n\n`);
+  }
 
   if (!follow) {
     res.end();
     return;
   }
 
-  // Follow mode — stream new entries
+  // --- Phase 2: Follow mode ---
+  // Poll ArcadeDB every 2s for new agent log entries
+  // + ring buffer follower for observer events (connect/disconnect)
+
   const minPriority = level ? LOG_LEVEL_PRIORITY[level] : 0;
 
+  // Ring buffer follower — catches observer events that don't go through ArcadeDB
   const removeFollower = addFollower(agentId, (entry) => {
+    if (closed) return;
     if (LOG_LEVEL_PRIORITY[entry.level] >= minPriority) {
       res.write(`event: log\ndata: ${JSON.stringify(entry)}\n\n`);
     }
   });
 
+  // ArcadeDB poller — catches agent log entries written via ability-log
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+  if (abilityLog) {
+    if (!lastTimestamp) {
+      lastTimestamp = new Date().toISOString();
+    }
+
+    pollTimer = setInterval(async () => {
+      if (closed) return;
+      try {
+        const params: Record<string, unknown> = {
+          agentId,
+          after: lastTimestamp,
+          limit: 100,
+        };
+        if (level) params.level = level;
+
+        const result = await Promise.race([
+          abilityLog!.invoke('log_query', params),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('poll timeout')), 5000)),
+        ]);
+        const data = typeof result === 'string' ? JSON.parse(result) : result;
+        const entries: any[] = (data as any).entries ?? [];
+
+        // log_query returns newest-first — reverse for chronological streaming
+        entries.reverse();
+
+        for (const entry of entries) {
+          if (closed) break;
+          const logEntry: LogEntry = {
+            id: ++entryCounter,
+            agentId: entry.agentId ?? agentId,
+            level: entry.level ?? 'info',
+            message: entry.module ? `[${entry.module}] ${entry.message}` : (entry.message ?? ''),
+            timestamp: entry.timestamp ?? '',
+            source: entry.source ?? 'agent',
+          };
+          if (LOG_LEVEL_PRIORITY[logEntry.level] >= minPriority) {
+            res.write(`event: log\ndata: ${JSON.stringify(logEntry)}\n\n`);
+          }
+          if (entry.timestamp && entry.timestamp > lastTimestamp) {
+            lastTimestamp = entry.timestamp;
+          }
+        }
+      } catch {
+        // Silently skip poll failures — next poll will retry
+      }
+    }, 2000);
+  }
   // Keepalive ping every 30s
   const keepalive = setInterval(() => {
-    res.write(': keepalive\n\n');
+    if (!closed) res.write(': keepalive\n\n');
   }, 30_000);
 
   req.on('close', () => {
+    closed = true;
     removeFollower();
+    if (pollTimer) clearInterval(pollTimer);
     clearInterval(keepalive);
   });
 });
