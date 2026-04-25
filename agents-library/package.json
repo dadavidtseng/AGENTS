@@ -1,6 +1,6 @@
 {
   "name": "agents-library",
-  "version": "0.1.7",
+  "version": "0.1.10",
   "description": "Shared utilities and factories for KĀDI multi-agent orchestration system",
   "type": "module",
   "main": "./dist/index.js",

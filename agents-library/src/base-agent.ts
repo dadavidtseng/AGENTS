@@ -28,12 +28,14 @@
  */
 
 import { KadiClient } from '@kadi.build/core';
+import type { LoadedAbility } from '@kadi.build/core';
 import { ProviderManager } from './providers/provider-manager.js';
 import { AnthropicProvider } from './providers/anthropic-provider.js';
 import { ModelManagerProvider } from './providers/model-manager-provider.js';
 import { MemoryService } from './memory/memory-service.js';
 import { logger, setLogTransport } from './utils/logger.js';
 import { timer } from './utils/timer.js';
+import { registerConfigMapping, loadConfig } from './utils/config.js';
 import type { LLMProvider, ProviderConfig } from './providers/types.js';
 
 // ============================================================================
@@ -159,6 +161,9 @@ export class BaseAgent {
   /** Whether the agent is currently connected */
   protected connected = false;
 
+  /** ability-log loaded via loadNative (undefined if not available) */
+  private nativeLog: LoadedAbility | null = null;
+
   /** Timer key for this agent's lifetime tracking */
   protected readonly timerKey: string;
 
@@ -218,8 +223,12 @@ export class BaseAgent {
    *
    * Uses client.connect() (non-blocking) — NOT client.serve() which blocks forever.
    * After connection, initializes MemoryService if configured.
+   *
+   * @param vaultCredentials - Optional vault credentials (from loadVaultCredentials()).
+   *   If provided, any keys not already in process.env are injected so that
+   *   loadNative abilities (e.g. ability-log) can read them.
    */
-  async connect(): Promise<void> {
+  async connect(vaultCredentials?: Record<string, string>): Promise<void> {
     const brokerCount = 1 + Object.keys(this.config.additionalBrokers || {}).length;
     logger.debug(this.tag, `Connecting ${this.config.agentId} to ${brokerCount} broker(s)...`, timer.elapsed(this.timerKey));
     logger.debug(this.tag, `   Broker 'default': ${this.config.brokerUrl} [${this.config.networks.join(', ')}]`, timer.elapsed(this.timerKey));
@@ -229,16 +238,52 @@ export class BaseAgent {
       this.connected = true;
       logger.info(this.tag, `Connected to ${brokerCount} broker(s)`, timer.elapsed(this.timerKey));
 
+      // Register ArcadeDB config mapping and re-load config so ability-log
+      // picks up [arcadedb] section from the host agent's config.toml
+      registerConfigMapping({
+        'arcadedb.HOST':     'ARCADE_HOST',
+        'arcadedb.PORT':     'ARCADE_PORT',
+        'arcadedb.USERNAME': 'ARCADE_USERNAME',
+        'arcadedb.DATABASE': 'ARCADE_DATABASE',
+        'arcadedb.PROTOCOL': 'ARCADE_PROTOCOL',
+      });
+      loadConfig();
+
+      // Inject vault credentials into process.env for loadNative abilities.
+      // Existing env vars take precedence (e.g. from kadi secret receive on Akash).
+      if (vaultCredentials) {
+        let injected = 0;
+        for (const [key, value] of Object.entries(vaultCredentials)) {
+          if (!process.env[key]) {
+            process.env[key] = value;
+            injected++;
+          }
+        }
+        if (injected > 0) {
+          logger.debug(this.tag, `Injected ${injected} vault credential(s) into process.env`, timer.elapsed(this.timerKey));
+        }
+      }
+
+      // Load ability-log for persistent logging (optional, non-fatal)
+      try {
+        this.nativeLog = await this.client.loadNative('ability-log');
+        logger.debug(this.tag, 'ability-log loaded for persistent logging', timer.elapsed(this.timerKey));
+      } catch {
+        logger.debug(this.tag, 'ability-log not available — persistent logging disabled', timer.elapsed(this.timerKey));
+      }
+
       // Register broker log transport (fire-and-forget, info+ only)
       setLogTransport((level, module, message, data) => {
-        if (!this.connected) return;
-        this.client.publish('log.agent', {
+        if (!this.connected || !this.nativeLog) return;
+        this.nativeLog.invoke('log_write', {
           agentId: this.config.agentId,
           agentRole: this.config.agentRole,
           level, module, message,
+          networkId: this.config.networks[0] ?? 'unknown',
+          source: 'agent',
           timestamp: new Date().toISOString(),
           ...(data !== undefined && { data: String(data) }),
-        }, { broker: 'default', network: 'global' }).catch(() => {});
+        }).catch(() => {});
       });
     } catch (error: any) {
       logger.error(this.tag, `Failed to connect to broker: ${error.message || String(error)}`, timer.elapsed(this.timerKey), error);
@@ -310,6 +355,7 @@ export class BaseAgent {
 
     // Clear broker log transport before disconnect
     setLogTransport(null);
+    this.nativeLog = null;
 
     // Dispose ProviderManager (stops health checks)
     if (this.providerManager) {
