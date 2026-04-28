@@ -36,7 +36,7 @@
     }
   },
   "deploy": {
-    "akash-mainnet": {
+    "akash": {
       "target": "akash",
       "network": "mainnet",
       "deposit": "10",

@@ -2,13 +2,13 @@
   "lockfileVersion": 1,
   "metadata": {
     "kadiVersion": "0.0.7",
-    "generated": "2026-04-25T20:48:25.599Z",
-    "metaHash": "sha256-f9dc40c8cc2cd0188578338c015f7f15b31d422b52c394b3f848f4f761d9f04c",
+    "generated": "2026-04-26T21:41:44.682Z",
+    "metaHash": "sha256-03e961895ae6c5284225342176263b4181bc4cf17b11ab86f8c5f781b80be585",
     "source": "agent.json"
   },
   "agent": {
     "name": "agent-shadow-worker",
-    "version": "0.1.1"
+    "version": "0.1.2"
   },
   "abilities": {
     "secret-ability@0.9.4": {
@@ -17,19 +17,6 @@
       "requestedVersion": "*",
       "type": "ability",
       "resolved": "abilities/secret-ability@0.9.4",
-      "entrypoint": "dist/index.js",
-      "integrity": "",
-      "source": "http://kadi.build:8000",
-      "dependencies": {},
-      "isTopLevel": true,
-      "requiredBy": []
-    },
-    "ability-file-local@0.1.1": {
-      "version": "0.1.1",
-      "resolvedVersion": "0.1.1",
-      "requestedVersion": "^0.1.1",
-      "type": "ability",
-      "resolved": "abilities/ability-file-local@0.1.1",
       "entrypoint": "dist/index.js",
       "integrity": "",
       "source": "http://kadi.build:8000",
