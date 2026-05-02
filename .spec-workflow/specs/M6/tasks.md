@@ -145,7 +145,7 @@
   - _Requirements: 1.3 AC2-8_
   - _Prompt: Implement the task for spec M6, first run spec-workflow-guide to get the workflow guide then implement the task: Role: Python 3D Developer with Blender API expertise | Task: Implement 7 Blender tools that execute bpy commands via the socket connection to headless Blender. blender_create_object: create mesh (cube/sphere/cylinder/plane) with optional name/location/scale. blender_modify_object: apply transforms and modifiers. blender_set_material: create/assign material with color/roughness/metallic. blender_render: render scene to file. blender_export: export to glTF/FBX/OBJ. blender_execute_python: run arbitrary bpy code. blender_get_scene_info: return all objects/types/positions/materials | Restrictions: All operations go through socket to Blender process. Handle Blender errors gracefully. Render must work headless (no GPU required, use CPU fallback). Export paths must be accessible from DO filesystem | Success: All 7 tools work headless, create/modify/render/export produce correct results, scene_info returns accurate data_
 
-- [ ] 1.3.4. Deploy mcp-server-blender to DigitalOcean
+- [x] 1.3.4. Deploy mcp-server-blender to DigitalOcean
   - Install Blender on DO droplet, deploy mcp-server-blender, verify broker connectivity on artist network
   - Time Estimate: [2.0, 3.0] hours
   - Purpose: Make Blender tools available to agent-worker-artist in production
@@ -153,7 +153,7 @@
   - _Requirements: 1.3 AC1_
   - _Prompt: Implement the task for spec M6, first run spec-workflow-guide to get the workflow guide then implement the task: Role: DevOps Engineer | Task: Install Blender 4.x on the DigitalOcean droplet (headless, no GUI). Deploy mcp-server-blender, configure it to connect to the KADI broker on the artist network. Verify tools are discoverable and functional from agent-worker-artist | Restrictions: Blender must run headless. Use apt or snap for Blender installation. Ensure sufficient disk space for renders and exports | Success: Blender installed, mcp-server-blender running, tools discoverable on artist network, basic create+render test passes_
 
-- [ ] 1.4.1. Configure role-based network joining in agent-worker
+- [x] 1.4.1. Configure role-based network joining in agent-worker
   - File: C:\GitHub\AGENTS\agent-worker\config.toml, C:\GitHub\AGENTS\agent-worker\src\index.ts
   - Join role-specific networks based on AGENT_ROLE config (programmer->programmer, artist->artist, designer->file)
   - Time Estimate: [2.0, 3.0] hours

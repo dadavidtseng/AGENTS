@@ -5,7 +5,7 @@ capabilities = ["file-creation", "image-generation", "creative-content", "art", 
 maxConcurrentTasks = 1
 eventTopic = "task"
 commitFormat = "feat: create artwork for task {taskId}"
-tools = ["git_git_", "ability_file_"]
+tools = ["git_git_", "ability_file_", "blender_blender_"]
 networks = ["artist", "git", "qa", "file", "quest", "global"]
 
 [provider]

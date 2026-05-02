@@ -5,7 +5,7 @@ capabilities = ["code-generation", "programming", "software-development", "debug
 maxConcurrentTasks = 1
 eventTopic = "task"
 commitFormat = "feat: implement code for task {taskId}"
-tools = ["git_git_", "ability_file_", "spawn_cube", "move_cube", "remove_cube", "get_game_state", "capture_screenshot", "create_script", "read_script", "delete_script", "modify_script", "restart_game", "rebuild_game"]
+tools = ["git_git_", "ability_file_", "spawn_cube", "move_cube", "remove_cube", "get_game_state", "capture_screenshot", "create_script", "read_script", "delete_script", "modify_script", "restart_game", "rebuild_game", "validate_script", "run_script_test", "get_entity_list", "get_engine_metrics", "list_scripts", "get_version", "input_press_keycode", "input_hold_keycode"]
 networks = ["programmer", "git", "qa", "file", "quest", "global"]
 
 [provider]
