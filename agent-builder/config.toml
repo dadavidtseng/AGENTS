@@ -8,13 +8,13 @@ VERSION = "0.1.0"
 [logging]
 LEVEL = "debug"
 
-[broker.local]
-URL = "ws://localhost:8080/kadi"
-NETWORKS = ["utility", "deploy", "git", "file"]
+#[broker.local]
+#URL = "ws://localhost:8080/kadi"
+#NETWORKS = ["utility", "deploy", "git", "file"]
 
 [broker.remote]
 URL = "wss://broker.dadavidtseng.com/kadi"
-NETWORKS = ["utility"]
+NETWORKS = ["global"]
 
 [build]
 MSBUILD_PATH = "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe"
