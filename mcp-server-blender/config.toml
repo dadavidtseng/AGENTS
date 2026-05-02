@@ -1,0 +1,11 @@
+# mcp-server-blender Configuration
+
+[blender]
+EXECUTABLE = "blender"
+SOCKET_HOST = "127.0.0.1"
+SOCKET_PORT = 9876
+HEARTBEAT_INTERVAL_S = 5
+RESTART_DELAY_S = 3
+MAX_RESTART_ATTEMPTS = 5
+RENDER_OUTPUT_DIR = "/tmp/blender-renders"
+EXPORT_OUTPUT_DIR = "/tmp/blender-exports"

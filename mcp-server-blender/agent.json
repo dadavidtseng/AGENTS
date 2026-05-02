@@ -1,0 +1,25 @@
+{
+  "name": "mcp-server-blender",
+  "type": "mcp-server",
+  "version": "1.0.0",
+  "description": "Blender 3D operations MCP server — create objects, set materials, render, export via headless Blender",
+  "scripts": {
+    "preflight": "python3 --version && blender --version",
+    "setup": "pip install -e .",
+    "start": "mcp-server-blender"
+  },
+  "build": {
+    "default": {
+      "from": "python:3.12-slim",
+      "run": [
+        "apt-get update && apt-get install -y --no-install-recommends blender python3-numpy && apt-get clean && rm -rf /var/lib/apt/lists/*",
+        "pip install --no-cache-dir ."
+      ],
+      "cmd": ["mcp-server-blender"],
+      "env": {
+        "MCP_TRANSPORT": "streamable-http",
+        "MCP_PORT": "3800"
+      }
+    }
+  }
+}
