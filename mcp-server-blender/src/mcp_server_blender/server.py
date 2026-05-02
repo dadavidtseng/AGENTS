@@ -119,7 +119,7 @@ def blender_render(
     samples: int = 128,
     engine: str = "CYCLES",
 ) -> str:
-    """Render the current scene to an image file (PNG). Uses CPU if no GPU available."""
+    """Render the current scene to an image file (PNG). CYCLES (CPU) is recommended for headless servers. EEVEE auto-falls back to CYCLES without GPU."""
     result = send_command("render", {
         "output_path": output_path, "resolution_x": resolution_x,
         "resolution_y": resolution_y, "samples": samples, "engine": engine,

@@ -207,14 +207,21 @@ class BlenderSocketServer:
         scene.render.image_settings.file_format = "PNG"
 
         engine = p.get("engine", "CYCLES").upper()
+
+        # EEVEE requires GPU/OpenGL — auto-fallback to CYCLES in headless mode
+        eevee_names = ("BLENDER_EEVEE", "BLENDER_EEVEE_NEXT", "EEVEE")
+        if engine in eevee_names:
+            print(f"[bootstrap] Warning: {engine} requires GPU, falling back to CYCLES (CPU)")
+            engine = "CYCLES"
+
         scene.render.engine = engine
         if engine == "CYCLES":
-            scene.cycles.samples = p.get("samples", 128)
+            scene.cycles.samples = p.get("samples", 32)
             scene.cycles.device = "CPU"
 
         bpy.ops.render.render(write_still=True)
         size = os.path.getsize(output) if os.path.exists(output) else 0
-        return {"success": True, "output_path": output, "size_bytes": size}
+        return {"success": True, "output_path": output, "size_bytes": size, "engine": engine}
 
     def _export(self, p):
         fmt = p.get("format", "gltf").lower()
