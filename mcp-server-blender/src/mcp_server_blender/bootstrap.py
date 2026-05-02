@@ -218,6 +218,7 @@ class BlenderSocketServer:
         if engine == "CYCLES":
             scene.cycles.samples = p.get("samples", 32)
             scene.cycles.device = "CPU"
+            scene.cycles.use_denoising = False
 
         bpy.ops.render.render(write_still=True)
         size = os.path.getsize(output) if os.path.exists(output) else 0
@@ -245,7 +246,13 @@ class BlenderSocketServer:
             elif fmt == "obj":
                 bpy.ops.wm.obj_export(filepath=output, export_selected_objects=selected)
             elif fmt == "stl":
-                bpy.ops.export_mesh.stl(filepath=output, use_selection=selected)
+                # bpy.ops.export_mesh.stl removed in Blender 4.x — use wm.stl_export
+                if hasattr(bpy.ops.wm, "stl_export"):
+                    bpy.ops.wm.stl_export(filepath=output, export_selected_objects=selected)
+                elif hasattr(bpy.ops.export_mesh, "stl"):
+                    bpy.ops.export_mesh.stl(filepath=output, use_selection=selected)
+                else:
+                    return {"success": False, "error": "STL export not available in this Blender version"}
         except Exception as e:
             return {"success": False, "error": f"Export failed: {e}"}
 
